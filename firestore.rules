@@ -1,0 +1,194 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    
+    // Helper Functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isMaestro() {
+      return isSignedIn() && 
+             request.auth.token.email_verified == true &&
+             (
+               request.auth.token.email == 'camiloctorquato@gmail.com' ||
+               (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+                get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'maestro' &&
+                get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active')
+             );
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidUser(data) {
+       return data.uid is string && data.email is string &&
+              data.role in ['maestro', 'musician'] &&
+              data.status in ['active', 'pending', 'disabled'];
+    }
+    
+    function isValidSong(data) {
+      return (data.get('title', '') is string && (data.get('title', '').size() > 0 || data.get('title', '') == '')) &&
+             (data.get('artist', '') is string && (data.get('artist', '').size() > 0 || data.get('artist', '') == '')) &&
+             (data.get('composition', null) == null || data.get('composition', '') is string) &&
+             (data.get('category', null) == null || (data.get('category', '') is string && data.get('category', '').size() < 100)) &&
+             (data.get('tempo', null) == null || data.get('tempo', '') in ['Lento', 'Moderado', 'Rápido']) &&
+             (data.get('chordPro', '') is string && data.get('chordPro', '').size() < 50000) &&
+             (data.get('createdBy', '') is string) &&
+             (data.get('folderId', null) == null || data.get('folderId', '') == '' || isValidId(data.get('folderId', ''))) &&
+             (data.get('pdfPages', null) == null || data.get('pdfPages', []) is list) &&
+             (data.get('createdAt', request.time) is timestamp || data.get('createdAt', '') is string) &&
+             (data.get('updatedAt', request.time) is timestamp || data.get('updatedAt', '') is string);
+    }
+
+    function isValidCategory(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.createdBy == request.auth.uid;
+    }
+
+    function isValidFolder(data) {
+      return (data.get('name', '') is string && (data.get('name', '').size() > 0 || data.get('name', '') == '')) &&
+             (data.get('createdBy', '') is string) &&
+             (data.get('type', null) == null || data.get('type', '') in ['song', 'repertorio']) &&
+             (data.get('order', null) == null || data.get('order', 0) is number);
+    }
+
+    function isValidLabel(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.color is string && data.color.size() > 0 && data.color.size() < 20 &&
+             data.createdBy == request.auth.uid;
+    }
+
+    function isValidSetlist(data) {
+      return (data.get('title', '') is string && (data.get('title', '').size() > 0 || data.get('title', '') == '')) &&
+             (data.get('songIds', []) is list) &&
+             (data.get('date', '') is string) &&
+             (data.get('folderId', '') is string) &&
+             (data.get('songGroups', []) is list) &&
+             (data.get('songKeys', {}) is map) &&
+             (data.get('createdBy', '') is string) &&
+             (data.get('createdAt', request.time) is timestamp || data.get('createdAt', '') is string) &&
+             (data.get('updatedAt', request.time) is timestamp || data.get('updatedAt', '') is string);
+    }
+
+    function isValidSession(data) {
+      return (data.leaderId == null || (data.leaderId is string && data.leaderId == request.auth.uid)) &&
+             (data.currentSongId == null || (data.currentSongId is string && data.currentSongId.size() < 128));
+    }
+
+    function isValidChordBank(data) {
+      return data.note is string && data.note.size() > 0 && data.note.size() < 10 &&
+             data.chords is list && data.chords.size() <= 100 &&
+             data.createdBy == request.auth.uid;
+    }
+
+    function isValidSongBlock(data) {
+      return data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.suggestions is list && data.suggestions.size() <= 100 &&
+             data.createdBy == request.auth.uid;
+    }
+
+    // Users
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isOwner(userId) && 
+                      (
+                        (incoming().role == 'musician' && incoming().status == 'pending') ||
+                        (request.auth.token.email == 'camiloctorquato@gmail.com' && incoming().role == 'maestro' && incoming().status == 'active')
+                      ) &&
+                      isValidUser(incoming());
+      allow update: if isMaestro() && isValidUser(incoming());
+      allow delete: if isMaestro();
+    }
+
+    // Songs
+    match /songs/{songId} {
+      allow read: if isSignedIn();
+      allow create: if isMaestro() && isValidSong(incoming()) && incoming().createdBy == request.auth.uid;
+      allow update: if isMaestro() && isValidSong(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'artist', 'composition', 'category', 'tempo', 'key', 'chordPro', 'updatedAt', 'folderId', 'pdfPages'])
+      );
+      allow delete: if isMaestro();
+    }
+
+    // Folders
+    match /folders/{folderId} {
+      allow read: if isSignedIn();
+      allow create: if isMaestro() && isValidFolder(incoming()) && incoming().createdBy == request.auth.uid;
+      allow update: if isMaestro() && isValidFolder(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'order', 'type'])
+      );
+      allow delete: if isMaestro();
+    }
+
+    // Categories
+    match /categories/{categoryId} {
+      allow read: if isSignedIn();
+      allow create: if isMaestro() && isValidCategory(incoming());
+      allow update: if isMaestro() && isValidCategory(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['name'])
+      );
+      allow delete: if isMaestro();
+    }
+
+    // Labels
+    match /labels/{labelId} {
+      allow read: if isSignedIn();
+      allow create: if isMaestro() && isValidLabel(incoming());
+      allow update: if isMaestro() && isValidLabel(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'color'])
+      );
+      allow delete: if isMaestro();
+    }
+
+    // Setlists
+    match /setlists/{setlistId} {
+      allow read: if isSignedIn();
+      allow create: if isMaestro() && isValidSetlist(incoming()) && incoming().createdBy == request.auth.uid;
+      allow update: if isMaestro() && isValidSetlist(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'songIds', 'updatedAt', 'date', 'folderId', 'songGroups', 'songKeys'])
+      );
+      allow delete: if isMaestro();
+    }
+
+    // Sessions
+    match /sessions/{sessionId} {
+      allow read: if isSignedIn();
+      allow write: if isMaestro() && isValidSession(incoming());
+    }
+
+    // Chord Banks
+    match /chord_banks/{bankId} {
+      allow read: if isSignedIn();
+      allow write: if isMaestro() && isValidChordBank(incoming());
+    }
+
+    // Song Blocks
+    match /song_blocks/{blockId} {
+      allow read: if isSignedIn();
+      allow create: if isMaestro() && isValidSongBlock(incoming());
+      allow update: if isMaestro() && isValidSongBlock(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'suggestions'])
+      );
+      allow delete: if isMaestro();
+    }
+  }
+}

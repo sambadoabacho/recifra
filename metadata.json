@@ -1,0 +1,6 @@
+{
+  "name": "#ReSet",
+  "description": "Aplicação web mobile-first para gerenciamento de repertórios de bandas, com transposição em tempo real, modo 'Seguir o Líder' e geração de sugestões de blocos por IA.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

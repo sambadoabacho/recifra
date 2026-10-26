@@ -1,0 +1,152 @@
+{
+  "entities": {
+    "Song": {
+      "title": "Song",
+      "description": "Uma música no repertório",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Título da música" },
+        "artist": { "type": "string", "description": "Artista ou banda" },
+        "composition": { "type": "string", "description": "Compositores" },
+        "category": { "type": "string", "description": "Categoria/Gênero" },
+        "tempo": { "type": "string", "enum": ["Lento", "Moderado", "Rápido"], "description": "Andamento da música" },
+        "key": { "type": "string", "description": "Tonalidade original" },
+        "chordPro": { "type": "string", "description": "Cifra em formato ChordPro" },
+        "createdBy": { "type": "string", "description": "UID do usuário que criou" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "folderId": { "type": "string", "description": "ID da pasta (opcional)" }
+      },
+      "required": ["title", "artist", "chordPro", "createdBy"]
+    },
+    "Folder": {
+      "title": "Folder",
+      "description": "Pasta para organizar músicas",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Nome da pasta" },
+        "createdBy": { "type": "string", "description": "UID do usuário que criou" }
+      },
+      "required": ["name", "createdBy"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Categorias de músicas",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Nome da categoria" },
+        "createdBy": { "type": "string", "description": "UID do usuário que criou" }
+      },
+      "required": ["name", "createdBy"]
+    },
+    "LabelShortcut": {
+      "title": "LabelShortcut",
+      "description": "Atalhos de labels personalizadas",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Nome da label" },
+        "color": { "type": "string", "description": "Código cor hexadecimal" },
+        "createdBy": { "type": "string", "description": "UID do usuário que criou" }
+      },
+      "required": ["name", "color", "createdBy"]
+    },
+    "Setlist": {
+      "title": "Setlist",
+      "description": "Uma lista de músicas para um show",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Nome do setlist" },
+        "songIds": { "type": "array", "items": { "type": "string" }, "description": "Lista de IDs de músicas" },
+        "date": { "type": "string", "description": "Data do show" },
+        "folderId": { "type": "string", "description": "ID da pasta (opcional)" },
+        "songGroups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "songIds": { "type": "array", "items": { "type": "string" } },
+              "title": { "type": "string" }
+            }
+          },
+          "description": "Grupos de músicas que se movem juntas"
+        },
+        "createdBy": { "type": "string", "description": "UID do usuário que criou" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "songIds", "createdBy"]
+    },
+    "Session": {
+      "title": "Session",
+      "description": "Estado da sessão ao vivo (Seguir o Líder)",
+      "type": "object",
+      "properties": {
+        "leaderId": { "type": "string", "description": "UID do líder atual" },
+        "leaderName": { "type": "string", "description": "Nome do líder" },
+        "currentSongId": { "type": "string", "description": "ID da música sendo tocada" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ChordBank": {
+      "title": "ChordBank",
+      "description": "Banco de acordes personalizado do usuário",
+      "type": "object",
+      "properties": {
+        "note": { "type": "string", "description": "Nota base (C, D, E, etc)" },
+        "chords": { "type": "array", "items": { "type": "string" }, "description": "Lista de acordes fixados" },
+        "createdBy": { "type": "string", "description": "UID do usuário" }
+      },
+      "required": ["note", "chords", "createdBy"]
+    },
+    "SongBlock": {
+      "title": "SongBlock",
+      "description": "Agrupamentos sugeridos de músicas (Blocos)",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Título identificador do conjunto de blocos" },
+        "totalSongs": { "type": "number", "description": "Total de músicas solicitadas" },
+        "profile": { "type": "string", "description": "Perfil (Aleatório, Clássico, etc)" },
+        "maxPerBlock": { "type": "number", "description": "Máximo de músicas por bloco" },
+        "filters": { "type": "array", "items": { "type": "string" }, "description": "Filtros aplicados" },
+        "suggestions": { 
+          "type": "array", 
+          "items": { 
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "songIds": { "type": "array", "items": { "type": "string" } },
+              "reason": { "type": "string" }
+            }
+          }
+        },
+        "createdBy": { "type": "string", "description": "UID do criador" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "suggestions", "createdBy"]
+    },
+    "AppUser": {
+      "title": "AppUser",
+      "description": "Perfil e permissões do usuário",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["maestro", "musician"] },
+        "status": { "type": "string", "enum": ["active", "pending", "disabled"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role", "status"]
+    }
+  },
+  "firestore": {
+    "/songs/{songId}": { "schema": "Song", "description": "Coleção de músicas" },
+    "/categories/{categoryId}": { "schema": "Category", "description": "Coleção de categorias" },
+    "/labels/{labelId}": { "schema": "LabelShortcut", "description": "Coleção de labels" },
+    "/setlists/{setlistId}": { "schema": "Setlist", "description": "Coleção de setlists" },
+    "/folders/{folderId}": { "schema": "Folder", "description": "Coleção de pastas" },
+    "/sessions/{sessionId}": { "schema": "Session", "description": "Sessões de palco" },
+    "/chord_banks/{bankId}": { "schema": "ChordBank", "description": "Bancos de acordes" },
+    "/song_blocks/{blockId}": { "schema": "SongBlock", "description": "Agrupamentos de blocos" },
+    "/users/{userId}": { "schema": "AppUser", "description": "Perfis de usuários" }
+  }
+}
