@@ -1,4 +1,4 @@
-const CACHE_NAME = 'reset-cache-v1';
+const CACHE_NAME = 'recifra-cache-v1';
 const ASSETS = [
   '/',
   '/index.html',
