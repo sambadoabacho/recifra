@@ -1,19 +1,19 @@
 {
-  "name": "#ReSet",
-  "short_name": "ReSet",
-  "description": "Gerenciamento de repertórios para bandas",
+  "name": "#RECifra",
+  "short_name": "RECifra",
+  "description": "Gerenciamento de repertórios musicais",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#000000",
+  "background_color": "#ffffff",
   "theme_color": "#0d47a1",
   "icons": [
     {
-      "src": "https://picsum.photos/seed/reset/192/192",
+      "src": "/icons/recifra-192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "https://picsum.photos/seed/reset/512/512",
+      "src": "/icons/recifra-512.png",
       "sizes": "512x512",
       "type": "image/png"
     }
