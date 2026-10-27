@@ -2312,7 +2312,9 @@ const handleRepertorioPdfFull = async () => {
           animate={{ opacity: 1, y: 0 }}
           className="max-w-md w-full"
         >
-          <h1 className="text-6xl font-bold mb-2 tracking-tighter text-primary">#ReSet</h1>
+          <h1 className="text-6xl mb-2 tracking-tighter leading-none">
+            <span className="font-bold text-primary">#RE</span><span className="font-normal italic text-black">Cifra</span>
+          </h1>
           <p className="text-text-dim mb-12">Gestão de repertório para o palco.</p>
           <button 
             onClick={handleLogin}
@@ -2396,8 +2398,8 @@ const handleRepertorioPdfFull = async () => {
                 <ArrowLeft size={20} />
               </button>
             )}
-            <div className="font-bold text-xl tracking-tighter uppercase">
-              #RE<span className="text-primary">SET</span>
+            <div className="text-xl tracking-tighter leading-none">
+              <span className="font-bold text-primary">#RE</span><span className="font-normal italic text-black">Cifra</span>
             </div>
           </div>
           <div className="flex items-center gap-1.5" ref={dropdownRef}>
@@ -3520,6 +3522,7 @@ const handleRepertorioPdfFull = async () => {
               <SidebarNavItem 
                 icon={<Music size={18} />} 
                 label="Músicas" 
+                tooltip="Consulte, pesquise e organize seu acervo musical."
                 active={sidebarTab === 'songs'} 
                 variant="light"
                 onClick={() => {
@@ -3629,9 +3632,9 @@ const handleRepertorioPdfFull = async () => {
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: 10 }}
-                  className="font-bold text-2xl tracking-tighter uppercase hidden sm:block"
+                  className="text-2xl tracking-tighter leading-none hidden sm:block"
                 >
-                  #RE<span className="text-primary">SET</span>
+                  <span className="font-bold text-primary">#RE</span><span className="font-normal italic text-black">Cifra</span>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -4393,7 +4396,7 @@ const handleRepertorioPdfFull = async () => {
                       </div>
                       <div>
                         <h3 className="text-xl font-bold">Configuração da IA</h3>
-                        <p className="text-text-dim text-sm">O #ReSet usa o Google Gemini para gerar blocos de sugestões.</p>
+                        <p className="text-text-dim text-sm">O #RECifra usa o Google Gemini para gerar blocos de sugestões.</p>
                       </div>
                     </div>
 
@@ -4500,7 +4503,7 @@ const handleRepertorioPdfFull = async () => {
               {activeSettingsTab === 'sobre' && (
                 <div className="space-y-6">
                   <div className="p-12 bg-surface border border-border rounded-2xl text-center space-y-6">
-                    <div className="text-5xl font-bold tracking-tighter text-primary">#ReSet</div>
+                    <div className="text-5xl tracking-tighter leading-none"><span className="font-bold text-primary">#RE</span><span className="font-normal italic text-black">Cifra</span></div>
                     <div className="space-y-2">
                       <p className="font-bold uppercase text-text-dim tracking-widest text-sm">Versão 2.3.0</p>
                       <p className="text-text-dim italic">Desenvolvido para músicos, por músicos.</p>
@@ -5262,13 +5265,16 @@ function SortableSongItem({ id, song, index, onClick, onDelete, onShare, isMaest
   );
 }
 
-function SidebarNavItem({ icon, label, active, onClick, variant = 'dark', disabled = false }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void, variant?: 'dark' | 'light', disabled?: boolean }) {
+
+function SidebarNavItem({ icon, label, active, onClick, variant = 'dark', disabled = false, tooltip }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void, variant?: 'dark' | 'light', disabled?: boolean, tooltip?: string }) {
   const activeColor = variant === 'dark' ? 'text-[#E6ECF5]' : 'text-[#0D47A1]';
   const inactiveColor = variant === 'dark' ? 'text-white hover:text-white/80' : 'text-[#0D47A1]/60 hover:text-[#0D47A1]';
   const indicatorColor = variant === 'dark' ? 'bg-[#E6ECF5]' : 'bg-[#0D47A1]';
 
   return (
-    <button 
+    <button
+     title={tooltip || label}
+aria-label={tooltip || label}
       onClick={disabled ? undefined : onClick}
       className={`relative flex flex-col items-center gap-1 p-2 transition-all ${active ? activeColor : inactiveColor} ${disabled ? 'opacity-20 cursor-not-allowed grayscale' : ''}`}
     >
