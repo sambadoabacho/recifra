@@ -19,7 +19,7 @@ export const ChordProRenderer: React.FC<ChordProRendererProps & { lineRange?: [n
   text,
   chordSize = 13,
   lyricSize = 14,
-  chordColor = '#dc2626',
+  chordColor = '#ff6900',
   lyricColor = 'inherit',
   lineRange
 }) => {

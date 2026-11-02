@@ -319,26 +319,19 @@ export default function App() {
     return max;
   }, [selectedSong, transposition]);
 
-  // Em tablets e celulares, ajusta automaticamente a escala para caber a linha mais longa
-  // na largura útil, sem quebrar ou reformatar as linhas da música.
-  useEffect(() => {
-    if (isDesktop || !songViewRef.current || maxLineChars <= 0 || selectedSong?.pdfPages?.length) return;
-    const fitToWidth = () => {
-      const viewWidth = songViewRef.current?.clientWidth || window.innerWidth;
-      let horizontalPadding = 48;
-      if (viewWidth >= 768) horizontalPadding = 96;
-      const availableWidth = Math.max(120, viewWidth - horizontalPadding - 8);
-      const estimatedLineWidthAtScaleOne = maxLineChars * 8.4;
-      const fitScale = Math.min(1, availableWidth / estimatedLineWidthAtScaleOne);
-      setChordProScale(current => Math.min(current, Math.max(0.1, fitScale)));
-    };
-    const frame = window.requestAnimationFrame(fitToWidth);
-    window.addEventListener('resize', fitToWidth);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener('resize', fitToWidth);
-    };
-  }, [isDesktop, maxLineChars, selectedSong?.id, chordProScale]);
+  // O zoom mobile é controlado por pinça. O limite superior é calculado
+  // para que a linha mais longa alcance, mas nunca ultrapasse, a largura útil.
+  const getMobileMaxScale = () => {
+    if (!songViewRef.current || maxLineChars <= 0) return 2.5;
+    const viewWidth = songViewRef.current.clientWidth;
+    const horizontalPadding = viewWidth >= 768 ? 96 : 48;
+    const availableWidth = Math.max(120, viewWidth - horizontalPadding - 8);
+    const renderedLines = contentRef.current?.querySelectorAll<HTMLElement>('.chordpro-responsive-line');
+    let widestLine = 0;
+    renderedLines?.forEach(line => { widestLine = Math.max(widestLine, line.scrollWidth); });
+    if (widestLine > 0) return Math.min(2.5, Math.max(chordProScale, chordProScale * availableWidth / widestLine));
+    return Math.min(2.5, Math.max(0.35, availableWidth / (maxLineChars * 8.4))); 
+  };
 
   // Handle device-specific zoom persistence per song
   useEffect(() => {
@@ -4218,6 +4211,22 @@ const handleRepertorioPdfFull = async () => {
                     <>
                       <div className="flex flex-wrap items-center gap-2">
                         <h2 className="text-[18px] font-extrabold tracking-tight leading-tight mr-2 uppercase">{selectedSong.title}</h2>
+                        {sidebarTab === 'songs' && !selectedRepertorio && (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <div className="relative">
+                              <button type="button" onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)} className="rounded-full px-2.5 py-1 text-[10px] font-black bg-[#174EA6] text-white border border-[#174EA6]">Tom: {currentKey}</button>
+                              <AnimatePresence>
+                                {isKeyPickerOpen && (
+                                  <motion.div initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} exit={{opacity:0,y:6}} className="absolute top-full left-0 mt-2 w-56 bg-white border border-border rounded-xl shadow-2xl z-[200] grid grid-cols-4 p-2 gap-1">
+                                    {songKeyOptions.map(k => <button key={k} type="button" onClick={e => { e.stopPropagation(); handleKeySelect(k); }} className={`p-2 text-[10px] font-bold rounded-lg border ${k === currentKey ? 'bg-primary border-primary text-white' : 'bg-bg border-border text-text-dim'}`}>{k}</button>)}
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                            {selectedSong.tempo && <span className="rounded-full px-2.5 py-1 text-[10px] font-bold bg-[#4F78E8] text-white">{selectedSong.tempo}</span>}
+                            {selectedSong.category && <span className="rounded-full px-2.5 py-1 text-[10px] font-bold bg-[#EEF1F5] text-[#174EA6] border border-[#DCE3EC]">{selectedSong.category}</span>}
+                          </div>
+                        )}
                         
                           <div className="hidden lg:flex items-center bg-surface border border-border rounded-full h-[28px] overflow-hidden ml-2 shadow-sm">
                             <button 
@@ -6504,8 +6513,9 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
   const [chordSize, setChordSize] = useState(12);
   const [lyricSize, setLyricSize] = useState(13);
   const [chordColor, setChordColor] = useState(() => {
-    if (typeof window === 'undefined') return '#dc2626';
-    return localStorage.getItem('recifra_chord_color') || '#dc2626';
+    if (typeof window === 'undefined') return '#ff6900';
+    const saved = localStorage.getItem('recifra_chord_color');
+    return !saved || saved.toLowerCase() === '#dc2626' ? '#ff6900' : saved;
   });
   const [lyricColor, setLyricColor] = useState('#333333');
   const [coroColor, setCoroColor] = useState(() => {
@@ -7082,7 +7092,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
           {/* Top Form Section: Metadados */}
           <div className="space-y-3 flex-shrink-0">
             {/* Linha 1: título, autoria e intérprete */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-x-3 gap-y-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-x-3 gap-y-3">
               {/* Row 1: Title */}
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-text-dim uppercase tracking-widest flex items-center gap-1.5 ml-1">
@@ -7120,8 +7130,8 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                 </div>
               </div>
 
-              {/* Row 2: Artist */}
-              <div className="space-y-1">
+              {/* Artista: disposição original no desktop */}
+              <div className="hidden md:block space-y-1">
                 <label className="text-[10px] font-black text-text-dim uppercase tracking-widest flex items-center gap-1.5 ml-1">Artista / Intérprete</label>
                 <div className="relative group">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-dim group-focus-within:text-primary transition-colors">
@@ -7141,7 +7151,24 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
             </div>
 
             {/* Linha 2: tom, pasta, andamento e categoria */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[0.7fr_1.2fr_1.3fr_1.4fr] gap-3">
+            <div className="grid grid-cols-3 md:grid-cols-2 lg:grid-cols-[0.7fr_1.2fr_1.3fr_1.4fr] gap-3">
+              {/* Artista: posição mobile */}
+              <div className="md:hidden space-y-1">
+                <label className="text-[10px] font-black text-text-dim uppercase tracking-widest flex items-center gap-1.5 ml-1">Artista / Intérprete</label>
+                <div className="relative group">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-dim group-focus-within:text-primary transition-colors">
+                    <Mic2 size={16} />
+                  </div>
+                  <input 
+                    type="text"
+                    value={formData.artist}
+                    onChange={e => setFormData({...formData, artist: e.target.value})}
+                    className="w-full bg-white border border-border rounded-lg h-10 pl-10 pr-3 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-text-dim/30"
+                    placeholder="Nome do artista principal"
+                    required
+                  />
+                </div>
+              </div>
             {/* Tom */}
               <div className="space-y-1 relative">
                 <label className="text-[10px] font-black text-text-dim uppercase tracking-widest flex items-center gap-1.5 ml-1">
@@ -7210,7 +7237,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
               {/* Pasta de Destino */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between ml-1">
-                  <label className="text-[10px] font-black text-text-dim uppercase tracking-widest">Pasta de Destino</label>
+                  <label className="text-[10px] font-black text-text-dim uppercase tracking-widest">Pasta</label>
                   <button 
                     type="button"
                     onClick={() => setIsManagingFolders(true)}
