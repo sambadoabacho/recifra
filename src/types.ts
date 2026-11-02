@@ -52,6 +52,8 @@ export interface Session {
   leaderId: string | null;
   leaderName: string | null;
   currentSongId: string | null;
+  currentRepertorioId?: string | null;
+  currentTransposition?: number;
   updatedAt: string;
 }
 
