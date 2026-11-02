@@ -12,6 +12,9 @@ createRoot(document.getElementById('root')!).render(
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
+    navigator.serviceWorker
+      .register(`${import.meta.env.BASE_URL}sw.js`, { updateViaCache: 'none' })
+      .then((registration) => registration.update())
+      .catch((error) => console.error('Falha ao atualizar o Service Worker do RECifra:', error));
   });
 }
