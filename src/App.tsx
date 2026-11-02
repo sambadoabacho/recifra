@@ -31,11 +31,18 @@ import {
   Music, Edit2, Trash2, LogIn, LogOut, Mic, User as UserIcon, Speaker,
   ChevronLeft, ChevronRight, ChevronUp, Play, Users, Save, X, Search, Minus, Type, Filter,
   ArrowUp, ArrowDown, Radio, Menu, Layout, Settings, ListMusic, Sun, Moon, Archive, Library,
-  Share2, CheckSquare, Square, GripVertical, ArrowLeft, Download, Upload, FilePlus, Boxes, Brain, FileText, Check, Lock, LockOpen, Plus,
+  Share2, CheckSquare, Square, GripVertical, ArrowLeft, Download, Upload, FilePlus, Boxes, Brain, FileText, Check, Plus,
   Folder as FolderIcon, Hash, Info, Gamepad, LayoutList, Mic2, Music2, FolderOpen, ChevronDown, Tag, RotateCcw, RotateCw, Smile, PlusCircle, FileUp, Eraser, Eye
 } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'motion/react';
 import { jsPDF } from 'jspdf';
+
+// Normaliza termos para a busca: ignora acentos e diferenças entre maiúsculas/minúsculas.
+const normalizeSearchText = (value?: string | null) =>
+  (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('pt-BR');
 
 function GroupPageView({ group, songs, allIds, repertorio }: { 
   group: any, 
@@ -136,6 +143,7 @@ function GroupPageView({ group, songs, allIds, repertorio }: {
   );
 }
 
+
 import {
   DndContext, 
   closestCenter,
@@ -212,15 +220,21 @@ export default function App() {
   const [managingFolderType, setManagingFolderType] = useState<'song' | 'repertorio' | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const sidebarActionRef = useRef<HTMLDivElement>(null);
+  const sidebarCreateMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
       const isOutsideDropdown = !dropdownRef.current || !dropdownRef.current.contains(target);
       const isOutsideSidebarAction = !sidebarActionRef.current || !sidebarActionRef.current.contains(target);
+      const isOutsideCreateMenu = !sidebarCreateMenuRef.current || !sidebarCreateMenuRef.current.contains(target);
+      const isOutsideArchive = !bottomArchiveRef.current || !bottomArchiveRef.current.contains(target);
       
-      if (isOutsideDropdown && isOutsideSidebarAction) {
+      if (isOutsideDropdown && isOutsideSidebarAction && isOutsideCreateMenu) {
         setIsSidebarActionOpen(false);
+      }
+      if (isOutsideArchive) {
+        setIsSidebarArchiveOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -632,7 +646,7 @@ export default function App() {
     if (!user) return;
     const q = query(collection(db, 'songs'), orderBy('title', 'asc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const songList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Song));
+      const songList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Song)).filter(song => !(song as any).isDraft);
       setSongs(songList);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'songs');
@@ -850,7 +864,47 @@ export default function App() {
 
   const handleLogout = () => signOut(auth);
 
-  const saveSong = async (songData: Partial<Song>) => {
+  const autoSaveSong = async (songData: Partial<Song>, draftId?: string | null): Promise<string | null> => {
+    if (!user) return null;
+    try {
+      const payload = { ...songData, updatedAt: new Date().toISOString() };
+      if (editingSong?.id) {
+        await updateDoc(doc(db, 'songs', editingSong.id), payload);
+        return editingSong.id;
+      }
+      if (draftId) {
+        await updateDoc(doc(db, 'songs', draftId), payload);
+        return draftId;
+      }
+      const created = await addDoc(collection(db, 'songs'), {
+        ...payload,
+        createdBy: user.uid,
+        isDraft: true,
+      });
+      return created.id;
+    } catch (error) {
+      console.error('Erro no salvamento automático da música:', error);
+      return null;
+    }
+  };
+
+  const discardAutoSavedSong = async (draftId?: string | null) => {
+    try {
+      if (!editingSong?.id && draftId) {
+        await deleteDoc(doc(db, 'songs', draftId));
+      } else if (editingSong?.id) {
+        const { id, ...originalData } = editingSong as any;
+        await updateDoc(doc(db, 'songs', editingSong.id), {
+          ...originalData,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao descartar alterações da música:', error);
+    }
+  };
+
+  const saveSong = async (songData: Partial<Song>, draftId?: string | null) => {
     if (!user) return;
     try {
       if (editingSong?.id) {
@@ -872,11 +926,16 @@ export default function App() {
           updatedAt: new Date().toISOString(),
           createdBy: user.uid,
         };
-        await addDoc(collection(db, 'songs'), data);
+        if (draftId) {
+          await updateDoc(doc(db, 'songs', draftId), { ...data, isDraft: false });
+        } else {
+          await addDoc(collection(db, 'songs'), data);
+        }
         setCurrentView('list');
       }
     } catch (error) {
       console.error('Error saving song:', error);
+      throw error;
     }
   };
 
@@ -886,6 +945,53 @@ export default function App() {
       await addDoc(collection(db, 'song_blocks'), blockData);
       setCurrentView('blocks');
     } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'song_blocks');
+    }
+  };
+
+  const addBlockSuggestionToRepertorio = async (suggestion: any, repertorioId: string) => {
+    const target = repertorios.find((rep: any) => rep.id === repertorioId);
+    if (!target) {
+      alert('O repertório selecionado não foi encontrado.');
+      return;
+    }
+    const requestedIds = (suggestion.songIds || []).filter((id: string) => songs.some(song => song.id === id));
+    const existingIds = new Set((target.songIds || []).filter((id: string) => !String(id).startsWith('group:')));
+    const newSongIds = requestedIds.filter((id: string) => !existingIds.has(id));
+    if (newSongIds.length === 0) {
+      alert('Todas as músicas deste bloco já estão no repertório selecionado.');
+      return;
+    }
+
+    const groupId = `group-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const groupTitle = (suggestion.name || 'Novo Bloco').trim();
+    const newGroups = [...(target.songGroups || []), { id: groupId, title: groupTitle, songIds: newSongIds }];
+    const newIds = [...(target.songIds || []), `group:${groupId}`, ...newSongIds];
+    try {
+      await updateDoc(doc(db, 'setlists', repertorioId), {
+        songGroups: newGroups,
+        songIds: newIds,
+        updatedAt: new Date().toISOString()
+      });
+      const updated = { ...target, songGroups: newGroups, songIds: newIds };
+      setRepertorios(prev => prev.map(rep => rep.id === repertorioId ? updated : rep));
+      if (selectedRepertorio?.id === repertorioId) setSelectedRepertorio(updated);
+      alert(`Bloco "${groupTitle}" adicionado ao repertório "${target.title}".`);
+    } catch (error) {
+      console.error('Erro ao adicionar bloco ao repertório:', error);
+      handleFirestoreError(error, OperationType.WRITE, 'setlists');
+    }
+  };
+
+  const updateSongBlock = async (updatedBlock: SongBlock) => {
+    if (!updatedBlock.id) return;
+    try {
+      const { id, ...data } = updatedBlock as any;
+      await updateDoc(doc(db, 'song_blocks', id), { ...data, updatedAt: new Date().toISOString() });
+      setSongBlocks(prev => prev.map(item => item.id === id ? updatedBlock : item));
+      setSelectedBlockSet(updatedBlock);
+    } catch (error) {
+      console.error('Erro ao atualizar bloco:', error);
       handleFirestoreError(error, OperationType.WRITE, 'song_blocks');
     }
   };
@@ -900,7 +1006,12 @@ export default function App() {
   };
 
   const deleteSong = async (id: string) => {
-    if (!window.confirm('Excluir esta música?')) return;
+    const song = songs.find(item => item.id === id);
+    const linkedRepertoires = repertorios.filter(rep => (rep.songIds || []).includes(id));
+    const warning = linkedRepertoires.length > 0
+      ? `\n\nEsta música está vinculada a ${linkedRepertoires.length} repertório(s):\n${linkedRepertoires.map(rep => `• ${rep.title}`).join('\n')}\n\nA exclusão apagará o cadastro original e a música deixará de aparecer em TODOS esses repertórios.`
+      : '';
+    if (!window.confirm(`Excluir a música "${song?.title || 'selecionada'}" do acervo?${warning}`)) return;
     try {
       await deleteDoc(doc(db, 'songs', id));
     } catch (error) {
@@ -941,7 +1052,11 @@ export default function App() {
         date: data.date || '',
         folderId: data.folderId || '',
         songIds: data.songIds || [],
-        songKeys: data.songKeys || selectedRepertorio?.songKeys || {},
+        // Tonalidades pertencem ao vínculo música/repertório.
+        // Ao editar, preserva as deste repertório; ao criar, começa vazio.
+        songKeys: data.songKeys || (editingRepertorio?.id ? editingRepertorio.songKeys || {} : {}),
+        // A edição do cabeçalho não pode apagar os blocos já organizados.
+        songGroups: data.songGroups || (editingRepertorio?.id ? editingRepertorio.songGroups || [] : []),
         updatedAt: serverTimestamp()
       };
 
@@ -1372,7 +1487,7 @@ export default function App() {
               folderId: targetFolderId,
               key: finalKey,
               chordPro: processedChordPro,
-              pdfPages,
+              ...(pdfPages ? { pdfPages } : {}),
               createdBy: user?.uid || auth.currentUser?.uid || 'unknown',
               updatedAt: new Date().toISOString()
             };
@@ -1425,7 +1540,7 @@ export default function App() {
           folderId: targetFolderId,
           key: finalKey,
           chordPro: processedChordPro,
-          pdfPages,
+          ...(pdfPages ? { pdfPages } : {}),
           createdBy: user?.uid || auth.currentUser?.uid || 'unknown',
           updatedAt: new Date().toISOString()
         };
@@ -1905,49 +2020,101 @@ const handleRepertorioPdfFull = async () => {
     setActiveId(null);
     if (!over || active.id === over.id || !selectedRepertorio) return;
 
-    const oldIdx = selectedRepertorio.songIds.indexOf(active.id as string);
-    const newIdx = selectedRepertorio.songIds.indexOf(over.id as string);
-    
-    if (oldIdx === -1 || newIdx === -1) return;
+    const originalIds: string[] = [...(selectedRepertorio.songIds || [])];
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    const oldIdx = originalIds.indexOf(activeId);
+    const overIdx = originalIds.indexOf(overId);
+    if (oldIdx < 0 || overIdx < 0) return;
 
-    // Local state calculation for instant feedback
-    const newSongIds = arrayMove([...selectedRepertorio.songIds], oldIdx, newIdx);
-    
-    try {
-      // Optimistic update of local state
-      let finalNewSongIds = [...newSongIds];
-      
-      const activeItem = sortableItemsData.find(i => i.id === active.id);
-      if (activeItem?.type === 'group_handle' && activeItem.group.isLocked) {
-        // If we are moving a LOCKED group, we need to move its "tail" (all songs following it until the next group)
-        const groupIndex = selectedRepertorio.songIds.indexOf(active.id as string);
-        const tailSongs: string[] = [];
-        for (let i = groupIndex + 1; i < selectedRepertorio.songIds.length; i++) {
-          if (selectedRepertorio.songIds[i].startsWith('group:')) break;
-          tailSongs.push(selectedRepertorio.songIds[i]);
+    let finalNewSongIds = [...originalIds];
+    const activeItem = sortableItemsData.find((item: any) => item.id === activeId);
+
+    // Arrastar pelo marcador move o bloco inteiro, tanto para cima quanto para baixo.
+    if (activeItem?.type === 'group_handle') {
+      let endIdx = oldIdx + 1;
+      while (endIdx < originalIds.length && !originalIds[endIdx].startsWith('group:')) endIdx++;
+      const blockChunk = originalIds.slice(oldIdx, endIdx);
+      if (overIdx >= oldIdx && overIdx < endIdx) return;
+
+      const remaining = [...originalIds.slice(0, oldIdx), ...originalIds.slice(endIdx)];
+      let anchorId = overId;
+
+      // Se o destino for uma música, ancora no marcador do bloco a que ela pertence.
+      if (!anchorId.startsWith('group:')) {
+        let destinationMarkerIndex = -1;
+        for (let i = 0; i < overIdx; i++) {
+          if (originalIds[i].startsWith('group:') && !(i >= oldIdx && i < endIdx)) {
+            destinationMarkerIndex = i;
+          }
         }
-        
-        if (tailSongs.length > 0) {
-          // Remove them from current positions and insert them after the moved handle
-          const filteredIds = newSongIds.filter(id => !tailSongs.includes(id));
-          const handleIdx = filteredIds.indexOf(active.id as string);
-          filteredIds.splice(handleIdx + 1, 0, ...tailSongs);
-          finalNewSongIds = filteredIds;
-        }
+        if (destinationMarkerIndex >= 0) anchorId = originalIds[destinationMarkerIndex];
       }
 
+      const anchorIndex = remaining.indexOf(anchorId);
+      if (anchorIndex < 0) return;
+
+      // A posição relativa do ponteiro define antes/depois do bloco-alvo.
+      // A correção explícita do índice após remover o bloco evita a falha ao mover para baixo.
+      const activeRect = active.rect.current.translated;
+      const overRect = over.rect;
+      const activeCenterY = activeRect ? activeRect.top + activeRect.height / 2 : null;
+      const overCenterY = overRect ? overRect.top + overRect.height / 2 : null;
+      const movingDown = oldIdx < overIdx;
+      const insertAfter = activeCenterY !== null && overCenterY !== null
+        ? activeCenterY > overCenterY
+        : movingDown;
+
+      let insertionIndex = anchorIndex + (insertAfter ? 1 : 0);
+      // Ao soltar sobre o marcador de um bloco abaixo, inserir após o bloco-alvo
+      // mantém seus itens juntos, sem intercalar os dois blocos.
+      if (insertAfter && anchorId.startsWith('group:')) {
+        insertionIndex = anchorIndex + 1;
+        while (insertionIndex < remaining.length && !remaining[insertionIndex].startsWith('group:')) insertionIndex++;
+      }
+      finalNewSongIds = [...remaining.slice(0, insertionIndex), ...blockChunk, ...remaining.slice(insertionIndex)];
+    } else {
+      // Arrastar pelo marcador da música move somente aquela música.
+      // Soltar diretamente sobre um marcador posiciona a música dentro do bloco.
+      if (overId.startsWith('group:')) {
+        finalNewSongIds = originalIds.filter(id => id !== activeId);
+        const markerIndex = finalNewSongIds.indexOf(overId);
+        if (markerIndex < 0) return;
+
+        // Diferencia soltar acima ou abaixo do marcador que foi detectado.
+        // Acima do marcador significa fim do bloco anterior; abaixo significa
+        // início do bloco identificado pelo marcador. Isso evita que uma música
+        // solta após a última faixa de um bloco salte para o bloco seguinte.
+        const activeRect = active.rect.current.translated;
+        const overRect = over.rect;
+        const activeCenterY = activeRect
+          ? activeRect.top + activeRect.height / 2
+          : null;
+        const overCenterY = overRect
+          ? overRect.top + overRect.height / 2
+          : null;
+        const insertAfterMarker = activeCenterY !== null && overCenterY !== null
+          ? activeCenterY >= overCenterY
+          : true;
+        const insertionIndex = markerIndex + (insertAfterMarker ? 1 : 0);
+        finalNewSongIds.splice(insertionIndex, 0, activeId);
+      } else {
+        // Sobre outra música, preserva a lógica natural de ordenação: a música
+        // pode ficar antes ou depois do destino conforme a direção do arrasto.
+        finalNewSongIds = arrayMove(originalIds, oldIdx, overIdx);
+      }
+    }
+
+    try {
       const updatedRepertorio = { ...selectedRepertorio, songIds: finalNewSongIds };
       setSelectedRepertorio(updatedRepertorio);
       setRepertorios(prev => prev.map(r => r.id === selectedRepertorio.id ? updatedRepertorio : r));
-
-      const setlistRef = doc(db, 'setlists', selectedRepertorio.id);
-      await updateDoc(setlistRef, {
+      await updateDoc(doc(db, 'setlists', selectedRepertorio.id), {
         songIds: finalNewSongIds,
         updatedAt: new Date().toISOString()
       });
     } catch (error) {
       console.error('Error reordering items:', error);
-      // Revert if Firestore update fails
       setSelectedRepertorio(selectedRepertorio);
       handleFirestoreError(error, OperationType.WRITE, 'setlists');
     }
@@ -2013,75 +2180,20 @@ const handleRepertorioPdfFull = async () => {
     const groups = selectedRepertorio.songGroups || [];
     let songCounter = 1;
     let blockCounter = 1;
-    let currentGroupLocked = false;
 
     songIds.forEach((id: string) => {
       if (id.startsWith('group:')) {
         const gid = id.split(':')[1];
         const group = groups.find((g: any) => g.id === gid);
-        if (group) {
-          currentGroupLocked = !!group.isLocked;
-          items.push({ 
-            id: id, 
-            type: 'group_handle', 
-            group: group,
-            displayIndex: blockCounter++
-          });
-        }
+        if (group) items.push({ id, type: 'group_handle', group, displayIndex: blockCounter++ });
       } else {
-        items.push({ 
-          id: id, 
-          type: 'song', 
-          index: songCounter++, 
-          isLocked: currentGroupLocked
-        });
+        items.push({ id, type: 'song', index: songCounter++ });
       }
     });
-
     return items;
   }, [selectedRepertorio?.songIds, selectedRepertorio?.songGroups]);
 
   const sortableIds = useMemo(() => sortableItemsData.map(item => item.id), [sortableItemsData]);
-
-  const handleToggleGroupLock = async (groupId: string) => {
-    if (!selectedRepertorio) return;
-    const newGroups = (selectedRepertorio.songGroups || []).map((g: any) => 
-      g.id === groupId ? { ...g, isLocked: !g.isLocked } : g
-    );
-    try {
-      const setlistRef = doc(db, 'setlists', selectedRepertorio.id);
-      await updateDoc(setlistRef, {
-        songGroups: newGroups,
-        updatedAt: new Date().toISOString()
-      });
-      const updated = { ...selectedRepertorio, songGroups: newGroups };
-      setSelectedRepertorio(updated);
-      setRepertorios(prev => prev.map(r => r.id === selectedRepertorio.id ? updated : r));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'setlists');
-    }
-  };
-
-  const handleToggleAllGroupsLock = async () => {
-    if (!selectedRepertorio) return;
-    const allLocked = selectedRepertorio.songGroups?.every((g: any) => g.isLocked) || false;
-    const newGroups = (selectedRepertorio.songGroups || []).map((g: any) => ({
-      ...g,
-      isLocked: !allLocked
-    }));
-    try {
-      const setlistRef = doc(db, 'setlists', selectedRepertorio.id);
-      await updateDoc(setlistRef, {
-        songGroups: newGroups,
-        updatedAt: new Date().toISOString()
-      });
-      const updated = { ...selectedRepertorio, songGroups: newGroups };
-      setSelectedRepertorio(updated);
-      setRepertorios(prev => prev.map(r => r.id === selectedRepertorio.id ? updated : r));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'setlists');
-    }
-  };
 
   const handleUpdateGroupTitle = async (groupId: string, newTitle: string) => {
     if (!selectedRepertorio) return;
@@ -2214,12 +2326,17 @@ const handleRepertorioPdfFull = async () => {
   };
 
   const filteredSongs = useMemo(() => {
-    let result = songs.filter(s => 
-      s.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.artist.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (s.composition && s.composition.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      s.category.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const normalizedTerm = normalizeSearchText(searchTerm.trim());
+    let result = songs.filter(s => {
+      if (!normalizedTerm) return true;
+      return (
+        normalizeSearchText(s.title).includes(normalizedTerm) ||
+        normalizeSearchText(s.artist).includes(normalizedTerm) ||
+        normalizeSearchText(s.composition).includes(normalizedTerm) ||
+        normalizeSearchText(s.category).includes(normalizedTerm) ||
+        normalizeSearchText(s.chordPro).includes(normalizedTerm)
+      );
+    });
 
     if (filterKey) {
       result = result.filter(s => s.key === filterKey);
@@ -2259,13 +2376,14 @@ const handleRepertorioPdfFull = async () => {
   }, [repertorios, searchTerm]);
 
   const allKeys = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  // A lista do seletor acompanha o modo da tonalidade original: maior ou menor.
+  const songKeyOptions = selectedSong?.key?.endsWith('m')
+    ? allKeys.map(k => `${k}m`)
+    : allKeys;
   
   const handleKeySelect = async (targetKey: string) => {
     if (!selectedSong) return;
-    const sourceIndex = allKeys.indexOf(selectedSong.key);
-    const targetIndex = allKeys.indexOf(targetKey);
-    
-    const diff = sourceIndex !== -1 && targetIndex !== -1 ? targetIndex - sourceIndex : 0;
+    const diff = getSemitones(selectedSong.key, targetKey);
     
     // 1. Atualizar visualmente IMEDIATAMENTE (Feedback Instantâneo)
     setTransposition(diff);
@@ -2298,10 +2416,12 @@ const handleRepertorioPdfFull = async () => {
 
   const currentKey = useMemo(() => {
     if (!selectedSong) return '';
-    const sourceIndex = allKeys.indexOf(selectedSong.key);
+    const isMinor = selectedSong.key?.endsWith('m') || false;
+    const sourceRoot = (selectedSong.key || '').replace(/m$/, '');
+    const sourceIndex = allKeys.indexOf(sourceRoot);
     if (sourceIndex === -1) return selectedSong.key;
     const targetIndex = (sourceIndex + transposition + 12) % 12;
-    return allKeys[targetIndex];
+    return `${allKeys[targetIndex]}${isMinor ? 'm' : ''}`;
   }, [selectedSong, transposition]);
 
   if (!user) {
@@ -2390,6 +2510,7 @@ const handleRepertorioPdfFull = async () => {
               <button 
                 onClick={() => {
                   setSidebarView('tabs');
+                  setSelectedSongIdForAction(null);
                   setSelectedRepertorio(null);
                   setTransposition(0);
                 }}
@@ -2453,6 +2574,7 @@ const handleRepertorioPdfFull = async () => {
           <SidebarNavItem 
             icon={<Music size={18} />} 
             label="Músicas" 
+            tooltip="Consulte, pesquise e organize seu acervo musical."
             active={sidebarTab === 'songs'} 
             onClick={() => {
               setSidebarTab('songs');
@@ -2466,6 +2588,7 @@ const handleRepertorioPdfFull = async () => {
           <SidebarNavItem 
             icon={<ListMusic size={18} />} 
             label="Repertórios" 
+            tooltip="Monte e gerencie listas de músicas para apresentações."
             active={sidebarTab === 'repertorios'} 
             onClick={() => {
               setSidebarTab('repertorios');
@@ -2479,6 +2602,7 @@ const handleRepertorioPdfFull = async () => {
           <SidebarNavItem 
             icon={<LayoutList size={18} />} 
             label="Blocos" 
+            tooltip="Organize músicas em blocos para orientar a execução."
             active={sidebarTab === 'blocks'} 
             onClick={() => {
               setSidebarTab('blocks');
@@ -2493,6 +2617,7 @@ const handleRepertorioPdfFull = async () => {
           <SidebarNavItem 
             icon={<Settings size={18} />} 
             label="Ajustes" 
+            tooltip="Configure as preferências e ferramentas do aplicativo."
             active={sidebarTab === 'settings'} 
             onClick={() => {
               setSidebarTab('settings');
@@ -2505,7 +2630,7 @@ const handleRepertorioPdfFull = async () => {
           />
         </nav>
 
-        <div className="px-4 pt-4 pb-2 space-y-4">
+        <div className={`px-4 pb-2 ${sidebarTab === 'songs' ? 'pt-2 space-y-2' : 'pt-4 space-y-4'}`}>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#0D47A1]" size={16} />
             <input 
@@ -2657,21 +2782,21 @@ const handleRepertorioPdfFull = async () => {
                   </div>
 
                   {/* TODAS Folder */}
-                  <div className="mt-2 border border-border/50 rounded-xl overflow-hidden bg-surface/30 mb-2">
+                  <div className="mx-2 mt-2 mb-2 border border-[#ECEDEF] rounded-[14px] overflow-hidden bg-[#EEF1F5]">
                     <button 
                       onClick={() => {
                         setExpandedFolders(prev => 
                           prev.includes('all') ? [] : ['all']
                         );
                       }}
-                      className={`w-full flex items-center justify-between p-3.5 transition-colors ${expandedFolders.includes('all') ? 'bg-[#E6ECF5] border-b border-border dark:bg-primary/20' : 'hover:bg-surface'}`}
+                      className="w-full min-h-[48px] flex items-center justify-between gap-3 px-3.5 py-2.5 bg-[#EEF1F5] transition-colors"
                     >
-                      <div className="flex items-center gap-3">
-                        <FolderIcon size={16} fill="currentColor" className="text-text-dim" />
-                        <span className="text-xs font-bold uppercase tracking-[0.1em]">TODAS</span>
-                        <span className="text-[10px] bg-border px-1.5 py-0.5 rounded text-text-dim font-bold">{filteredSongs.length}</span>
+                      <div className="flex w-full min-w-0 items-center gap-3">
+                        <FolderIcon size={16} fill="currentColor" className="text-[#174EA6]" />
+                        <span className="min-w-0 flex-1 text-left text-[13px] font-bold uppercase tracking-[0.08em] text-[#174EA6]">TODAS</span>
+                        <span className="ml-auto text-[10px] min-w-[18px] h-[18px] px-1 bg-[#174EA6] rounded-[4px] text-white font-bold flex items-center justify-center tabular-nums">{filteredSongs.length}</span>
                       </div>
-                      <ChevronRight size={16} className={`text-text-dim transition-transform duration-300 ${expandedFolders.includes('all') ? 'rotate-90' : ''}`} />
+                      <ChevronRight size={16} className={`text-[#174EA6] transition-transform duration-300 ${expandedFolders.includes('all') ? 'rotate-90' : ''}`} />
                     </button>
                     <AnimatePresence>
                       {expandedFolders.includes('all') && (
@@ -2679,7 +2804,7 @@ const handleRepertorioPdfFull = async () => {
                           initial={{ height: 0, opacity: 0 }}
                           animate={{ height: 'auto', opacity: 1 }}
                           exit={{ height: 0, opacity: 0 }}
-                          className="bg-bg/40"
+                          className="bg-white"
                         >
                           {filteredSongs.length === 0 ? (
                             <div className="p-4 text-[10px] text-center text-text-dim italic uppercase tracking-widest">Sem músicas</div>
@@ -2721,28 +2846,25 @@ const handleRepertorioPdfFull = async () => {
                   </div>
 
                   {/* Archive Folders */}
-                  <div className="px-2 mb-2">
-                    <span className="text-[9px] font-black uppercase text-text-dim/50 tracking-[0.2em] ml-1">Arquivos</span>
-                  </div>
                   {folders.filter(f => !f.type || f.type === 'song').map(folder => {
                     const isExpanded = expandedFolders.includes(folder.id!);
                     const folderSongs = filteredSongs.filter(s => s.folderId === folder.id);
                     if (folderSongs.length === 0 && searchTerm) return null;
 
                     return (
-                      <div key={folder.id} className="mt-2 border border-border/50 rounded-xl overflow-hidden bg-surface/30">
+                      <div key={folder.id} className="mx-2 mt-2 border border-[#ECEDEF] rounded-[14px] overflow-hidden bg-[#EEF1F5]">
                         <button 
                           onClick={() => {
                             setExpandedFolders(prev => 
                               isExpanded ? [] : [folder.id!]
                             );
                           }}
-                          className={`w-full flex items-center justify-between p-3.5 transition-colors ${isExpanded ? 'bg-[#E6ECF5] border-b border-border dark:bg-primary/20' : 'hover:bg-surface'}`}
+                          className="w-full min-h-[48px] flex items-center justify-between gap-3 px-3.5 py-2.5 bg-[#EEF1F5] transition-colors"
                         >
-                          <div className="flex items-center gap-3">
-                            <FolderIcon size={16} className={isExpanded ? 'text-primary' : 'text-text-dim'} />
-                            <span className="text-xs font-bold uppercase tracking-widest truncate max-w-[140px]">{folder.name}</span>
-                            <span className="text-[10px] bg-border px-1.5 py-0.5 rounded text-text-dim font-bold">{folderSongs.length}</span>
+                          <div className="flex flex-1 min-w-0 items-center gap-3">
+                            <FolderIcon size={16} className="text-[#174EA6]" />
+                            <span className="min-w-0 flex-1 text-left text-[13px] font-bold uppercase tracking-[0.08em] truncate max-w-[140px] text-[#174EA6]">{folder.name}</span>
+                            <span className="ml-auto text-[10px] min-w-[18px] h-[18px] px-1 bg-[#174EA6] rounded-[4px] text-white font-bold flex items-center justify-center tabular-nums">{folderSongs.length}</span>
                           </div>
                           <ChevronRight size={16} className={`text-text-dim transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`} />
                         </button>
@@ -2836,28 +2958,25 @@ const handleRepertorioPdfFull = async () => {
               {sidebarTab === 'repertorios' && sidebarView === 'tabs' && (
                 <div className="space-y-0 text-primary">
                   {/* Repertoire Markers (Labels) */}
-                  <div className="px-2 mb-2">
-                    <span className="text-[9px] font-black uppercase text-text-dim/50 tracking-[0.2em] ml-1">Classificadores</span>
-                  </div>
                   {folders.filter(f => f.type === 'repertorio').map(folder => {
                     const isExpanded = expandedRepFolders.includes(folder.id!);
                     const folderReps = filteredRepertorios.filter(r => r.folderId === folder.id);
                     if (folderReps.length === 0 && searchTerm) return null;
 
                     return (
-                      <div key={folder.id} className="mt-2 border border-border/50 rounded-xl overflow-hidden bg-surface/30">
+                      <div key={folder.id} className="mx-2 mt-2 border border-[#ECEDEF] rounded-[14px] overflow-hidden bg-[#EEF1F5]">
                         <button 
                           onClick={() => {
                             setExpandedRepFolders(prev => 
                               isExpanded ? [] : [folder.id!]
                             );
                           }}
-                          className={`w-full flex items-center justify-between p-3.5 transition-colors ${isExpanded ? 'bg-[#E6ECF5] border-b border-border dark:bg-primary/20' : 'hover:bg-surface'}`}
+                          className="w-full min-h-[48px] flex items-center justify-between gap-3 px-3.5 py-2.5 bg-[#EEF1F5] transition-colors"
                         >
-                          <div className="flex items-center gap-3">
-                            <FolderIcon size={16} className={isExpanded ? 'text-primary' : 'text-text-dim'} />
-                            <span className="text-xs font-bold uppercase tracking-widest truncate max-w-[140px]">{folder.name}</span>
-                            <span className="text-[10px] bg-border px-1.5 py-0.5 rounded text-text-dim font-bold">{folderReps.length}</span>
+                          <div className="flex w-full min-w-0 items-center gap-3">
+                            <FolderIcon size={16} className="text-[#174EA6]" />
+                            <span className="min-w-0 flex-1 text-left text-[13px] font-bold uppercase tracking-[0.08em] truncate max-w-[140px] text-[#174EA6]">{folder.name}</span>
+                            <span className="ml-auto text-[10px] min-w-[18px] h-[18px] px-1 bg-[#174EA6] rounded-[4px] text-white font-bold flex items-center justify-center tabular-nums">{folderReps.length}</span>
                           </div>
                           <ChevronRight size={16} className={`text-text-dim transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`} />
                         </button>
@@ -2891,10 +3010,14 @@ const handleRepertorioPdfFull = async () => {
                                       setSelectedRepIds([repertorio.id!]);
                                     }}
                                     onClick={() => {
+                                      // A seleção de ações é contextual ao repertório; não deve
+                                      // permanecer marcada ao abrir outro repertório.
+                                      setSelectedSongIdForAction(null);
                                       setSelectedRepertorio(repertorio);
                                       setSidebarView('repertorio-songs');
                                     }}
                                     onDelete={() => deleteRepertorio(repertorio.id)}
+                                    onEdit={() => { setEditingRepertorio(repertorio); setIsSidebarOpen(false); setCurrentView('repertorio-form'); }}
                                     onShare={() => {
                                       const repertorioSongs = songs.filter(s => repertorio.songIds.includes(s.id!));
                                       if (navigator.share) {
@@ -2918,9 +3041,6 @@ const handleRepertorioPdfFull = async () => {
                   })}
 
                   {/* Repertorios outside markers */}
-                  <div className="px-2 mt-4 mb-1">
-                    <span className="text-[9px] font-black uppercase text-text-dim/50 tracking-[0.2em] ml-1">Outros</span>
-                  </div>
                   {filteredRepertorios.filter(r => !r.folderId).map(repertorio => (
                     <RepertorioSidebarItem 
                       key={repertorio.id}
@@ -2939,10 +3059,13 @@ const handleRepertorioPdfFull = async () => {
                         setSelectedRepIds([repertorio.id!]);
                       }}
                       onClick={() => {
+                        // Limpa qualquer seleção de ação herdada do repertório anterior.
+                        setSelectedSongIdForAction(null);
                         setSelectedRepertorio(repertorio);
                         setSidebarView('repertorio-songs');
                       }}
                       onDelete={() => deleteRepertorio(repertorio.id)}
+                      onEdit={() => { setEditingRepertorio(repertorio); setCurrentView('repertorio-form'); }}
                       onShare={() => {
                         const repertorioSongs = songs.filter(s => repertorio.songIds.includes(s.id!));
                         if (navigator.share) {
@@ -2961,54 +3084,36 @@ const handleRepertorioPdfFull = async () => {
               )}
 
               {sidebarTab === 'blocks' && (
-                <div className="space-y-0 p-2">
-                  <button 
-                    onClick={() => {
-                      setCurrentView('block-form');
-                      setIsSidebarOpen(false);
-                    }}
-                    className="w-full flex items-center gap-2 p-3 text-primary font-bold text-sm hover:bg-surface rounded-lg mb-2"
-                  >
-                    <Plus size={16} /> Novo Bloco
-                  </button>
-                  <div className="space-y-1">
-                    {songBlocks.map(block => (
-                      <button
-                        key={block.id}
-                        onClick={() => {
-                          setSelectedBlockSet(block);
-                          setCurrentView('block-details');
-                          setIsSidebarOpen(false);
-                        }}
-                        className={`w-full text-left p-3 rounded-lg transition-all group flex items-center justify-between border ${
-                          selectedBlockSet?.id === block.id 
-                          ? 'bg-primary/10 border-primary text-primary' 
-                          : 'border-transparent text-zinc-400 hover:bg-surface'
-                        }`}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="font-bold text-sm truncate uppercase tracking-normal text-black">
-                            {block.title}
-                          </div>
-                          <div className="text-[10px] opacity-70 flex items-center gap-2">
-                             <span>{block.suggestions.length} Blocos</span>
-                             <span>•</span>
-                             <span>{new Date(block.createdAt).toLocaleDateString('pt-BR')}</span>
-                          </div>
-                        </div>
-                        <ChevronRight size={14} className={`transition-transform ${selectedBlockSet?.id === block.id ? 'translate-x-0 opacity-100' : '-translate-x-2 opacity-0 group-hover:translate-x-0 group-hover:opacity-100'}`} />
-                      </button>
-                    ))}
-                  </div>
+                <div className="space-y-2 p-2">
+                  {songBlocks.map(block => (
+                    <button
+                      key={block.id}
+                      onClick={() => {
+                        setSelectedBlockSet(block);
+                        setCurrentView('block-details');
+                        setIsSidebarOpen(false);
+                      }}
+                      className="w-full min-h-[48px] text-left px-3.5 py-2.5 rounded-[14px] transition-colors group flex items-center gap-3 border border-[#ECEDEF] bg-[#EEF1F5] hover:bg-[#EEF1F5]" 
+                    >
+                      <FolderIcon size={16} strokeWidth={1.8} className="shrink-0 text-[#174EA6]" />
+                      <span className="min-w-0 flex-1 text-left font-bold text-[13px] truncate uppercase tracking-[0.08em] text-[#174EA6]">
+                        {block.title}
+                      </span>
+                      <span className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-[4px] bg-[#174EA6] text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
+                        {(block.suggestions || []).length}
+                      </span>
+                      <ChevronRight size={16} strokeWidth={1.8} className="shrink-0 text-[#666666] transition-transform group-hover:translate-x-0.5" />
+                    </button>
+                  ))}
                 </div>
               )}
 
               {sidebarTab === 'settings' && (
-                <div className="flex flex-col h-full bg-surface">
-                  <div className="p-6 border-b border-border bg-bg/50">
-                    <h3 className="text-sm font-bold uppercase tracking-widest text-text-main">Ajustes & Configurações</h3>
+                <div className="flex flex-col h-full bg-white">
+                  <div className="p-6 border-b border-[#174EA6]/30 bg-white">
+                    <h3 className="text-sm font-bold uppercase tracking-widest text-[#174EA6]">Ajustes & Configurações</h3>
                   </div>
-                  <div className="flex-1 py-1">
+                  <div className="flex-1 py-1 bg-white">
                    {[
                       { id: 'geral', label: 'Geral', icon: <Settings size={18} /> },
                       { id: 'ia', label: 'Chave API', icon: <Brain size={18} /> },
@@ -3026,10 +3131,10 @@ const handleRepertorioPdfFull = async () => {
                             setIsSidebarOpen(false);
                           }
                         }}
-                        className={`w-full text-left px-6 py-4 text-sm font-bold uppercase tracking-widest border-l-4 transition-all flex items-center gap-3 ${
+                        className={`w-full text-left px-6 py-4 text-sm font-bold uppercase tracking-widest border-l-4 border-b border-b-[#174EA6]/25 transition-all flex items-center gap-3 ${
                           currentView === 'settings' && activeSettingsTab === item.id 
-                            ? 'bg-primary/10 border-primary text-primary' 
-                            : 'border-transparent text-text-dim hover:bg-surface hover:text-text-main'
+                            ? 'bg-[#E6ECF5] border-l-[#174EA6] text-[#174EA6]' 
+                            : 'bg-white border-l-transparent text-[#174EA6] hover:bg-[#F3F6FB]'
                         }`}
                       >
                         {item.icon}
@@ -3038,9 +3143,9 @@ const handleRepertorioPdfFull = async () => {
                     ))}
                     <button 
                       onClick={() => setIsLogoutDialogOpen(true)}
-                      className="w-full text-left px-6 py-4 text-sm font-bold uppercase tracking-widest border-l-4 border-transparent text-red-500 hover:bg-red-500/10 transition-all flex items-center gap-3"
+                      className="w-full text-left px-6 py-4 text-sm font-bold uppercase tracking-widest border-l-4 border-l-transparent border-b border-b-[#174EA6]/25 bg-white text-[#174EA6] hover:bg-[#F3F6FB] transition-all flex items-center gap-3"
                     >
-                      <LogOut size={18} />
+                      <LogOut size={18} className="text-[#174EA6]" />
                       Sair
                     </button>
                   </div>
@@ -3053,7 +3158,7 @@ const handleRepertorioPdfFull = async () => {
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <h3 className="font-bold text-lg truncate uppercase tracking-tight text-[#0D47A1] leading-none mb-1">
-                      {selectedRepertorio?.title} ({selectedRepertorio?.songIds?.filter((id: string) => !id.startsWith('group:')).length || 0})
+                      {selectedRepertorio?.title} {selectedRepertorio?.songIds?.filter((id: string) => !id.startsWith('group:')).length || 0}
                     </h3>
                     {selectedRepertorio?.date ? (
                       <p className="text-[10px] text-text-dim uppercase font-bold tracking-[0.2em] mt-1">
@@ -3062,16 +3167,11 @@ const handleRepertorioPdfFull = async () => {
                     ) : null}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    <button 
-                      onClick={handleToggleAllGroupsLock}
-                      className="p-2 hover:bg-surface rounded-full text-primary transition-all hover:scale-110 active:scale-95"
-                      title={selectedRepertorio?.songGroups?.every((g: any) => g.isLocked) ? "Desbloquear Todos" : "Travar Todos"}
-                    >
-                      {selectedRepertorio?.songGroups?.every((g: any) => g.isLocked) ? <Lock size={20} /> : <LockOpen size={20} className="opacity-40" />}
-                    </button>
+
                     <button 
                       onClick={() => {
                         setSidebarView('tabs');
+                        setSelectedSongIdForAction(null);
                         setSelectedRepertorio(null);
                         setTransposition(0);
                       }}
@@ -3104,7 +3204,6 @@ const handleRepertorioPdfFull = async () => {
                               group={item.group}
                               displayIndex={item.displayIndex}
                               onUpdateGroupTitle={handleUpdateGroupTitle}
-                              onToggleLock={() => handleToggleGroupLock(item.group.id)}
                               onClick={() => {
                                 setSelectedSong({
                                   id: item.id,
@@ -3118,32 +3217,11 @@ const handleRepertorioPdfFull = async () => {
                                 updateLiveSong(item.id);
                               }}
                               onDelete={async () => {
-                                const isLocked = item.group.isLocked;
-                                const confirmMsg = isLocked 
-                                  ? 'Este bloco está travado. Excluir o marcador e TODAS as músicas deste bloco?' 
-                                  : 'Excluir este marcador de bloco? As músicas não serão excluídas.';
-                                
-                                if (!window.confirm(confirmMsg)) return;
+                                if (!window.confirm('Excluir este marcador de bloco? As músicas permanecerão no repertório.')) return;
 
                                 const gid = item.group.id;
                                 const groupMarkerId = `group:${gid}`;
-                                let newIds = [...selectedRepertorio.songIds];
-                                
-                                if (isLocked) {
-                                  const markerIndex = newIds.indexOf(groupMarkerId);
-                                  if (markerIndex !== -1) {
-                                    // Encontrar os IDs a serem removidos (o marcador + músicas seguintes até o próximo marcador)
-                                    const idsToRemove = [groupMarkerId];
-                                    for (let i = markerIndex + 1; i < newIds.length; i++) {
-                                      if (newIds[i].startsWith('group:')) break;
-                                      idsToRemove.push(newIds[i]);
-                                    }
-                                    newIds = newIds.filter(id => !idsToRemove.includes(id));
-                                  }
-                                } else {
-                                  // Apenas remove o marcador
-                                  newIds = newIds.filter(id => id !== groupMarkerId);
-                                }
+                                const newIds = selectedRepertorio.songIds.filter((id: string) => id !== groupMarkerId);
 
                                 const newGroups = (selectedRepertorio.songGroups || []).filter((g: any) => g.id !== gid);
                                 await updateDoc(doc(db, 'setlists', selectedRepertorio.id), { 
@@ -3171,7 +3249,6 @@ const handleRepertorioPdfFull = async () => {
                               isMaestro={isMaestro}
                               isInsideGroup={false}
                               isLastInGroup={false}
-                              isLocked={item.isLocked}
                               isSelected={selectedSongIdForAction === item.id}
                               onToggleSelect={() => {
                                 setSelectedSongIdForAction(prev => prev === item.id ? null : item.id);
@@ -3187,6 +3264,9 @@ const handleRepertorioPdfFull = async () => {
                                 const newIds = selectedRepertorio.songIds.filter((id: string) => id !== item.id);
                                 await updateDoc(doc(db, 'setlists', selectedRepertorio.id), { songIds: newIds });
                                 setSelectedRepertorio({ ...selectedRepertorio, songIds: newIds });
+                                // Se a música removida estava marcada para alguma ação,
+                                // limpa a marcação para não reaparecer em outro repertório.
+                                setSelectedSongIdForAction(prev => prev === item.id ? null : prev);
                               }}
                               onShare={() => {
                                 if (navigator.share) {
@@ -3298,7 +3378,7 @@ const handleRepertorioPdfFull = async () => {
                     >
                       Sem Pasta (Raiz)
                     </button>
-                    {folders.map(f => (
+                    {folders.filter(f => !f.type || f.type === 'song').map(f => (
                       <button 
                         key={f.id}
                         onClick={() => handleBatchMove(f.id!)}
@@ -3317,75 +3397,34 @@ const handleRepertorioPdfFull = async () => {
         <nav className="p-2 border-t border-border bg-[#E6ECF5] flex justify-around relative">
           {sidebarTab === 'songs' ? (
             <>
-              <SidebarNavItem 
-                icon={<Plus size={18} />} 
-                label="Música" 
-                active={false} 
+              <SidebarNavItem
+                icon={<Plus size={18} />}
+                label="Música"
+                tooltip="Cadastrar uma nova música."
+                active={true}
                 variant="light"
                 onClick={() => {
                   setEditingSong(null);
                   setCurrentView('form');
                   setIsSidebarOpen(false);
-                }} 
+                }}
               />
-              <div className="relative" ref={bottomArchiveRef}>
-                <SidebarNavItem 
-                  icon={<Hash size={18} />} 
-                  label="Arquivo" 
-                  active={isSidebarArchiveOpen} 
-                  variant="light"
-                  onClick={() => setIsSidebarArchiveOpen(!isSidebarArchiveOpen)} 
-                />
-                <AnimatePresence>
-                  {isSidebarArchiveOpen && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 bg-white border border-[#DDE3EC] rounded-xl shadow-2xl z-[300] overflow-hidden"
-                    >
-                      <button 
-                        onClick={() => { handleIndividualImport(); setIsSidebarArchiveOpen(false); setIsSidebarOpen(false); }}
-                        className="w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-[#0D47A1] hover:bg-[#E6ECF5] transition-colors border-b border-[#DDE3EC] flex items-center gap-2"
-                      >
-                        <Download size={14} /> Importar Música
-                      </button>
-                      <button 
-                        onClick={() => { handleBulkImport(); setIsSidebarArchiveOpen(false); setIsSidebarOpen(false); }}
-                        className="w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-[#0D47A1] hover:bg-[#E6ECF5] transition-colors border-b border-[#DDE3EC] flex items-center gap-2"
-                      >
-                        <Download size={14} /> Importar Acervo (ZIP)
-                      </button>
-                      <button 
-                        onClick={() => { handleManualExport(); setIsSidebarArchiveOpen(false); if (selectedSongIds.length > 0) setIsSidebarOpen(false); }}
-                        className="w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-[#0D47A1] hover:bg-[#E6ECF5] transition-colors border-b border-[#DDE3EC] flex items-center gap-2"
-                      >
-                        <Upload size={14} /> Exportar Música
-                      </button>
-                      <button 
-                        onClick={() => { setIsExportFolderModalOpen(true); setIsSidebarArchiveOpen(false); setIsSidebarOpen(false); }}
-                        className="w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-[#0D47A1] hover:bg-[#E6ECF5] transition-colors flex items-center gap-2"
-                      >
-                        <Upload size={14} /> Exportar Acervo (ZIP)
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-              <SidebarNavItem 
-                icon={<FolderIcon size={18} />} 
-                label="Pastas" 
-                active={false} 
+              <SidebarNavItem
+                icon={<FolderIcon size={18} />}
+                label="Pastas"
+                tooltip="Criar ou organizar pastas de músicas."
+                active={true}
                 variant="light"
                 onClick={() => {
                   setManagingFolderType('song');
                   setIsSidebarOpen(false);
-                }} 
+                }}
               />
-              <SidebarNavItem 
-                icon={expandedFolders.length > 0 ? (isSelectionMode ? <Check size={18} /> : <CheckSquare size={18} />) : <Settings size={18} />} 
-                label={expandedFolders.length > 0 ? (isSelectionMode ? "Concluir" : "Selecionar") : "Ajustes"} 
-                active={expandedFolders.length > 0 ? isSelectionMode : sidebarTab === 'settings'} 
+              <SidebarNavItem
+                icon={expandedFolders.length > 0 ? (isSelectionMode ? <Check size={18} /> : <CheckSquare size={18} />) : <Settings size={18} />}
+                label={expandedFolders.length > 0 ? (isSelectionMode ? 'Concluir' : 'Selecionar') : 'Ajustes'}
+                tooltip={expandedFolders.length > 0 ? 'Selecionar músicas para ações em lote.' : 'Abrir ajustes e configurações.'}
+                active={true}
                 variant="light"
                 onClick={() => {
                   if (expandedFolders.length > 0) {
@@ -3395,172 +3434,150 @@ const handleRepertorioPdfFull = async () => {
                     setSidebarTab('settings');
                     setSidebarView('tabs');
                   }
-                }} 
+                }}
               />
-            </>
-          ) : sidebarTab === 'repertorios' ? (
-            <>
-              <SidebarNavItem 
-                icon={<Plus size={18} />} 
-                label="Setlist" 
-                active={false} 
-                variant="light"
-                onClick={() => {
-                  const repFolders = folders.filter(f => f.type === 'repertorio');
-                  if (repFolders.length === 0) {
-                    alert('Por favor, crie uma pasta para repertórios primeiro usando o botão "Pastas".');
-                    return;
-                  }
-                  setIsPickingFolderForNewRep(true);
-                  setIsSidebarOpen(false);
-                }} 
-              />
-              <div className="relative">
-                <SidebarNavItem 
-                  icon={<Hash size={18} />} 
-                  label="Arquivo" 
-                  active={isSidebarArchiveOpen} 
+              <div className="relative" ref={bottomArchiveRef}>
+                <SidebarNavItem
+                  icon={<Save size={18} />}
+                  label="Arquivo"
+                  tooltip="Importar e exportar músicas e acervos."
+                  active={true}
                   variant="light"
-                  onClick={() => setIsSidebarArchiveOpen(!isSidebarArchiveOpen)} 
+                  onClick={() => { setIsSidebarArchiveOpen(!isSidebarArchiveOpen); setIsSidebarActionOpen(false); }}
                 />
                 <AnimatePresence>
-                  {isSidebarArchiveOpen && sidebarTab === 'repertorios' && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 bg-white border border-[#DDE3EC] rounded-xl shadow-2xl z-[300] overflow-hidden"
-                    >
-                      <button 
-                        onClick={() => { handleRstImport(); setIsSidebarArchiveOpen(false); }}
-                        className="w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-[#0D47A1] hover:bg-[#E6ECF5] transition-colors border-b border-[#DDE3EC] flex items-center gap-2"
-                      >
-                        <Download size={14} /> Importar Repertório
-                      </button>
-                      <button 
-                        onClick={() => { handleRstExport(); setIsSidebarArchiveOpen(false); }}
-                        className="w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-[#0D47A1] hover:bg-[#E6ECF5] transition-colors border-b border-[#DDE3EC] flex items-center gap-2"
-                      >
-                        <Upload size={14} /> Exportar Repertório
-                      </button>
-                      <button 
-                        onClick={() => { handleRepertorioPdfList(); setIsSidebarArchiveOpen(false); }}
-                        className="w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-[#0D47A1] hover:bg-[#E6ECF5] transition-colors border-b border-[#DDE3EC] flex items-center gap-2"
-                      >
-                        <FileText size={14} /> Exportar Setlist
-                      </button>
-                      <button 
-                        onClick={() => { handleRepertorioPdfFull(); setIsSidebarArchiveOpen(false); }}
-                        className="w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-[#0D47A1] hover:bg-[#E6ECF5] transition-colors flex items-center gap-2"
-                      >
-                        <FileText size={14} /> Exportar Set Musical
-                      </button>
+                  {isSidebarArchiveOpen && sidebarTab === 'songs' && (
+                    <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 bg-white border border-[#DDE3EC] rounded-xl shadow-2xl z-[300] overflow-hidden">
+                      <button onClick={() => { handleIndividualImport(); setIsSidebarArchiveOpen(false); setIsSidebarOpen(false); }} className="w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-[#0D47A1] hover:bg-[#E6ECF5] border-b border-[#DDE3EC] flex items-center gap-2"><Download size={14} /> Importar Música</button>
+                      <button onClick={() => { handleBulkImport(); setIsSidebarArchiveOpen(false); setIsSidebarOpen(false); }} className="w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-[#0D47A1] hover:bg-[#E6ECF5] border-b border-[#DDE3EC] flex items-center gap-2"><Download size={14} /> Importar Acervo (ZIP)</button>
+                      <button disabled={selectedSongIds.length === 0} onClick={() => { handleManualExport(); setIsSidebarArchiveOpen(false); if (selectedSongIds.length > 0) setIsSidebarOpen(false); }} className={`w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest border-b border-[#DDE3EC] flex items-center gap-2 ${selectedSongIds.length === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-[#0D47A1] hover:bg-[#E6ECF5]'}`}><Upload size={14} /> Exportar Música</button>
+                      <button disabled={songs.length === 0} onClick={() => { setIsExportFolderModalOpen(true); setIsSidebarArchiveOpen(false); setIsSidebarOpen(false); }} className={`w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest flex items-center gap-2 ${songs.length === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-[#0D47A1] hover:bg-[#E6ECF5]'}`}><Upload size={14} /> Exportar Acervo (ZIP)</button>
                     </motion.div>
                   )}
                 </AnimatePresence>
               </div>
-              <SidebarNavItem 
-                icon={sidebarView === 'repertorio-songs' ? <LayoutList size={18} /> : <FolderIcon size={18} />} 
-                label={sidebarView === 'repertorio-songs' ? "Bloco" : "Pastas"} 
-                active={false} 
+            </>
+          ) : sidebarTab === 'repertorios' && sidebarView === 'repertorio-songs' && selectedRepertorio ? (
+            <>
+              <SidebarNavItem
+                icon={<Plus size={18} />}
+                label="Música"
+                tooltip="Adicionar músicas ao repertório aberto."
+                active={true}
                 variant="light"
                 onClick={() => {
-                  if (sidebarView === 'repertorio-songs') {
-                    handleCreateBlock();
-                  } else {
-                    setManagingFolderType('repertorio');
-                    setIsSidebarOpen(false);
-                  }
-                }} 
+                  setEditingRepertorio(selectedRepertorio);
+                  setCurrentView('repertorio-form');
+                  setIsSidebarOpen(false);
+                }}
               />
-              <SidebarNavItem 
-                icon={sidebarView === 'repertorio-songs' ? <Edit2 size={18} /> : (isSelectionMode ? <Check size={18} /> : <CheckSquare size={18} />)} 
-                label={sidebarView === 'repertorio-songs' ? "Editar" : (isSelectionMode ? "Concluir" : "Selecionar")} 
-                active={isSelectionMode && sidebarView !== 'repertorio-songs'} 
+              <SidebarNavItem
+                icon={<Hash size={18} />}
+                label="Bloco"
+                tooltip="Adicionar um marcador de bloco ao repertório aberto."
+                active={true}
+                variant="light"
+                onClick={handleCreateBlock}
+              />
+              <SidebarNavItem
+                icon={isSelectionMode ? <Check size={18} /> : <CheckSquare size={18} />}
+                label={isSelectionMode ? 'Concluir' : 'Selecionar'}
+                tooltip="A seleção em lote de repertórios está disponível na lista de repertórios."
+                active={true}
+                variant="light"
+                disabled={true}
+                onClick={() => {}}
+              />
+              <div className="relative" ref={bottomArchiveRef}>
+                <SidebarNavItem
+                  icon={<Save size={18} />}
+                  label="Arquivo"
+                  tooltip="Exportar o repertório e seus documentos."
+                  active={true}
+                  variant="light"
+                  onClick={() => { setIsSidebarArchiveOpen(!isSidebarArchiveOpen); setIsSidebarActionOpen(false); }}
+                />
+                <AnimatePresence>
+                  {isSidebarArchiveOpen && (
+                    <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 bg-white border border-[#DDE3EC] rounded-xl shadow-2xl z-[300] overflow-hidden">
+                      <button disabled={!(selectedRepertorio.songIds || []).some((id: string) => !id.startsWith('group:'))} onClick={() => { handleRepertorioPdfList(); setIsSidebarArchiveOpen(false); }} className={`w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest border-b border-[#DDE3EC] flex items-center gap-2 ${!(selectedRepertorio.songIds || []).some((id: string) => !id.startsWith('group:')) ? 'text-gray-300 cursor-not-allowed' : 'text-[#0D47A1] hover:bg-[#E6ECF5]'}`}><FileText size={14} /> Exportar Setlist</button>
+                      <button disabled={!(selectedRepertorio.songIds || []).some((id: string) => songs.some(song => song.id === id))} onClick={() => { handleRepertorioPdfFull(); setIsSidebarArchiveOpen(false); }} className={`w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest flex items-center gap-2 ${!(selectedRepertorio.songIds || []).some((id: string) => songs.some(song => song.id === id)) ? 'text-gray-300 cursor-not-allowed' : 'text-[#0D47A1] hover:bg-[#E6ECF5]'}`}><FileText size={14} /> Exportar Set Musical</button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </>
+          ) : sidebarTab === 'repertorios' ? (
+            <>
+              <SidebarNavItem
+                icon={<Plus size={18} />}
+                label="Setlist"
+                tooltip="Criar um novo repertório."
+                active={true}
                 variant="light"
                 onClick={() => {
-                  if (sidebarView === 'repertorio-songs') {
-                    setEditingRepertorio(selectedRepertorio);
-                    setCurrentView('repertorio-form');
-                    setIsSidebarOpen(false);
+                  const repFolders = folders.filter(f => f.type === 'repertorio');
+                  if (repFolders.length === 0) {
+                    alert('Por favor, crie uma pasta para repertórios primeiro usando o botão “Pastas”.');
                     return;
                   }
-                  if (sidebarTab === 'repertorios') {
-                    setIsSelectionMode(!isSelectionMode);
-                    if (isSelectionMode) setSelectedRepIds([]);
-                  }
-                }} 
+                  setIsPickingFolderForNewRep(true);
+                  setIsSidebarOpen(false);
+                }}
               />
+              <SidebarNavItem
+                icon={<FolderIcon size={18} />}
+                label="Pastas"
+                tooltip="Criar ou organizar pastas de repertórios."
+                active={true}
+                variant="light"
+                onClick={() => {
+                  setManagingFolderType('repertorio');
+                  setIsSidebarOpen(false);
+                }}
+              />
+              <SidebarNavItem
+                icon={isSelectionMode ? <Check size={18} /> : <CheckSquare size={18} />}
+                label={isSelectionMode ? 'Concluir' : 'Selecionar'}
+                tooltip="Selecionar um ou mais repertórios para ações em lote."
+                active={isSelectionMode}
+                variant="light"
+                disabled={filteredRepertorios.length === 0}
+                onClick={() => {
+                  setIsSelectionMode(!isSelectionMode);
+                  if (isSelectionMode) setSelectedRepIds([]);
+                }}
+              />
+              <div className="relative" ref={bottomArchiveRef}>
+                <SidebarNavItem
+                  icon={<Save size={18} />}
+                  label="Arquivo"
+                  tooltip="Importar e exportar repertórios e documentos."
+                  active={true}
+                  variant="light"
+                  onClick={() => { setIsSidebarArchiveOpen(!isSidebarArchiveOpen); setIsSidebarActionOpen(false); }}
+                />
+                <AnimatePresence>
+                  {isSidebarArchiveOpen && sidebarTab === 'repertorios' && (
+                    <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-60 bg-white border border-[#DDE3EC] rounded-xl shadow-2xl z-[300] overflow-hidden">
+                      <button onClick={() => { handleRstImport(); setIsSidebarArchiveOpen(false); }} className="w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-[#0D47A1] hover:bg-[#E6ECF5] border-b border-[#DDE3EC] flex items-center gap-2"><Download size={14} /> Importar Repertório</button>
+                      <button disabled={selectedRepIds.length === 0} onClick={() => { handleRstExport(); setIsSidebarArchiveOpen(false); }} className={`w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest border-b border-[#DDE3EC] flex items-center gap-2 ${selectedRepIds.length === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-[#0D47A1] hover:bg-[#E6ECF5]'}`}><Upload size={14} /> Exportar Repertório</button>
+                      <button disabled={!selectedRepertorio || !(selectedRepertorio.songIds || []).some((id: string) => !id.startsWith('group:'))} onClick={() => { handleRepertorioPdfList(); setIsSidebarArchiveOpen(false); }} className={`w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest border-b border-[#DDE3EC] flex items-center gap-2 ${!selectedRepertorio || !(selectedRepertorio.songIds || []).some((id: string) => !id.startsWith('group:')) ? 'text-gray-300 cursor-not-allowed' : 'text-[#0D47A1] hover:bg-[#E6ECF5]'}`}><FileText size={14} /> Exportar Setlist</button>
+                      <button disabled={!selectedRepertorio || !(selectedRepertorio.songIds || []).some((id: string) => songs.some(song => song.id === id))} onClick={() => { handleRepertorioPdfFull(); setIsSidebarArchiveOpen(false); }} className={`w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest flex items-center gap-2 ${!selectedRepertorio || !(selectedRepertorio.songIds || []).some((id: string) => songs.some(song => song.id === id)) ? 'text-gray-300 cursor-not-allowed' : 'text-[#0D47A1] hover:bg-[#E6ECF5]'}`}><FileText size={14} /> Exportar Set Musical</button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </>
           ) : sidebarTab === 'blocks' ? (
             <>
-              <SidebarNavItem 
-                icon={<Plus size={18} />} 
-                label="Bloco" 
-                active={false} 
-                variant="light"
-                onClick={() => {
-                  setCurrentView('block-form');
-                  setIsSidebarOpen(false);
-                }} 
-              />
+              <SidebarNavItem icon={<Plus size={18} />} label="Novo Bloco" tooltip="Criar um bloco manualmente ou com ajuda da IA." active={true} variant="light" onClick={() => { setCurrentView('block-form'); setIsSidebarOpen(false); }} />
               <div className="flex-1" />
-              <div className="flex-1" />
-              <SidebarNavItem 
-                icon={<Settings size={18} />} 
-                label="Ajustes" 
-                active={sidebarTab === 'settings'} 
-                variant="light"
-                onClick={() => {
-                  setSidebarTab('settings');
-                  setSidebarView('tabs');
-                }} 
-              />
+              <SidebarNavItem icon={<Settings size={18} />} label="Ajustes" tooltip="Configure as preferências e ferramentas do aplicativo." active={sidebarTab === 'settings'} variant="light" onClick={() => { setSidebarTab('settings'); setSidebarView('tabs'); }} />
             </>
           ) : (
             <div className="flex justify-around w-full">
-              <SidebarNavItem 
-                icon={<Music size={18} />} 
-                label="Músicas" 
-                tooltip="Consulte, pesquise e organize seu acervo musical."
-                active={sidebarTab === 'songs'} 
-                variant="light"
-                onClick={() => {
-                  setSidebarTab('songs');
-                  setSidebarView('tabs');
-                }} 
-              />
-              <SidebarNavItem 
-                icon={<ListMusic size={18} />} 
-                label="Repertórios" 
-                active={sidebarTab === 'repertorios'} 
-                variant="light"
-                onClick={() => {
-                  setSidebarTab('repertorios');
-                  setSidebarView('tabs');
-                }} 
-              />
-              <SidebarNavItem 
-                icon={<LayoutList size={18} />} 
-                label="Blocos" 
-                active={sidebarTab === 'blocks'} 
-                variant="light"
-                onClick={() => {
-                  setSidebarTab('blocks');
-                  setSidebarView('tabs');
-                  setCurrentView('blocks');
-                }} 
-              />
-              <SidebarNavItem 
-                icon={<Settings size={18} />} 
-                label="Ajustes" 
-                active={sidebarTab === 'settings'} 
-                variant="light"
-                onClick={() => {
-                  setSidebarTab('settings');
-                  setSidebarView('tabs');
-                }} 
-              />
+              <SidebarNavItem icon={<Settings size={18} />} label="Ajustes" tooltip="Configure as preferências e ferramentas do aplicativo." active={sidebarTab === 'settings'} variant="light" onClick={() => { setSidebarTab('settings'); setSidebarView('tabs'); }} />
             </div>
           )}
         </nav>
@@ -3626,6 +3643,16 @@ const handleRepertorioPdfFull = async () => {
                     );
                   })()}
                 </motion.div>
+              ) : currentView === 'form' ? (
+                <motion.div
+                  key="song-form-header-title"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute left-1/2 -translate-x-1/2 text-sm sm:text-base font-black uppercase tracking-wide text-primary whitespace-nowrap"
+                >
+                  Editor de Música
+                </motion.div>
               ) : (
                 <motion.div 
                   key="logo-header"
@@ -3641,6 +3668,28 @@ const handleRepertorioPdfFull = async () => {
           </div>
           
           <div className="flex items-center gap-3">
+            {currentView === 'form' && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.dispatchEvent(new CustomEvent('recifra:save-song-form'))}
+                  title="Salvar música"
+                  aria-label="Salvar música"
+                  className="w-9 h-9 rounded-full flex items-center justify-center bg-primary text-white hover:bg-[#1565c0] transition-all shadow-md"
+                >
+                  <Save size={17} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.dispatchEvent(new CustomEvent('recifra:cancel-song-form'))}
+                  title="Descartar edição"
+                  aria-label="Descartar edição"
+                  className="w-9 h-9 rounded-full bg-white text-[#0D47A1] border border-[#0D47A1] flex items-center justify-center hover:bg-red-50 hover:text-red-600 hover:border-red-600 hover:scale-110 active:scale-95 transition-all shadow-md"
+                >
+                  <Trash2 size={17} />
+                </button>
+              </div>
+            )}
             {currentView === 'details' && selectedSong && (
               <div className="flex items-center gap-2">
                 {isMaestro && (
@@ -3649,7 +3698,7 @@ const handleRepertorioPdfFull = async () => {
                       setEditingSong(selectedSong);
                       setCurrentView('form');
                     }}
-                    className="p-2 bg-white text-[#0D47A1] border border-[#0D47A1] rounded-full hover:scale-110 active:scale-95 transition-all shadow-md"
+                    className="p-2 bg-primary text-white border border-primary rounded-full hover:bg-[#1565c0] hover:scale-110 active:scale-95 transition-all shadow-md"
                     title="Editar Música"
                   >
                     <Edit2 size={16} />
@@ -3658,7 +3707,7 @@ const handleRepertorioPdfFull = async () => {
 
                 <button 
                   onClick={() => downloadSongFile(selectedSong)}
-                  className="p-2 bg-white text-[#0D47A1] border border-[#0D47A1] rounded-full hover:scale-110 active:scale-95 transition-all shadow-md"
+                  className="p-2 bg-primary text-white border border-primary rounded-full hover:bg-[#1565c0] hover:scale-110 active:scale-95 transition-all shadow-md"
                   title="Baixar Música"
                 >
                   <Download size={16} />
@@ -3666,7 +3715,7 @@ const handleRepertorioPdfFull = async () => {
 
                 <button 
                   onClick={() => shareAsPDF([selectedSong], selectedSong.title)}
-                  className="p-2 bg-white text-[#0D47A1] border border-[#0D47A1] rounded-full hover:scale-110 active:scale-95 transition-all shadow-md"
+                  className="p-2 bg-primary text-white border border-primary rounded-full hover:bg-[#1565c0] hover:scale-110 active:scale-95 transition-all shadow-md"
                   title="Compartilhar"
                 >
                   <Share2 size={16} />
@@ -3701,7 +3750,7 @@ const handleRepertorioPdfFull = async () => {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#0D47A1]" size={18} />
                 <input 
                   type="text"
-                  placeholder="Buscar música, artista..."
+                  placeholder="Buscar música, artista ou trecho da letra..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full bg-white border border-[#0D47A1] rounded-xl py-3 pl-10 pr-10 focus:ring-1 focus:ring-[#0D47A1] transition-all outline-none text-[#0D47A1] placeholder:text-[#0D47A1]/50"
@@ -3893,7 +3942,7 @@ const handleRepertorioPdfFull = async () => {
                 </div>
               )}
 
-              <div className="flex flex-col sm:flex-row justify-between items-start gap-4 relative z-[60] px-6 md:px-[4.5rem] lg:px-[6.5rem]">
+              <div className="flex flex-col sm:flex-row justify-between items-start gap-4 relative z-[60] px-6 pb-4 md:px-[4.5rem] lg:px-[6.5rem]">
                 <div className="space-y-1 flex-1">
                   {!selectedSong.isGroup ? (
                     <>
@@ -3917,9 +3966,9 @@ const handleRepertorioPdfFull = async () => {
                                   initial={{ opacity: 0, y: 10 }}
                                   animate={{ opacity: 1, y: 0 }}
                                   exit={{ opacity: 0, y: 10 }}
-                                  className="absolute top-full left-0 mt-2 w-48 bg-surface border border-border rounded-xl shadow-2xl z-[100] grid grid-cols-3 p-2 gap-1"
+                                  className="absolute top-full left-0 mt-2 w-56 bg-surface border border-border rounded-xl shadow-2xl z-[100] grid grid-cols-4 p-2 gap-1"
                                 >
-                                  {allKeys.map(k => (
+                                  {songKeyOptions.map(k => (
                                     <button 
                                       key={k}
                                       onClick={(e) => {
@@ -3992,7 +4041,7 @@ const handleRepertorioPdfFull = async () => {
                           </div>
                         </div>
                       </div>
-                      <p className="text-sm text-text-dim font-light">
+                      <p className="text-sm text-text-dim font-light mt-2">
                         {selectedSong.artist}
                         {selectedSong.composition && ` (${selectedSong.composition})`}
                       </p>
@@ -4534,16 +4583,9 @@ const handleRepertorioPdfFull = async () => {
                   <button onClick={() => setIsSidebarOpen(true)} className="p-2 -ml-2 hover:bg-surface rounded-full">
                     <Menu size={24} />
                   </button>
-                  <h2 className="text-3xl font-bold tracking-tighter uppercase">Meus Blocos (IA)</h2>
+                  <h2 className="text-3xl font-bold tracking-tighter uppercase">Meus Blocos</h2>
                 </div>
-                {isMaestro && (
-                  <button 
-                    onClick={() => setCurrentView('block-form')}
-                    className="flex items-center gap-2 px-6 py-3 bg-primary text-white rounded-xl font-bold text-sm hover:scale-[1.02] active:scale-[0.98] transition-all"
-                  >
-                    <Plus size={18} /> Novo Bloco
-                  </button>
-                )}
+
               </div>
               <SongBlockList 
                 blocks={songBlocks} 
@@ -4571,6 +4613,9 @@ const handleRepertorioPdfFull = async () => {
             <SongBlockDetails 
                 blockSet={selectedBlockSet}
                 songs={songs}
+                repertorios={repertorios}
+                onAddToRepertorio={addBlockSuggestionToRepertorio}
+                onUpdate={updateSongBlock}
                 onBack={() => setCurrentView('blocks')}
             />
           )}
@@ -4613,11 +4658,13 @@ const handleRepertorioPdfFull = async () => {
                 labels={labels}
                 chordBanks={chordBanks}
                 isMaestro={isMaestro}
-                onSave={saveSong} 
+                onSave={saveSong}
+                onAutoSave={autoSaveSong}
+                onDiscard={discardAutoSavedSong}
                 onCancel={() => {
                   setCurrentView(selectedSong ? 'details' : 'list');
                   setEditingSong(null);
-                }} 
+                }}
               />
             </motion.div>
           )}
@@ -4736,7 +4783,7 @@ const handleRepertorioPdfFull = async () => {
                     </div>
                     <span className="font-bold text-sm">Todas as Músicas</span>
                   </button>
-                  {folders.map(folder => (
+                  {folders.filter(folder => !folder.type || folder.type === 'song').map(folder => (
                     <button 
                       key={folder.id}
                       onClick={() => {
@@ -4878,7 +4925,7 @@ const handleRepertorioPdfFull = async () => {
                     >
                       📁 Sem Pasta (Raiz)
                     </button>
-                    {folders.map(folder => (
+                    {folders.filter(folder => !folder.type || folder.type === 'song').map(folder => (
                       <button 
                         key={folder.id}
                         onClick={() => processBulkImport(folder.id!)}
@@ -4930,7 +4977,7 @@ function SongSidebarItem({ song, isSelectionMode, isSelected, onToggleSelect, on
 }
 
 function RepertorioSidebarItem({ 
-  repertorio, onClick, onDelete, onShare, isMaestro, 
+  repertorio, onClick, onDelete, onEdit, onShare, isMaestro, 
   isSelectionMode, isSelected, onToggleSelect 
 }: any) {
   const x = useMotionValue(0);
@@ -4968,9 +5015,11 @@ function RepertorioSidebarItem({
         style={{ x }}
         className="relative bg-bg"
       >
-        <motion.button 
+        <div
+          role="button"
+          tabIndex={0}
           onClick={isSelectionMode ? onToggleSelect : onClick}
-          whileTap={{ scale: 0.98 }}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (isSelectionMode ? onToggleSelect : onClick)?.(); } }}
           className="w-full text-left p-3.5 hover:bg-surface transition-colors group flex items-center gap-3"
         >
           {isSelectionMode && (
@@ -4978,22 +5027,29 @@ function RepertorioSidebarItem({
               {isSelected && <CheckSquare size={12} className="text-white" />}
             </div>
           )}
-          <div className="flex-1 min-w-0">
-            <div className="font-bold text-sm truncate tracking-normal uppercase leading-none mb-1 text-black">{repertorio.title}</div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-text-dim uppercase font-bold tracking-widest">{repertorio.songIds?.length || 0} Músicas</span>
-              {repertorio.date && (
-                <>
-                  <span className="text-text-dim/30">•</span>
-                  <span className="text-[10px] text-primary font-bold uppercase tracking-widest">
-                    {new Date(repertorio.date + 'T12:00:00').toLocaleDateString('pt-BR')}
-                  </span>
-                </>
-              )}
+          <div className="flex-1 min-w-0 flex flex-col gap-1">
+            {repertorio.date && (
+              <span className="text-[10px] text-primary font-bold uppercase tracking-widest">
+                {new Date(repertorio.date + 'T12:00:00').toLocaleDateString('pt-BR')}
+              </span>
+            )}
+            <div className="flex items-baseline gap-2 min-w-0">
+              <span className="font-bold text-sm truncate tracking-normal uppercase leading-none text-[#174EA6]">{repertorio.title}</span>
+              <span className="text-[10px] bg-[#174EA6] text-white px-1.5 py-0.5 rounded font-bold tracking-widest shrink-0">{(repertorio.songIds || []).filter((id: string) => !String(id).startsWith('group:')).length}</span>
             </div>
           </div>
-          {!isSelectionMode && <ChevronLeft size={18} className="rotate-180 text-border group-hover:text-primary" />}
-        </motion.button>
+          {!isSelectionMode && isMaestro && (
+            <div className="flex items-center gap-1 shrink-0">
+              <button onClick={(e) => { e.stopPropagation(); onEdit?.(); }} className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors" title="Editar repertório">
+                <Edit2 size={16} />
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); onDelete?.(); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Excluir repertório">
+                <Trash2 size={16} />
+              </button>
+            </div>
+          )}
+          {!isSelectionMode && !isMaestro && <ChevronLeft size={18} className="rotate-180 text-border group-hover:text-primary" />}
+        </div>
       </motion.div>
     </div>
   );
@@ -5120,7 +5176,6 @@ function SortableGroupItem({
   group, 
   displayIndex,
   onUpdateGroupTitle,
-  onToggleLock,
   onClick,
   onDelete
 }: any) {
@@ -5182,29 +5237,23 @@ function SortableGroupItem({
               >
                 {group.title || `Marcador de Bloco`}
               </h4>
-              <button 
-                onClick={(e) => { e.stopPropagation(); setIsEditingTitle(true); }}
-                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-primary/10 rounded transition-all"
-              >
-                <Edit2 size={10} className="text-primary" />
-              </button>
+
             </div>
           )}
         </div>
         <div 
-          className="flex items-center gap-1"
+          className="flex items-center gap-1 shrink-0"
         >
-          <button 
-            onClick={(e) => { 
-                e.stopPropagation(); 
-                onToggleLock && onToggleLock();
-            }}
-            className={`p-2 rounded-lg transition-colors ${group.isLocked ? 'text-primary bg-primary/10' : 'text-primary/40 hover:bg-primary/5'}`}
-            title={group.isLocked ? "Desbloquear Bloco" : "Travar Bloco"}
+          <button
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); setIsEditingTitle(true); }}
+            className="p-2 hover:bg-primary/10 text-primary rounded-lg transition-colors"
+            title="Editar nome do bloco"
           >
-            {group.isLocked ? <Lock size={20} /> : <LockOpen size={20} />}
+            <Edit2 size={16} />
           </button>
           <button 
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => { 
                 e.stopPropagation(); 
                 onDelete && onDelete();
@@ -5212,7 +5261,7 @@ function SortableGroupItem({
             className="p-2 hover:bg-red-50 text-red-500 rounded-lg transition-colors"
             title="Excluir Marcador"
           >
-            <Trash2 size={20} />
+            <Trash2 size={16} />
           </button>
         </div>
       </div>
@@ -5220,7 +5269,7 @@ function SortableGroupItem({
   );
 }
 
-function SortableSongItem({ id, song, index, onClick, onDelete, onShare, isMaestro, isSelected, onToggleSelect, isInsideGroup, isLastInGroup, isLocked, onUngroup, displayKey }: any) {
+function SortableSongItem({ id, song, index, onClick, onDelete, onShare, isMaestro, isSelected, onToggleSelect, isInsideGroup, isLastInGroup, onUngroup, displayKey }: any) {
   const {
     attributes,
     listeners,
@@ -5228,10 +5277,7 @@ function SortableSongItem({ id, song, index, onClick, onDelete, onShare, isMaest
     transform,
     transition,
     isDragging
-  } = useSortable({ 
-    id,
-    disabled: !isMaestro || isLocked
-  });
+  } = useSortable({ id, disabled: !isMaestro });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -5269,23 +5315,16 @@ function SortableSongItem({ id, song, index, onClick, onDelete, onShare, isMaest
 function SidebarNavItem({ icon, label, active, onClick, variant = 'dark', disabled = false, tooltip }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void, variant?: 'dark' | 'light', disabled?: boolean, tooltip?: string }) {
   const activeColor = variant === 'dark' ? 'text-[#E6ECF5]' : 'text-[#0D47A1]';
   const inactiveColor = variant === 'dark' ? 'text-white hover:text-white/80' : 'text-[#0D47A1]/60 hover:text-[#0D47A1]';
-  const indicatorColor = variant === 'dark' ? 'bg-[#E6ECF5]' : 'bg-[#0D47A1]';
 
   return (
     <button
      title={tooltip || label}
-aria-label={tooltip || label}
+      aria-label={tooltip || label}
       onClick={disabled ? undefined : onClick}
-      className={`relative flex flex-col items-center gap-1 p-2 transition-all ${active ? activeColor : inactiveColor} ${disabled ? 'opacity-20 cursor-not-allowed grayscale' : ''}`}
+      className={`relative flex flex-col items-center gap-1 p-2 transition-all ${active ? activeColor : inactiveColor} ${disabled ? 'cursor-not-allowed' : ''}`}
     >
       {icon}
       <span className="text-[9px] uppercase font-bold tracking-widest">{label}</span>
-      {active && (
-        <motion.div 
-          layoutId={`sidebar-nav-indicator-${variant}`}
-          className={`absolute bottom-0 left-2 right-2 h-0.5 ${indicatorColor} rounded-full`}
-        />
-      )}
     </button>
   );
 }
@@ -5322,13 +5361,14 @@ function RepertorioForm({ initialData, songs, folders, repertorios, categories, 
   const filteredSongs = useMemo(() => {
     let result = [...songs];
 
-    // Search
-    if (searchTerm) {
-      const lowSearch = searchTerm.toLowerCase();
-      result = result.filter(s => 
-        s.title.toLowerCase().includes(lowSearch) || 
-        s.artist.toLowerCase().includes(lowSearch) ||
-        s.composition?.toLowerCase().includes(lowSearch)
+    // Search por título, artista, compositor e trecho da letra/cifra.
+    if (searchTerm.trim()) {
+      const normalizedTerm = normalizeSearchText(searchTerm.trim());
+      result = result.filter(s =>
+        normalizeSearchText(s.title).includes(normalizedTerm) ||
+        normalizeSearchText(s.artist).includes(normalizedTerm) ||
+        normalizeSearchText(s.composition).includes(normalizedTerm) ||
+        normalizeSearchText(s.chordPro).includes(normalizedTerm)
       );
     }
 
@@ -5770,7 +5810,7 @@ function CategoryManager({ categories, onClose }: { categories: Category[], onCl
   );
 }
 
-function LabelManager({ labels, onClose, isMaestro }: { labels: LabelShortcut[], onClose: () => void, isMaestro: boolean }) {
+function LabelManager({ labels, onClose, isMaestro, coroColor, onCoroColorChange }: { labels: LabelShortcut[], onClose: () => void, isMaestro: boolean, coroColor: string, onCoroColorChange: (color: string) => void }) {
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState('#00e5ff');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -5807,7 +5847,7 @@ function LabelManager({ labels, onClose, isMaestro }: { labels: LabelShortcut[],
   };
 
   const deleteLabel = async (id: string) => {
-    if (!window.confirm('Excluir esta label?')) return;
+    if (!window.confirm('Excluir este marcador?')) return;
     try {
       await deleteDoc(doc(db, 'labels', id));
     } catch (error) {
@@ -5819,12 +5859,26 @@ function LabelManager({ labels, onClose, isMaestro }: { labels: LabelShortcut[],
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
       <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="bg-bg border border-border rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
         <div className="p-4 border-b border-border flex items-center justify-between">
-          <h3 className="font-bold uppercase tracking-widest text-sm">Gerenciar Marcações (#)</h3>
+          <h3 className="font-bold uppercase tracking-widest text-sm">Gerenciar Marcadores (#)</h3>
           <button onClick={onClose} className="p-2 hover:bg-surface rounded-lg"><X size={20} /></button>
         </div>
         <div className="p-4 space-y-4">
+          <div className="flex items-center justify-between gap-3 p-3 bg-surface rounded-xl border border-border">
+            <div className="min-w-0">
+              <p className="text-xs font-bold uppercase tracking-wide">Cor do Côro</p>
+              <p className="text-[10px] text-text-dim">Cor aplicada ao trecho selecionado no Visor</p>
+            </div>
+            <input
+              type="color"
+              aria-label="Escolher cor do Côro"
+              title="Escolher cor do Côro"
+              value={coroColor}
+              onChange={e => onCoroColorChange(e.target.value)}
+              className="w-12 h-10 p-1 bg-bg border border-border rounded-lg cursor-pointer"
+            />
+          </div>
           <div className="space-y-2">
-            <input type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Nova label (ex: PONTE)" className="w-full bg-surface border border-border rounded-xl px-4 py-2 outline-none focus:ring-1 focus:ring-primary uppercase h-[46px]" />
+            <input type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Novo marcador (ex: PONTE)" className="w-full bg-surface border border-border rounded-xl px-4 py-2 outline-none focus:ring-1 focus:ring-primary uppercase h-[46px]" />
             <div className="flex gap-2">
                <input type="color" value={newColor} onChange={e => setNewColor(e.target.value)} className="w-12 h-[46px] p-1 bg-surface border border-border rounded-xl cursor-pointer" />
                <button onClick={addLabel} className="flex-1 bg-primary text-white rounded-xl font-bold uppercase tracking-widest text-xs">Adicionar</button>
@@ -6109,13 +6163,15 @@ function FolderManager({ folders, type, onClose }: { folders: Folder[], type: 's
   );
 }
 
-function SongForm({ initialData, categories, folders, labels, chordBanks, onSave, onCancel, isMaestro }: { 
+function SongForm({ initialData, categories, folders, labels, chordBanks, onSave, onAutoSave, onDiscard, onCancel, isMaestro }: { 
   initialData?: Partial<Song>, 
   categories: Category[],
   folders: Folder[],
   labels: LabelShortcut[],
   chordBanks: ChordBank[],
-  onSave: (data: Partial<Song>) => void,
+  onSave: (data: Partial<Song>, draftId?: string | null) => void,
+  onAutoSave: (data: Partial<Song>, draftId?: string | null) => Promise<string | null>,
+  onDiscard: (draftId?: string | null) => Promise<void>,
   onCancel: () => void,
   isMaestro: boolean
 }) {
@@ -6127,7 +6183,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
     tempo: initialData?.tempo || '',
     key: initialData?.key || '',
     chordPro: initialData?.chordPro || '',
-    folderId: initialData?.folderId || ''
+    folderId: initialData?.folderId || '',
   });
 
   // Folder Manager State
@@ -6155,11 +6211,83 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
   const [isKeyPickerOpen, setIsKeyPickerOpen] = useState(false);
   const [chordSize, setChordSize] = useState(12);
   const [lyricSize, setLyricSize] = useState(13);
-  const [chordColor, setChordColor] = useState('#dc2626');
+  const [chordColor, setChordColor] = useState(() => {
+    if (typeof window === 'undefined') return '#dc2626';
+    return localStorage.getItem('recifra_chord_color') || '#dc2626';
+  });
   const [lyricColor, setLyricColor] = useState('#333333');
+  const [coroColor, setCoroColor] = useState(() => {
+    if (typeof window === 'undefined') return '#ffff00';
+    return localStorage.getItem('recifra_coro_color') || '#ffff00';
+  });
+  const [previewSelection, setPreviewSelection] = useState<{ start: number; end: number } | null>(null);
+  const previewSelectionRef = useRef<{ start: number; end: number } | null>(null);
   const [isEditorExpanded, setIsEditorExpanded] = useState(true);
   const [isPreviewExpanded, setIsPreviewExpanded] = useState(true);
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  const originalTransposeRef = useRef<{ chordPro: string; key: string } | null>(null);
+  const [previewColumns, setPreviewColumns] = useState<1 | 2>(1);
+  const importFileRef = useRef<HTMLInputElement>(null);
+  const autoSaveIdRef = useRef<string | null>(initialData?.id || null);
+  const isDiscardingRef = useRef(false);
+  const isFinalizingRef = useRef(false);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+
+  const handleImportChordPro = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const content = await file.text();
+      if (!content.trim()) {
+        alert('O arquivo selecionado está vazio.');
+        return;
+      }
+      setHistory(prev => [formData.chordPro, ...prev].slice(0, 50));
+      setRedoStack([]);
+      originalTransposeRef.current = null;
+      const importedText = smartUppercase(content);
+      setFormData(prev => ({
+        ...prev,
+        chordPro: importedText,
+        key: prev.key || detectKey(importedText),
+        title: prev.title.trim() ? prev.title : file.name.replace(/\.(cho|chordpro|txt)$/i, '')
+      }));
+    } catch (error) {
+      console.error('Erro ao importar cifra:', error);
+      alert('Não foi possível ler esse arquivo. Escolha um arquivo .cho, .chordpro ou .txt.');
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const handleExportChordPro = () => {
+    if (!formData.chordPro.trim()) {
+      alert('Não há cifra para exportar.');
+      return;
+    }
+    const safeTitle = (formData.title.trim() || 'cifra').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_');
+    const blob = new Blob([formData.chordPro], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${safeTitle}.cho`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  // Persiste a cor escolhida para cifras entre atualizações e reaberturas do formulário.
+  useEffect(() => {
+    localStorage.setItem('recifra_chord_color', chordColor);
+  }, [chordColor]);
+
+  // Invalida a seleção visual sempre que o texto-fonte for alterado por outra ação.
+  useEffect(() => {
+    previewSelectionRef.current = null;
+    setPreviewSelection(null);
+  }, [formData.chordPro]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -6183,6 +6311,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
   const updateChordPro = (newText: string) => {
     const processedText = smartUppercase(newText);
     if (processedText !== formData.chordPro) {
+      originalTransposeRef.current = null;
       setHistory(prev => [formData.chordPro, ...prev].slice(0, 50));
       setRedoStack([]);
       
@@ -6193,6 +6322,41 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
       
       setFormData({ ...formData, chordPro: processedText, key: newKey });
     }
+  };
+
+
+  // Transposição consistente: todas as mudanças partem da cifra e do tom originais.
+  const transposeToKey = (targetKey: string) => {
+    if (!targetKey) return;
+    if (targetKey === formData.key) {
+      setIsKeyPickerOpen(false);
+      return;
+    }
+    if (!originalTransposeRef.current) {
+      originalTransposeRef.current = { chordPro: formData.chordPro, key: formData.key || detectKey(formData.chordPro) };
+    }
+    const original = originalTransposeRef.current;
+    const semitones = getSemitones(original.key, targetKey);
+    const nextChordPro = original.chordPro.trim() && semitones !== 0
+      ? transposeChordPro(original.chordPro, semitones)
+      : original.chordPro;
+    setHistory(prev => [formData.chordPro, ...prev].slice(0, 50));
+    setRedoStack([]);
+    setFormData(prev => ({ ...prev, key: targetKey, chordPro: nextChordPro }));
+    setIsKeyPickerOpen(false);
+  };
+
+  const restoreOriginalKey = () => {
+    const original = originalTransposeRef.current;
+    if (!original) {
+      alert('Ainda não houve transposição nesta edição.');
+      return;
+    }
+    setHistory(prev => [formData.chordPro, ...prev].slice(0, 50));
+    setRedoStack([]);
+    setFormData(prev => ({ ...prev, key: original.key, chordPro: original.chordPro }));
+    originalTransposeRef.current = null;
+    setIsKeyPickerOpen(false);
   };
 
   const undo = () => {
@@ -6213,38 +6377,214 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
     }
   };
 
-  const handleToolbarAction = (label: string) => {
-    if (!editorRef.current) return;
-    const { selectionStart, selectionEnd } = editorRef.current;
-    const currentText = formData.chordPro;
-    const selection = currentText.substring(selectionStart, selectionEnd);
-    
-    let textToInsert = '';
-    let newCursorPos = selectionStart;
+  // Converte qualquer ponto do DOM do VISOR em um offset do texto ChordPro.
+  // Além dos nós de texto, trata pontos posicionados nos contêineres flex entre
+  // acordes e letras. Nesses casos, usa o segmento imediatamente anterior ou
+  // posterior, conforme a extremidade da seleção.
+  const getPreviewSourceOffset = (
+    container: Node,
+    offset: number,
+    affinity: 'forward' | 'backward',
+    previewRoot: Element
+  ): number | null => {
+    const getOffsetInsideSegment = (segment: HTMLElement, pointContainer: Node, pointOffset: number): number | null => {
+      try {
+        const range = document.createRange();
+        range.selectNodeContents(segment);
+        range.setEnd(pointContainer, pointOffset);
+        const visibleOffset = range.toString().length;
+        const sourceStart = Number(segment.dataset.sourceStart);
+        const sourceEnd = Number(segment.dataset.sourceEnd);
+        if (!Number.isFinite(sourceStart) || !Number.isFinite(sourceEnd)) return null;
 
-    if (label === '{DESTAQUE}') {
-      textToInsert = `{C:Chorus}\n${selection || 'TRECHO DO REFRÃO'}\n{C:}`;
-    } else if (label === '{CÔRO}') {
-      textToInsert = `{textfill: yellow}\n${selection || 'TRECHO DO CÔRO'}\n{textfill}`;
-    } else {
-      // Find color from labels list
-      const lb = labels.find(l => `#${l.name}` === label);
-      const color = lb ? lb.color : '#gray';
-      textToInsert = `\n{textfill: ${color}}\n${label.substring(1)}\n{textfill}\n`;
+        if (segment.dataset.sourceKind === 'chord') {
+          const chordTextLength = segment.textContent?.length ?? 0;
+          // O acorde visível representa o token completo [ACORDE] no ChordPro.
+          return visibleOffset <= 0
+            ? sourceStart
+            : visibleOffset >= chordTextLength
+              ? sourceEnd
+              : sourceStart + visibleOffset + 1;
+        }
+        return Math.max(sourceStart, Math.min(sourceEnd, sourceStart + visibleOffset));
+      } catch {
+        return null;
+      }
+    };
+
+    const pointElement = container.nodeType === Node.ELEMENT_NODE
+      ? container as Element
+      : container.parentElement;
+    const containingSegment = pointElement?.closest<HTMLElement>('[data-source-start][data-source-end]');
+    if (containingSegment && previewRoot.contains(containingSegment)) {
+      return getOffsetInsideSegment(containingSegment, container, offset);
     }
 
-    const newText = currentText.substring(0, selectionStart) + textToInsert + currentText.substring(selectionEnd);
-    updateChordPro(newText);
+    // O navegador também pode colocar o cursor no próprio contêiner flex/linha.
+    // Comparamos esse ponto com cada segmento-fonte para localizar a fronteira.
+    const segments = Array.from(
+      previewRoot.querySelectorAll<HTMLElement>('[data-source-start][data-source-end]')
+    );
+    if (segments.length === 0) return null;
 
-    setTimeout(() => {
-      if (editorRef.current) {
-        const nextPos = selectionStart + textToInsert.length;
-        editorRef.current.focus();
-        editorRef.current.setSelectionRange(nextPos, nextPos);
+    let previous: HTMLElement | null = null;
+    let next: HTMLElement | null = null;
+    for (const segment of segments) {
+      try {
+        const segmentRange = document.createRange();
+        segmentRange.selectNodeContents(segment);
+        const relation = segmentRange.comparePoint(container, offset);
+        if (relation === 0) {
+          return getOffsetInsideSegment(segment, container, offset);
+        }
+        if (relation < 0) {
+          next = segment;
+          break;
+        }
+        previous = segment;
+      } catch {
+        // Continua procurando outro segmento se o navegador rejeitar o ponto.
       }
-    }, 0);
+    }
+
+    const adjacent = affinity === 'forward'
+      ? (next || previous)
+      : (previous || next);
+    if (!adjacent) return null;
+    const sourceStart = Number(adjacent.dataset.sourceStart);
+    const sourceEnd = Number(adjacent.dataset.sourceEnd);
+    if (!Number.isFinite(sourceStart) || !Number.isFinite(sourceEnd)) return null;
+
+    // Um cursor entre dois segmentos fica na fronteira correspondente. Para uma
+    // seleção, início prefere o próximo segmento e fim prefere o anterior.
+    if (adjacent === next) return sourceStart;
+    return sourceEnd;
   };
 
+  const capturePreviewSelection = () => {
+    const selection = window.getSelection();
+    const root = document.querySelector('[data-preview-editor="true"]');
+    if (!selection || selection.rangeCount === 0 || !root) {
+      previewSelectionRef.current = null;
+      setPreviewSelection(null);
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) {
+      previewSelectionRef.current = null;
+      setPreviewSelection(null);
+      return;
+    }
+
+    const start = getPreviewSourceOffset(
+      range.startContainer,
+      range.startOffset,
+      'forward',
+      root
+    );
+    const end = selection.isCollapsed
+      ? start
+      : getPreviewSourceOffset(
+          range.endContainer,
+          range.endOffset,
+          'backward',
+          root
+        );
+    if (start === null || end === null) {
+      previewSelectionRef.current = null;
+      setPreviewSelection(null);
+      return;
+    }
+
+    // Uma posição de cursor sem texto selecionado é válida: os marcadores
+    // personalizados precisam usar exatamente esse offset no ChordPro.
+    // Só descartamos intervalos invertidos/ inválidos; start === end representa
+    // intencionalmente um cursor, não uma seleção vazia inválida.
+    const mapped = {
+      start: Math.max(0, Math.min(start, end)),
+      end: Math.min(formData.chordPro.length, Math.max(start, end))
+    };
+    if (!range.collapsed && mapped.end <= mapped.start) {
+      previewSelectionRef.current = null;
+      setPreviewSelection(null);
+      return;
+    }
+    previewSelectionRef.current = mapped;
+    setPreviewSelection(mapped);
+  };
+
+  const handleToolbarAction = (label: string) => {
+    const currentText = formData.chordPro;
+    const activePreviewSelection = previewSelectionRef.current;
+    const hasVisualSelection = Boolean(
+      activePreviewSelection && activePreviewSelection.end > activePreviewSelection.start
+    );
+
+    // NEGRITO e CÔRO só podem ser aplicados a um trecho selecionado no VISOR.
+    if ((label === '{NEGRITO}' || label === '{CÔRO}') && !hasVisualSelection) return;
+    // Marcadores personalizados só podem ser inseridos com o cursor posicionado,
+    // nunca quando há um trecho de texto selecionado. NEGRITO e CÔRO mantêm
+    // seu comportamento próprio para seleção de texto.
+    if (label !== '{NEGRITO}' && label !== '{CÔRO}' && (!activePreviewSelection || hasVisualSelection)) return;
+
+    let selectionStart: number;
+    let selectionEnd: number;
+
+    if (activePreviewSelection) {
+      // O VISOR é a referência tanto para cursor isolado quanto para seleção.
+      selectionStart = activePreviewSelection.start;
+      selectionEnd = activePreviewSelection.end;
+    } else if (editorRef.current && label !== '{NEGRITO}' && label !== '{CÔRO}') {
+      selectionStart = editorRef.current.selectionStart;
+      selectionEnd = editorRef.current.selectionEnd;
+    } else {
+      return;
+    }
+
+    const selectedText = currentText.substring(selectionStart, selectionEnd);
+    let textToInsert = '';
+    let prefix = '';
+    let suffix = '';
+
+    if (label === '{NEGRITO}') {
+      prefix = selectionStart > 0 && currentText[selectionStart - 1] !== '\n' ? '\n' : '';
+      suffix = selectionEnd < currentText.length && currentText[selectionEnd] !== '\n' ? '\n' : '';
+      textToInsert = `${prefix}{C:Chorus}\n${selectedText}\n{C:}${suffix}`;
+    } else if (label === '{CÔRO}') {
+      prefix = selectionStart > 0 && currentText[selectionStart - 1] !== '\n' ? '\n' : '';
+      suffix = selectionEnd < currentText.length && currentText[selectionEnd] !== '\n' ? '\n' : '';
+      textToInsert = `${prefix}{textfill: ${coroColor}}\n${selectedText}\n{textfill}${suffix}`;
+    } else {
+      const lb = labels.find(l => `#${l.name}` === label);
+      const color = lb ? lb.color : '#808080';
+
+      if (hasVisualSelection) {
+        prefix = selectionStart > 0 && currentText[selectionStart - 1] !== '\n' ? '\n' : '';
+        suffix = selectionEnd < currentText.length && currentText[selectionEnd] !== '\n' ? '\n' : '';
+        textToInsert = `${prefix}{textfill: ${color}}\n${selectedText}\n{textfill}${suffix}`;
+      } else {
+        // Sem seleção visual, as marcações personalizadas continuam podendo ser inseridas
+        // como uma linha identificadora no ponto atual do editor.
+        const prefix = selectionStart > 0 && currentText[selectionStart - 1] !== '\n' ? '\n' : '';
+        // No fim do documento, separa o marcador da última linha da letra.
+        textToInsert = `${prefix}{textfill: ${color}}\n${label.substring(1)}\n{textfill}\n\n`;
+      }
+    }
+
+    const newText =
+      currentText.substring(0, selectionStart) +
+      textToInsert +
+      currentText.substring(selectionEnd);
+
+    updateChordPro(newText);
+
+    // O marcador foi inserido. Limpa tanto o intervalo lógico quanto o realce
+    // nativo do navegador, para não deixar o trecho selecionado no VISOR.
+    previewSelectionRef.current = null;
+    setPreviewSelection(null);
+    window.getSelection()?.removeAllRanges();
+  };
   const insertChord = (chord: string) => {
     if (!editorRef.current) return;
     const { selectionStart, selectionEnd } = editorRef.current;
@@ -6254,14 +6594,22 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
     
     setTimeout(() => {
       if (editorRef.current) {
+        const editor = editorRef.current;
+        const pageScrollY = window.scrollY;
+        const editorScrollTop = editor.scrollTop;
         const nextPos = selectionStart + text.length;
-        editorRef.current.focus();
-        editorRef.current.setSelectionRange(nextPos, nextPos);
+        editor.focus({ preventScroll: true });
+        editor.setSelectionRange(nextPos, nextPos);
+        editor.scrollTop = editorScrollTop;
+        window.scrollTo({ top: pageScrollY, behavior: 'auto' });
       }
     }, 0);
   };
 
   const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
+    if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); redo(); return; }
+    // Atalhos: Ctrl+Z desfaz, Ctrl+Y/Ctrl+Shift+Z refaz; Shift + Nota abre acordes.
     // Shortcuts for Shift + A, B, C, D, E, F, G
     if (e.shiftKey && ['A', 'B', 'C', 'D', 'E', 'F', 'G'].includes(e.key.toUpperCase())) {
       e.preventDefault();
@@ -6269,20 +6617,53 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
       const bank = chordBanks.find(b => b.note === note);
       
       if (bank && editorRef.current) {
-        // Find cursor position for the modal
-        const { selectionStart } = editorRef.current;
-        const rect = editorRef.current.getBoundingClientRect();
-        
-        // Modal position: offset from cursor
-        // For simplicity, we'll position it near the cursor's approximate line
-        // A more precise positioning would require cursor coordinates calculation
+        // Calcula a posição real do cursor no textarea para ancorar o modal.
+        const editor = editorRef.current;
+        const caretIndex = editor.selectionStart;
+        const editorRect = editor.getBoundingClientRect();
+        const computed = window.getComputedStyle(editor);
+        const mirror = document.createElement('div');
+        const marker = document.createElement('span');
+
+        // O espelho reproduz tipografia, largura e recuos do campo de edição.
+        const copiedStyles = [
+          'boxSizing', 'width', 'paddingTop', 'paddingRight', 'paddingBottom',
+          'paddingLeft', 'borderTopWidth', 'borderRightWidth', 'borderBottomWidth',
+          'borderLeftWidth', 'fontFamily', 'fontSize', 'fontWeight', 'fontStyle',
+          'letterSpacing', 'lineHeight', 'textAlign', 'textIndent'
+        ];
+        mirror.style.position = 'fixed';
+        mirror.style.left = `${editorRect.left}px`;
+        mirror.style.top = `${editorRect.top}px`;
+        mirror.style.visibility = 'hidden';
+        mirror.style.pointerEvents = 'none';
+        mirror.style.whiteSpace = 'pre-wrap';
+        mirror.style.overflowWrap = 'break-word';
+        mirror.style.wordBreak = 'break-word';
+        mirror.style.overflow = 'hidden';
+        copiedStyles.forEach((property) => {
+          (mirror.style as any)[property] = (computed as any)[property];
+        });
+        mirror.style.width = `${editor.clientWidth}px`;
+        mirror.textContent = editor.value.substring(0, caretIndex);
+        marker.textContent = '\\u200b';
+        mirror.appendChild(marker);
+        document.body.appendChild(mirror);
+
+        const markerRect = marker.getBoundingClientRect();
+        const caretPoint = {
+          top: markerRect.top - editor.scrollTop,
+          left: markerRect.left - editor.scrollLeft
+        };
+        mirror.remove();
+
         setChordModal({
           isOpen: true,
           note,
           chords: bank.chords,
           position: {
-            top: rect.top + 40, 
-            left: rect.left + 20
+            top: Math.max(8, Math.min(window.innerHeight - 8, caretPoint.top)),
+            left: Math.max(8, Math.min(window.innerWidth - 8, caretPoint.left))
           }
         });
       }
@@ -6290,15 +6671,77 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
   };
 
   const toolbarButtons = [
-    { label: '{DESTAQUE}', color: 'bg-[#373f4d]', text: 'text-white', tooltip: 'Aplicar negrito à seleção' },
-    { label: '{CÔRO}', color: 'bg-[#ffeb3b]', text: 'text-black', tooltip: 'Aplicar realce à seleção' },
-    ...labels.map(l => ({ label: `#${l.name}`, color: `bg-[${l.color}]`, text: 'text-black', tooltip: 'Inserir marcação', customColor: l.color })),
+    { label: '{NEGRITO}', tooltip: 'Aplicar negrito ao trecho selecionado', requiresSelection: true, customColor: undefined },
+    { label: '{CÔRO}', tooltip: 'Aplicar realce ao trecho selecionado', requiresSelection: true, customColor: undefined },
+    ...labels.map(l => ({ label: `#${l.name}`, tooltip: 'Inserir marcador no trecho selecionado', customColor: l.color, requiresSelection: false })),
   ];
 
   const isFormValid = formData.title.trim() !== '' && 
                     formData.key !== '' && 
                     formData.tempo !== '' && 
                     formData.category !== '';
+
+  // Salva automaticamente após uma breve pausa na digitação. O botão Salvar
+  // continua encerrando o formulário; Descartar reverte a edição ou apaga o rascunho.
+  const hasContentToSave = Boolean(
+    formData.title.trim() || formData.artist.trim() || formData.composition.trim() || formData.chordPro.trim()
+  );
+  const autoSaveHandlerRef = useRef(onAutoSave);
+  useEffect(() => { autoSaveHandlerRef.current = onAutoSave; }, [onAutoSave]);
+
+  useEffect(() => {
+    if (!hasContentToSave || isDiscardingRef.current || isFinalizingRef.current) return;
+    const timeout = window.setTimeout(() => {
+      autoSaveQueueRef.current = autoSaveQueueRef.current.then(async () => {
+        if (isDiscardingRef.current) return;
+        const savedId = await autoSaveHandlerRef.current(formData, autoSaveIdRef.current);
+        if (savedId) autoSaveIdRef.current = savedId;
+      }).catch(error => console.error('Erro na fila de salvamento automático:', error));
+    }, 900);
+    autoSaveTimerRef.current = timeout;
+    return () => {
+      window.clearTimeout(timeout);
+      if (autoSaveTimerRef.current === timeout) autoSaveTimerRef.current = null;
+    };
+  }, [formData, hasContentToSave]);
+
+  const handleDiscard = async () => {
+    if (isDiscardingRef.current || isFinalizingRef.current) return;
+    isDiscardingRef.current = true;
+    if (autoSaveTimerRef.current) window.clearTimeout(autoSaveTimerRef.current);
+    await autoSaveQueueRef.current;
+    await onDiscard(autoSaveIdRef.current);
+    onCancel();
+  };
+
+  const handleSave = async () => {
+    if (!isFormValid || isDiscardingRef.current || isFinalizingRef.current) return;
+    isFinalizingRef.current = true;
+    if (autoSaveTimerRef.current) window.clearTimeout(autoSaveTimerRef.current);
+    try {
+      await autoSaveQueueRef.current;
+      await onSave({
+        ...formData
+      } as any, autoSaveIdRef.current);
+    } catch (error) {
+      console.error('Erro ao salvar música:', error);
+      isFinalizingRef.current = false;
+      alert('Não foi possível salvar a música. Verifique sua conexão e tente novamente.');
+    }
+  };
+
+  useEffect(() => {
+    const handleExternalCancel = () => { void handleDiscard(); };
+    const handleExternalSave = () => {
+      if (isFormValid) handleSave();
+    };
+    window.addEventListener('recifra:cancel-song-form', handleExternalCancel);
+    window.addEventListener('recifra:save-song-form', handleExternalSave);
+    return () => {
+      window.removeEventListener('recifra:cancel-song-form', handleExternalCancel);
+      window.removeEventListener('recifra:save-song-form', handleExternalSave);
+    };
+  }, [formData, isFormValid, onCancel, onSave, onDiscard, onAutoSave]);
 
   return (
     <div className="flex flex-col h-full text-sm">
@@ -6313,6 +6756,11 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
           <LabelManager 
             labels={labels} 
             isMaestro={isMaestro}
+            coroColor={coroColor}
+            onCoroColorChange={(color) => {
+              setCoroColor(color);
+              localStorage.setItem('recifra_coro_color', color);
+            }}
             onClose={() => setIsManagingLabels(false)} 
           />
         )}
@@ -6337,54 +6785,26 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
         )}
       </AnimatePresence>
 
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
-        {/* Registration Header - Universal */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-zinc-100 pb-4 mb-2 gap-4">
-          <div>
-            <h2 className="text-xl sm:text-2xl font-black text-text-main uppercase tracking-tighter">Editor de Música</h2>
-            <p className="text-[10px] font-bold text-text-dim uppercase tracking-widest mt-1">Gerencie cifras e metadados com precisão</p>
-          </div>
-          <div className="flex gap-2 w-full sm:w-auto">
-            <button 
-              onClick={onCancel}
-              className="flex-1 sm:flex-none px-6 h-10 rounded-xl font-bold uppercase tracking-widest text-[11px] bg-white border border-border text-text-dim hover:bg-zinc-50 transition-all"
-            >
-              Cancelar
-            </button>
-            <button 
-              onClick={() => isFormValid && onSave(formData)}
-              disabled={!isFormValid}
-              className={`flex-1 sm:flex-none px-8 h-10 rounded-xl font-bold uppercase tracking-widest text-[11px] transition-all shadow-sm flex items-center justify-center gap-2 ${
-                isFormValid 
-                  ? 'bg-primary hover:bg-[#1565c0] text-white' 
-                  : 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
-              }`}
-            >
-              <Save size={16} />
-              Salvar Música
-            </button>
-          </div>
-        </div>
-
-        <div className="space-y-6 lg:h-full lg:flex lg:flex-col lg:overflow-hidden pb-10">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-1 space-y-4">
+        <div className="space-y-4 lg:h-full lg:flex lg:flex-col lg:overflow-hidden pb-8">
           {/* Top Form Section: Metadados */}
-          <div className="space-y-4 flex-shrink-0">
-            {/* Metadados: Row 1 & 2 combined for better grid control */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-4">
+          <div className="space-y-3 flex-shrink-0">
+            {/* Linha 1: título, autoria e intérprete */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-x-3 gap-y-3">
               {/* Row 1: Title */}
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-text-dim uppercase tracking-widest flex items-center gap-1.5 ml-1">
                   Título Principal <span className="text-red-500">*</span>
                 </label>
                 <div className="relative group">
-                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-text-dim group-focus-within:text-primary transition-colors">
-                    <Music2 size={18} />
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-dim group-focus-within:text-primary transition-colors">
+                    <Music2 size={16} />
                   </div>
                   <input 
                     type="text"
                     value={formData.title}
                     onChange={e => setFormData({...formData, title: e.target.value})}
-                    className="w-full bg-white border border-border rounded-xl h-12 pl-12 pr-4 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none font-bold text-base transition-all placeholder:text-text-dim/30"
+                    className="w-full bg-white border border-border rounded-lg h-10 pl-10 pr-3 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none font-bold text-sm transition-all placeholder:text-text-dim/30"
                     placeholder="Ex: Hallelujah"
                     required
                   />
@@ -6395,14 +6815,14 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-text-dim uppercase tracking-widest flex items-center gap-1.5 ml-1">Composição / Autoria</label>
                 <div className="relative group">
-                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-text-dim group-focus-within:text-primary transition-colors">
-                    <Users size={18} />
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-dim group-focus-within:text-primary transition-colors">
+                    <Users size={16} />
                   </div>
                   <input 
                     type="text"
                     value={formData.composition}
                     onChange={e => setFormData({...formData, composition: e.target.value})}
-                    className="w-full bg-white border border-border rounded-xl h-12 pl-12 pr-4 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-text-dim/30"
+                    className="w-full bg-white border border-border rounded-lg h-10 pl-10 pr-3 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-text-dim/30"
                     placeholder="Nomes dos compositores"
                   />
                 </div>
@@ -6412,56 +6832,25 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-text-dim uppercase tracking-widest flex items-center gap-1.5 ml-1">Artista / Intérprete</label>
                 <div className="relative group">
-                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-text-dim group-focus-within:text-primary transition-colors">
-                    <Mic2 size={18} />
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-dim group-focus-within:text-primary transition-colors">
+                    <Mic2 size={16} />
                   </div>
                   <input 
                     type="text"
                     value={formData.artist}
                     onChange={e => setFormData({...formData, artist: e.target.value})}
-                    className="w-full bg-white border border-border rounded-xl h-12 pl-12 pr-4 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-text-dim/30"
+                    className="w-full bg-white border border-border rounded-lg h-10 pl-10 pr-3 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-text-dim/30"
                     placeholder="Nome do artista principal"
                     required
                   />
                 </div>
               </div>
 
-              {/* Row 2: Folder */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between ml-1">
-                  <label className="text-[10px] font-black text-text-dim uppercase tracking-widest">Pasta de Destino</label>
-                  <button 
-                    type="button"
-                    onClick={() => setIsManagingFolders(true)}
-                    className="text-[9px] font-black uppercase text-primary hover:bg-primary/5 px-2 py-0.5 rounded transition-all"
-                  >
-                    Gerenciar Pastas
-                  </button>
-                </div>
-                <div className="relative group">
-                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-text-dim group-focus-within:text-primary transition-colors">
-                    <FolderOpen size={18} />
-                  </div>
-                  <select 
-                    value={formData.folderId}
-                    onChange={e => setFormData({...formData, folderId: e.target.value})}
-                    className="w-full bg-white border border-border rounded-xl h-12 pl-12 pr-4 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none appearance-none cursor-pointer transition-all"
-                  >
-                    <option value="">Sem Pasta (Raiz)</option>
-                    {folders.filter(f => !f.type || f.type === 'song').map(f => (
-                      <option key={f.id} value={f.id}>{f.name}</option>
-                    ))}
-                  </select>
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-text-dim">
-                    <ChevronDown size={16} />
-                  </div>
-                </div>
-              </div>
             </div>
 
-
-            {/* Row 3: Key, Tempo, Category */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Linha 2: tom, pasta, andamento e categoria */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[0.7fr_1.2fr_1.3fr_1.4fr] gap-3">
+            {/* Tom */}
               <div className="space-y-1 relative">
                 <label className="text-[10px] font-black text-text-dim uppercase tracking-widest flex items-center gap-1.5 ml-1">
                   Tom <span className="text-red-500">*</span>
@@ -6469,13 +6858,13 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                 <button
                   type="button"
                   onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)}
-                  className="w-full bg-white border border-border rounded-xl h-12 px-4 flex items-center justify-between focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all group"
+                  className="w-full bg-white border border-border rounded-lg h-10 px-3 flex items-center justify-between focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all group"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-6 h-6 rounded bg-primary/5 flex items-center justify-center">
+                    <div className="w-5 h-5 rounded bg-primary/5 flex items-center justify-center">
                       <Music size={14} className="text-primary" />
                     </div>
-                    <span className={`font-black text-lg ${!formData.key ? 'text-text-dim/30' : 'text-text-main'}`}>
+                    <span className={`font-black text-base ${!formData.key ? 'text-text-dim/30' : 'text-text-main'}`}>
                       {formData.key || 'Definir'}
                     </span>
                   </div>
@@ -6497,16 +6886,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                             <button
                               key={k}
                               type="button"
-                              onClick={() => {
-                                const semitones = getSemitones(formData.key, k);
-                                if (semitones !== 0 && formData.chordPro) {
-                                  const transposed = transposeChordPro(formData.chordPro, semitones);
-                                  setFormData({ ...formData, key: k, chordPro: transposed });
-                                } else {
-                                  setFormData({ ...formData, key: k });
-                                }
-                                setIsKeyPickerOpen(false);
-                              }}
+                              onClick={() => transposeToKey(k)}
                               className={`flex items-center justify-center text-xs rounded-lg h-9 transition-all border font-bold ${formData.key === k ? 'bg-primary text-white border-primary shadow-md scale-105' : 'hover:bg-zinc-50 text-text-main bg-white border-border'}`}
                             >
                               {k}
@@ -6522,16 +6902,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                             <button
                               key={k}
                               type="button"
-                              onClick={() => {
-                                const semitones = getSemitones(formData.key, k);
-                                if (semitones !== 0 && formData.chordPro) {
-                                  const transposed = transposeChordPro(formData.chordPro, semitones);
-                                  setFormData({ ...formData, key: k, chordPro: transposed });
-                                } else {
-                                  setFormData({ ...formData, key: k });
-                                }
-                                setIsKeyPickerOpen(false);
-                              }}
+                              onClick={() => transposeToKey(k)}
                               className={`flex items-center justify-center text-xs rounded-lg h-9 transition-all border font-bold ${formData.key === k ? 'bg-primary text-white border-primary shadow-md scale-105' : 'hover:bg-zinc-50 text-text-main bg-white border-border'}`}
                             >
                               {k}
@@ -6544,11 +6915,43 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                 )}
               </div>
 
+              {/* Pasta de Destino */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between ml-1">
+                  <label className="text-[10px] font-black text-text-dim uppercase tracking-widest">Pasta de Destino</label>
+                  <button 
+                    type="button"
+                    onClick={() => setIsManagingFolders(true)}
+                    className="text-[9px] font-black uppercase text-primary hover:bg-primary/5 px-2 py-0.5 rounded transition-all"
+                  >
+                    Gerenciar
+                  </button>
+                </div>
+                <div className="relative group">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-dim group-focus-within:text-primary transition-colors">
+                    <FolderOpen size={16} />
+                  </div>
+                  <select 
+                    value={formData.folderId}
+                    onChange={e => setFormData({...formData, folderId: e.target.value})}
+                    className="w-full bg-white border border-border rounded-lg h-10 pl-10 pr-3 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none appearance-none cursor-pointer transition-all"
+                  >
+                    <option value="">Sem Pasta (Raiz)</option>
+                    {folders.filter(f => !f.type || f.type === 'song').map(f => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                  </select>
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-text-dim">
+                    <ChevronDown size={16} />
+                  </div>
+                </div>
+              </div>
+
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-text-dim uppercase tracking-widest flex items-center gap-1.5 ml-1">
                   Andamento <span className="text-red-500">*</span>
                 </label>
-                <div className="grid grid-cols-3 gap-1 bg-zinc-50 border border-border rounded-xl p-1 h-12">
+                <div className="grid grid-cols-3 gap-1 bg-zinc-50 border border-border rounded-lg p-1 h-10">
                   {['Lento', 'Moderado', 'Rápido'].map(t => (
                     <button
                       key={t}
@@ -6572,17 +6975,17 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                     onClick={() => setIsManagingCategories(true)}
                     className="text-[9px] font-black uppercase text-primary hover:bg-primary/5 px-2 py-0.5 rounded transition-all"
                   >
-                    Ajustar
+                    Editar
                   </button>
                 </div>
                 <div className="relative group">
-                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-text-dim group-focus-within:text-primary transition-colors">
-                    <Tag size={18} />
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-dim group-focus-within:text-primary transition-colors">
+                    <Tag size={16} />
                   </div>
                   <select 
                     value={formData.category}
                     onChange={e => setFormData({...formData, category: e.target.value})}
-                    className="w-full bg-white border border-border rounded-xl h-12 pl-12 pr-4 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none appearance-none cursor-pointer transition-all"
+                    className="w-full bg-white border border-border rounded-lg h-10 pl-10 pr-3 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none appearance-none cursor-pointer transition-all"
                   >
                     <option value="">Selecionar...</option>
                     {categories.map(cat => (
@@ -6596,121 +6999,117 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
               </div>
             </div>
           </div>
-
-          {/* TOOLBARS AREA (Full Width) */}
-          <div className="flex-shrink-0 space-y-2">
-            {/* Row 1: Labels & Formatting - Wraps and Adapts Height */}
-            <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-3 shadow-sm">
-              <div className="flex flex-wrap gap-2">
-                {toolbarButtons.map(btn => (
-                  <button
-                    key={btn.label}
-                    type="button"
-                    onClick={() => handleToolbarAction(btn.label)}
-                    className={`h-8 px-3 rounded-md text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap shadow-sm flex items-center gap-1 border border-black/5 hover:scale-105 active:scale-95 ${btn.text || (btn.label.startsWith('{') ? 'text-white' : 'text-zinc-900')}`}
-                    style={{ backgroundColor: (btn as any).customColor || (btn.label === '{DESTAQUE}' ? '#373f4d' : btn.label === '{CÔRO}' ? '#ffeb3b' : '#eee') }}
-                  >
-                    {btn.label.replace(/\{|\}|#/g, '')}
-                  </button>
-                ))}
-                <button 
-                  onClick={() => setIsManagingLabels(true)}
-                  className="w-8 h-8 flex-shrink-0 flex items-center justify-center bg-white border border-dashed border-zinc-300 rounded-md text-zinc-400 hover:text-primary hover:border-primary transition-all"
-                >
-                  <Plus size={14} />
-                </button>
-              </div>
-            </div>
-
-            {/* Row 2: Chord Shortcuts */}
-            <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-3 shadow-sm">
-              <div className="flex flex-wrap gap-2">
-                {usedChords.length > 0 ? (
-                  usedChords.map(chord => (
-                    <button
-                      key={chord}
-                      type="button"
-                      onClick={() => insertChord(chord)}
-                      className="h-7 px-3 rounded-md bg-white border font-black text-[10px] hover:scale-105 transition-all shadow-sm active:scale-95 whitespace-nowrap"
-                      style={{ color: chordColor, borderColor: `${chordColor}20` }}
-                    >
-                      {chord}
-                    </button>
-                  ))
-                ) : (
-                  <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest px-2 py-1">Digite acordes na cifra para exibi-los aqui...</span>
-                )}
-              </div>
-            </div>
-          </div>
-
           <div className="flex-1 lg:overflow-hidden min-h-[400px]">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-full items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4 h-full items-stretch">
               {/* COLUMN 1: Editor */}
-              <div className="flex flex-col bg-white border border-zinc-200 rounded-xl lg:rounded-t-2xl overflow-hidden shadow-sm">
-                <div className="flex items-center justify-between px-4 h-10 border-b border-zinc-100 bg-white">
+              <div className="flex h-full min-h-0 flex-col bg-white border border-primary rounded-2xl overflow-hidden shadow-sm">
+                <div className="flex items-center justify-between px-4 h-12 bg-primary">
                   <div className="flex items-center gap-2">
                     <button 
                       onClick={() => setIsEditorExpanded(!isEditorExpanded)}
-                      className="text-zinc-400 hover:text-primary transition-colors"
+                      className="text-white hover:text-zinc-200 px-2 py-0.5 rounded transition-all"
                     >
                       {isEditorExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                     </button>
-                    <span className="text-[10px] font-black uppercase text-zinc-400 tracking-widest">Editor de Cifra</span>
+                    <span className="text-[12px] font-black uppercase text-white tracking-widest">Editor Chordpro</span>
                   </div>
-                  <div className="flex gap-2">
-                    <button onClick={undo} className="text-zinc-400 hover:text-primary transition-colors"><RotateCcw size={14} /></button>
-                    <button onClick={redo} className="text-zinc-400 hover:text-primary transition-colors"><RotateCw size={14} /></button>
+                  <div className="flex gap-3">
+                    <button type="button" onClick={undo} title="Desfazer (Ctrl+Z)" aria-label="Desfazer" disabled={history.length === 0} className="text-white/80 hover:text-white transition-colors disabled:opacity-30"><RotateCcw size={14} /></button>
+                    <button type="button" onClick={redo} title="Refazer (Ctrl+Y)" aria-label="Refazer" disabled={redoStack.length === 0} className="text-white/80 hover:text-white transition-colors disabled:opacity-30"><RotateCw size={14} /></button>
                   </div>
                 </div>
+                {isEditorExpanded && (
+                
+<div className="flex flex-wrap items-center gap-1 p-1.5 bg-zinc-50 border-b border-zinc-200">
+  {usedChords.length > 0 ? (
+    usedChords.map(chord => (
+      <button
+        key={chord}
+        type="button"
+        onClick={() => insertChord(chord)}
+        className="h-6 w-auto flex-none px-2 rounded bg-white border font-bold text-[11px] hover:scale-105 transition-all shadow-sm active:scale-95 whitespace-nowrap"
+        style={{ color: chordColor, borderColor: chordColor }}
+      >
+        {chord}
+      </button>
+    ))
+  ) : (
+    <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest px-2 py-1">
+      Digite acordes na cifra para exibi-los aqui...
+    </span>
+  )}
+</div>
+
+                )}
 
                 {isEditorExpanded && (
                   <>
-                    <div className="relative bg-white shadow-inner">
-                      <textarea 
+                    <div className="relative flex-1 min-h-0 bg-white shadow-inner overflow-hidden">
+                      <div aria-hidden="true" className="absolute inset-0 w-full h-full py-6 px-8 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-words overflow-hidden pointer-events-none">
+                        {formData.chordPro.split(/(\\[[^\\]\\n]+\\])/g).map((part, index) =>
+                          /^\\[[^\\]\\n]+\\]$/.test(part)
+                            ? <span key={index} style={{ color: chordColor }}>{part}</span>
+                            : <span key={index} className="text-zinc-900">{part}</span>
+                        )}
+                      </div>
+                      <textarea
                         ref={editorRef}
                         value={formData.chordPro}
                         onChange={e => updateChordPro(e.target.value)}
                         onKeyDown={handleEditorKeyDown}
-                        className="w-full bg-white py-6 px-8 font-mono text-[11px] leading-relaxed outline-none resize-none overflow-hidden placeholder:text-zinc-200"
+                        className="absolute inset-0 w-full h-full bg-transparent py-6 px-8 font-mono text-[11px] leading-relaxed text-transparent caret-zinc-900 outline-none resize-none overflow-auto placeholder:text-zinc-300 selection:bg-primary/20"
                         placeholder="[C] Digite ou [G] cole sua [Am] cifra aqui..."
+                        spellCheck={false}
                         required
                       />
                     </div>
                     
                     {/* Editor Bottom Actions */}
-                    <div className="flex flex-col gap-2 p-3 bg-zinc-50/50 border-t border-zinc-200 border-b-0">
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        <button type="button" onClick={() => setFormData({...formData, title: '', artist: '', composition: '', category: '', tempo: 'Moderado', key: 'C', chordPro: '', folderId: ''})} className="h-10 bg-white border border-zinc-200 rounded-xl text-[10px] font-black uppercase text-zinc-600 hover:bg-zinc-50 transition-all">Novo</button>
-                        <button type="button" className="h-10 bg-white border border-zinc-200 rounded-xl text-[10px] font-black uppercase text-zinc-600 hover:bg-zinc-50 transition-all">Importar</button>
-                        <button type="button" className="h-10 bg-white border border-zinc-200 rounded-xl text-[10px] font-black uppercase text-zinc-600 hover:bg-zinc-50 transition-all">Exportar</button>
-                        <button type="button" onClick={() => updateChordPro(formData.chordPro.replace(/\[[^\]]+\]/g, ''))} className="h-10 bg-white border border-red-100 rounded-xl text-[10px] font-black uppercase text-red-500 hover:bg-red-50 transition-all">Limpar Cifra</button>
+                    <div className="p-2.5 bg-[#EEF1F5] border-t border-[#DCE3EC] rounded-b-2xl">
+                      <input
+                        ref={importFileRef}
+                        type="file"
+                        accept=".cho,.chordpro,.txt,text/plain"
+                        className="hidden"
+                        onChange={handleImportChordPro}
+                        aria-label="Selecionar arquivo de cifra para importar"
+                      />
+                      <div className="grid grid-cols-5 gap-1.5">
+                        <button type="button" title="Novo" aria-label="Novo" onClick={() => { originalTransposeRef.current = null; setHistory(prev => [formData.chordPro, ...prev].slice(0, 50)); setRedoStack([]); setFormData({...formData, title: '', artist: '', composition: '', category: '', tempo: 'Moderado', key: 'C', chordPro: '', folderId: ''}); }} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#174EA6] border border-[#174EA6] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white hover:bg-[#0D3F8A] transition-all"><FilePlus size={13} /> <span className="truncate">Novo</span></button>
+                        <button type="button" title="Importar cifra" aria-label="Importar" onClick={() => importFileRef.current?.click()} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#174EA6] border border-[#174EA6] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white hover:bg-[#0D3F8A] transition-all"><FileUp size={13} /> <span className="truncate">Importar</span></button>
+                        <button type="button" title="Exportar cifra" aria-label="Exportar" onClick={handleExportChordPro} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#174EA6] border border-[#174EA6] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white hover:bg-[#0D3F8A] transition-all"><Download size={13} /> <span className="truncate">Exportar</span></button>
+                        <button type="button" title="Limpar acordes da cifra" aria-label="Limpar cifra" onClick={() => updateChordPro(formData.chordPro.replace(/\[[^\]]+\]/g, ''))} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#174EA6] border border-[#174EA6] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white hover:bg-[#0D3F8A] transition-all"><Eraser size={13} /> <span className="truncate">Limpar</span></button>
+                        <button type="button" title="Restaurar tom original" aria-label="Restaurar tom" onClick={restoreOriginalKey} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#174EA6] border border-[#174EA6] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white hover:bg-[#0D3F8A] transition-all"><RotateCcw size={13} /> <span className="truncate">Restaurar</span></button>
                       </div>
-                      <button type="button" className="h-10 bg-white border border-zinc-200 rounded-xl text-[10px] font-black uppercase text-zinc-600 hover:bg-zinc-50 transition-all">Restaurar Tom</button>
                     </div>
                   </>
                 )}
               </div>
               
               {/* COLUMN 2: Preview */}
-              <div className="flex flex-col bg-white border border-zinc-200 rounded-t-2xl overflow-hidden shadow-sm">
-                <div className="flex items-center justify-between px-4 h-10 border-b border-zinc-100 bg-white">
+              <div className="flex h-full min-h-0 flex-col bg-white border border-primary rounded-2xl overflow-hidden shadow-sm">
+                <div className="flex items-center justify-between px-4 h-12 bg-primary">
                   <div className="flex items-center gap-2">
                     <button 
                       onClick={() => setIsPreviewExpanded(!isPreviewExpanded)}
-                      className="text-zinc-400 hover:text-primary transition-colors"
+                      className="text-white hover:text-zinc-200 transition-colors px-2 py-0.5 rounded transition-all"
                     >
-                      {isPreviewExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      {isPreviewExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                     </button>
-                    <span className="text-[10px] font-black uppercase text-zinc-400 tracking-widest">Pré-Visualização</span>
+                    <span className="text-[12px] font-black uppercase text-white tracking-widest">VISOR</span>
+                    <div className="flex items-center gap-2 ml-8" title="Ajustar tamanho da letra e disposição da pré-visualização">
+                      <button type="button" onClick={() => { setChordSize(v => Math.max(9, v - 1)); setLyricSize(v => Math.max(10, v - 1)); }} className="w-7 h-7 rounded-md border border-zinc-200 text-white hover:text-primary" title="Diminuir fonte">A−</button>
+                      <button type="button" onClick={() => { setChordSize(v => Math.min(22, v + 1)); setLyricSize(v => Math.min(24, v + 1)); }} className="w-7 h-7 rounded-md border border-zinc-200 text-white hover:text-primary" title="Aumentar fonte">A+</button>
+                      <button type="button" onClick={() => setPreviewColumns(v => v === 1 ? 2 : 1)} className="h-7 px-2 rounded-md border border-zinc-200 text-[9px] font-bold text-white hover:text-primary" title="Alternar entre uma e duas colunas">{previewColumns} col.</button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
                     <div 
                       className="flex items-center gap-2 cursor-pointer group" 
                       onClick={() => document.getElementById('chord-color-input')?.click()}
                     >
-                       <span className="text-[9px] font-black uppercase text-zinc-400 group-hover:text-zinc-600 transition-colors">Cifras</span>
-                       <div className="w-6 h-4 rounded-sm border border-black/5 shadow-sm" style={{ backgroundColor: chordColor }} />
+                       <span className="text-[11px] font-semiblack uppercase text-white group-hover:text-zinc-200 transition-colors">Cifra</span>
+                       <div className="w-5 h-5 rounded-sm border border-white" style={{ backgroundColor: chordColor }} />
                        <input 
                          id="chord-color-input" 
                          type="color" 
@@ -6723,8 +7122,8 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                       className="flex items-center gap-2 cursor-pointer group"
                       onClick={() => document.getElementById('lyric-color-input')?.click()}
                     >
-                       <span className="text-[9px] font-black uppercase text-zinc-400 group-hover:text-zinc-600 transition-colors">Letra</span>
-                       <div className="w-6 h-4 rounded-sm border border-black/5 shadow-sm" style={{ backgroundColor: lyricColor }} />
+                       <span className="text-[11px] font-semiblack uppercase text-white group-hover:text-zinc-200 transition-colors">Letra</span>
+                       <div className="w-5 h-5 rounded-sm border border-white" style={{ backgroundColor: lyricColor }} />
                        <input 
                          id="lyric-color-input" 
                          type="color" 
@@ -6735,11 +7134,60 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                     </div>
                   </div>
                 </div>
+                {isPreviewExpanded && (
+                  <div className="flex flex-wrap items-center gap-1 p-1.5 bg-zinc-50 border-b border-zinc-200">
+                    {toolbarButtons.map(btn => {
+                      const isCustomMarker = !btn.requiresSelection;
+                      const hasPreviewPosition = previewSelection !== null;
+                      const hasPreviewTextSelection = Boolean(
+                        previewSelection && previewSelection.end > previewSelection.start
+                      );
+                      const isDisabled = btn.requiresSelection
+                        ? !hasPreviewTextSelection
+                        : (!hasPreviewPosition || hasPreviewTextSelection);
+                      const buttonTooltip = isCustomMarker
+                        ? (hasPreviewTextSelection
+                            ? 'Marcadores indisponíveis durante a seleção de texto.'
+                            : hasPreviewPosition
+                              ? 'Inserir marcador no ponto selecionado.'
+                              : 'Posicione o cursor no ponto desejado.')
+                        : btn.tooltip;
+                      return (
+                        <button
+                          key={btn.label}
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => handleToolbarAction(btn.label)}
+                          disabled={isDisabled}
+                          title={buttonTooltip}
+                          aria-label={buttonTooltip}
+                          className={`h-6 w-auto flex-none px-2 rounded bg-white border font-bold text-[11px] transition-all shadow-sm whitespace-nowrap ${
+                            isDisabled
+                              ? 'opacity-35 cursor-not-allowed'
+                              : 'hover:scale-105 active:scale-95'
+                          }`}
+                          style={{ color: chordColor, borderColor: chordColor }}
+                        >
+                          {btn.label.replace(/\{|\}|#/g, '')}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      title="Gerenciar marcadores"
+                      aria-label="Gerenciar marcadores"
+                      onClick={() => setIsManagingLabels(true)}
+                      className="h-6 w-7 flex-none flex items-center justify-center bg-white border border-dashed border-zinc-300 rounded-md text-zinc-400 hover:text-primary hover:border-primary transition-all"
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                )}
 
                 {isPreviewExpanded && (
                   <>
-                    <div className="bg-white p-8 font-mono text-[10px] leading-relaxed shadow-inner">
-                       <div className="mb-6 space-y-1">
+                    <div className="flex-1 bg-white p-4.5 font-mono text-[10px] leading-relaxed shadow-inner">
+                       <div className="mb-3 space-y-0">
                           <div className="flex items-center gap-2">
                             <h4 className="text-lg font-black text-zinc-900 uppercase">{formData.title || 'Música Sem Nome'}</h4>
                             <span className="text-lg font-black" style={{ color: chordColor }}>({formData.key || '-'})</span>
@@ -6749,32 +7197,77 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                           </div>
                        </div>
 
-                       <ChordProRenderer 
-                        text={formData.chordPro} 
-                        chordSize={chordSize}
-                        lyricSize={lyricSize}
-                        chordColor={chordColor}
-                        lyricColor={lyricColor}
-                      />
+                       <div data-preview-brace-layer="true" className="relative">
+                       <div
+                         data-preview-editor="true"
+                         contentEditable
+                         suppressContentEditableWarning
+                         role="textbox"
+                         aria-label="Visor da música: posicione o cursor ou selecione somente a letra"
+                         spellCheck={false}
+                         style={{
+                           columnCount: previewColumns,
+                           columnGap: '2rem',
+                           outline: 'none',
+                           cursor: 'text',
+                           userSelect: 'text',
+                           WebkitUserSelect: 'text'
+                         }}
+                         onBeforeInput={(event) => event.preventDefault()}
+                         onPaste={(event) => event.preventDefault()}
+                         onDrop={(event) => event.preventDefault()}
+                         onCut={(event) => event.preventDefault()}
+                         onKeyDown={(event) => {
+                           const navigationKeys = [
+                             'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+                             'Home', 'End', 'PageUp', 'PageDown', 'Shift',
+                             'Control', 'Alt', 'Meta', 'Escape'
+                           ];
+                           const isSelectAll = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a';
+                           if (!navigationKeys.includes(event.key) && !isSelectAll) {
+                             event.preventDefault();
+                           }
+                         }}
+                         onMouseUp={capturePreviewSelection}
+                         onKeyUp={capturePreviewSelection}
+                         onTouchEnd={capturePreviewSelection}
+                         onBlur={() => {
+                           // Ao sair do VISOR, invalida a posição anterior para
+                           // exigir um novo posicionamento antes de inserir outro marcador.
+                           previewSelectionRef.current = null;
+                           setPreviewSelection(null);
+                         }}
+                       >
+                         <ChordProRenderer
+                           text={formData.chordPro}
+                           chordSize={chordSize}
+                           lyricSize={lyricSize}
+                           chordColor={chordColor}
+                           lyricColor={lyricColor}
+                         />
+                       </div>
+                       </div>
                     </div>
 
                     {/* Preview Bottom Actions */}
-                    <div className="flex flex-col gap-2 p-3 bg-zinc-50/50 border-t border-zinc-200">
-                      <div className="grid grid-cols-2 gap-2">
-                        <button 
-                          onClick={onCancel} 
-                          className="h-10 bg-white border border-zinc-200 rounded-xl text-[11px] font-black uppercase text-zinc-600 hover:bg-zinc-50 transition-all"
+                    <div className="flex flex-col gap-1.5 p-2.5 bg-[#EEF1F5] border-t border-[#DCE3EC] rounded-b-2xl">
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          onClick={handleDiscard}
+                          className="h-9 bg-[#174EA6] border border-[#174EA6] rounded-lg text-[10px] font-bold uppercase tracking-widest text-white hover:bg-[#0D3F8A] transition-all"
                         >
                           Cancelar
                         </button>
-                        <button 
-                          onClick={() => isFormValid && onSave(formData)}
+                        <button
+                          onClick={handleSave}
                           disabled={!isFormValid}
-                          className={`h-10 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
-                            isFormValid ? 'bg-primary text-white shadow-lg' : 'bg-zinc-100 text-zinc-400'
+                          className={`h-9 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
+                            isFormValid
+                              ? 'bg-[#174EA6] text-white shadow-lg hover:bg-[#0D3F8A]'
+                              : 'bg-[#174EA6]/45 text-white/80'
                           }`}
                         >
-                          <Save size={18} /> Salvar
+                          <Save size={15} /> Salvar
                         </button>
                       </div>
                     </div>
