@@ -2884,7 +2884,7 @@ const handleRepertorioPdfFull = async () => {
           {sidebarTab === 'songs' && (
                 <div className="space-y-0">
                   <div className="sticky top-0 z-30 bg-bg pt-2">
-                    {isSelectionMode && (
+                    {isSelectionMode && isDesktop && (
                       <button 
                         onClick={() => {
                           const allIdsInContext = songsInActiveContext.map(s => s.id!);
@@ -2940,7 +2940,22 @@ const handleRepertorioPdfFull = async () => {
                       className="w-full min-h-[48px] flex items-center justify-between gap-3 px-3.5 py-2.5 bg-[#EEF1F5] transition-colors"
                     >
                       <div className="flex w-full min-w-0 items-center gap-3">
-                        <FolderIcon size={16} fill="currentColor" className="text-[#174EA6]" />
+                        {!isDesktop && isSelectionMode ? (
+                          <span
+                            role="checkbox"
+                            aria-checked={filteredSongs.length > 0 && filteredSongs.every(song => selectedSongIds.includes(song.id!))}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              const ids = filteredSongs.map(song => song.id!);
+                              const allSelected = ids.length > 0 && ids.every(id => selectedSongIds.includes(id));
+                              setSelectedSongIds(prev => allSelected ? prev.filter(id => !ids.includes(id)) : Array.from(new Set([...prev, ...ids])));
+                            }}
+                            className="flex h-6 w-6 shrink-0 items-center justify-center text-[#174EA6]"
+                            title="Selecionar ou desmarcar todas as músicas"
+                          >
+                            {filteredSongs.length > 0 && filteredSongs.every(song => selectedSongIds.includes(song.id!)) ? <CheckSquare size={21} /> : <Square size={21} />}
+                          </span>
+                        ) : <FolderIcon size={16} fill="currentColor" className="text-[#174EA6]" />}
                         <span className="min-w-0 flex-1 text-left text-[13px] font-bold uppercase tracking-[0.08em] text-[#174EA6]">TODAS</span>
                         <span className="ml-auto text-[10px] min-w-[18px] h-[18px] px-1 bg-[#174EA6] rounded-[4px] text-white font-bold flex items-center justify-center tabular-nums">{filteredSongs.length}</span>
                       </div>
@@ -2959,6 +2974,7 @@ const handleRepertorioPdfFull = async () => {
                           ) : (
                             filteredSongs.map(song => (
                               <SongSidebarItem 
+                                isMobile={!isDesktop}
                                 key={song.id}
                                 song={song}
                                 isSelectionMode={isSelectionMode}
@@ -3010,7 +3026,22 @@ const handleRepertorioPdfFull = async () => {
                           className="w-full min-h-[48px] flex items-center justify-between gap-3 px-3.5 py-2.5 bg-[#EEF1F5] transition-colors"
                         >
                           <div className="flex flex-1 min-w-0 items-center gap-3">
-                            <FolderIcon size={16} className="text-[#174EA6]" />
+                            {!isDesktop && isSelectionMode ? (
+                              <span
+                                role="checkbox"
+                                aria-checked={folderSongs.length > 0 && folderSongs.every(song => selectedSongIds.includes(song.id!))}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  const ids = folderSongs.map(song => song.id!);
+                                  const allSelected = ids.length > 0 && ids.every(id => selectedSongIds.includes(id));
+                                  setSelectedSongIds(prev => allSelected ? prev.filter(id => !ids.includes(id)) : Array.from(new Set([...prev, ...ids])));
+                                }}
+                                className="flex h-6 w-6 shrink-0 items-center justify-center text-[#174EA6]"
+                                title="Selecionar ou desmarcar músicas desta pasta"
+                              >
+                                {folderSongs.length > 0 && folderSongs.every(song => selectedSongIds.includes(song.id!)) ? <CheckSquare size={21} /> : <Square size={21} />}
+                              </span>
+                            ) : <FolderIcon size={16} className="text-[#174EA6]" />}
                             <span className="min-w-0 flex-1 text-left text-[13px] font-bold uppercase tracking-[0.08em] truncate max-w-[140px] text-[#174EA6]">{folder.name}</span>
                             <span className="ml-auto text-[10px] min-w-[18px] h-[18px] px-1 bg-[#174EA6] rounded-[4px] text-white font-bold flex items-center justify-center tabular-nums">{folderSongs.length}</span>
                           </div>
@@ -3030,6 +3061,7 @@ const handleRepertorioPdfFull = async () => {
                               ) : (
                                 folderSongs.map(song => (
                                   <SongSidebarItem 
+                                    isMobile={!isDesktop}
                                     key={song.id}
                                     song={song}
                                     isSelectionMode={isSelectionMode}
@@ -3072,6 +3104,7 @@ const handleRepertorioPdfFull = async () => {
                   </div>
                   {filteredSongs.filter(s => !s.folderId).map(song => (
                     <SongSidebarItem 
+                      isMobile={!isDesktop}
                       key={song.id}
                       song={song}
                       isSelectionMode={isSelectionMode}
@@ -3494,21 +3527,21 @@ const handleRepertorioPdfFull = async () => {
                 disabled={selectedSongIds.length === 0}
                 className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl font-bold text-[9px] uppercase tracking-tighter disabled:opacity-50 border transition-all ${isMovingSongs ? 'bg-primary text-white border-primary' : 'bg-surface border-border text-text-dim hover:text-primary'}`}
               >
-                <FolderIcon size={12} /> Mover
+                <FolderIcon size={isDesktop ? 12 : 22} /> {isDesktop && 'Mover'}
               </button>
               <button 
                 onClick={handleBatchShare}
                 disabled={selectedSongIds.length === 0}
                 className="flex-1 flex items-center justify-center gap-1 bg-primary/10 text-primary py-1.5 rounded-xl font-bold text-[9px] uppercase tracking-tighter disabled:opacity-50 border border-primary/20"
               >
-                <Share2 size={12} /> Compartilhar
+                <Share2 size={isDesktop ? 12 : 22} /> {isDesktop && 'Compartilhar'}
               </button>
               <button 
                 onClick={handleBatchDelete}
                 disabled={selectedSongIds.length === 0}
                 className="flex-1 flex items-center justify-center gap-1 bg-red-500/10 text-red-500 py-1.5 rounded-xl font-bold text-[9px] uppercase tracking-tighter disabled:opacity-50 border border-red-500/20"
               >
-                <Trash2 size={12} /> Excluir
+                <Trash2 size={isDesktop ? 12 : 22} /> {isDesktop && 'Excluir'}
               </button>
             </div>
             
@@ -3553,6 +3586,7 @@ const handleRepertorioPdfFull = async () => {
                 tooltip="Cadastrar uma nova música."
                 active={true}
                 variant="light"
+                disabled={isSelectionMode}
                 onClick={() => {
                   setEditingSong(null);
                   setCurrentView('form');
@@ -3565,21 +3599,25 @@ const handleRepertorioPdfFull = async () => {
                 tooltip="Criar ou organizar pastas de músicas."
                 active={true}
                 variant="light"
+                disabled={isSelectionMode}
                 onClick={() => {
                   setManagingFolderType('song');
                   setIsSidebarOpen(false);
                 }}
               />
               <SidebarNavItem
-                icon={expandedFolders.length > 0 ? (isSelectionMode ? <Check size={18} /> : <CheckSquare size={18} />) : <Settings size={18} />}
-                label={expandedFolders.length > 0 ? (isSelectionMode ? 'Concluir' : 'Selecionar') : 'Ajustes'}
-                tooltip={expandedFolders.length > 0 ? 'Selecionar músicas para ações em lote.' : 'Abrir ajustes e configurações.'}
-                active={true}
+                icon={isSelectionMode ? <Check size={20} /> : expandedFolders.length > 0 ? <CheckSquare size={18} /> : <Settings size={18} />}
+                label={isSelectionMode ? 'Concluir' : expandedFolders.length > 0 ? 'Selecionar' : 'Ajustes'}
+                tooltip={isSelectionMode ? 'Concluir seleção.' : expandedFolders.length > 0 ? 'Selecionar músicas para ações em lote.' : 'Abrir ajustes e configurações.'}
+                active={isSelectionMode}
                 variant="light"
                 onClick={() => {
-                  if (expandedFolders.length > 0) {
-                    setIsSelectionMode(!isSelectionMode);
-                    if (isSelectionMode) setSelectedSongIds([]);
+                  if (isSelectionMode) {
+                    setIsSelectionMode(false);
+                    setSelectedSongIds([]);
+                    setIsMovingSongs(false);
+                  } else if (expandedFolders.length > 0) {
+                    setIsSelectionMode(true);
                   } else {
                     setSidebarTab('settings');
                     setSidebarView('tabs');
@@ -3594,6 +3632,7 @@ const handleRepertorioPdfFull = async () => {
                   tooltip="Importar e exportar músicas e acervos."
                   active={true}
                   variant="light"
+                  disabled={isSelectionMode}
                   onClick={() => { setIsSidebarArchiveOpen(!isSidebarArchiveOpen); setIsSidebarActionOpen(false); }}
                 />
                 <AnimatePresence>
@@ -5167,13 +5206,42 @@ const handleRepertorioPdfFull = async () => {
 );
 }
 
-function SongSidebarItem({ song, isSelectionMode, isSelected, onToggleSelect, onClick }: any) {
+function SongSidebarItem({ song, isSelectionMode, isSelected, onToggleSelect, onClick, onLongPress, isMobile }: any) {
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressTriggered = useRef(false);
+  const clearPressTimer = () => {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+  };
+  const handlePressStart = () => {
+    if (!isMobile || isSelectionMode || !onLongPress) return;
+    longPressTriggered.current = false;
+    clearPressTimer();
+    pressTimer.current = setTimeout(() => {
+      longPressTriggered.current = true;
+      onLongPress();
+    }, 550);
+  };
+  const handlePressEnd = () => clearPressTimer();
+
   return (
     <div className="relative border-b border-border last:border-0 overflow-hidden">
-      <motion.button 
-        onClick={onClick}
+      <motion.button
+        type="button"
+        onPointerDown={handlePressStart}
+        onPointerUp={handlePressEnd}
+        onPointerLeave={handlePressEnd}
+        onPointerCancel={handlePressEnd}
+        onContextMenu={(event) => { if (isMobile) event.preventDefault(); }}
+        onClick={() => {
+          if (longPressTriggered.current) {
+            longPressTriggered.current = false;
+            return;
+          }
+          onClick?.();
+        }}
         whileTap={{ scale: 0.98 }}
-        className={`w-full text-left p-3.5 rounded-lg hover:bg-surface transition-colors group flex items-center gap-5 ${isSelected ? 'bg-primary/5' : ''}`}
+        className={`w-full text-left p-3.5 rounded-lg hover:bg-surface transition-colors group flex items-center gap-5 ${isSelected ? 'bg-primary/5' : ''} ${isMobile ? 'select-none touch-pan-y' : ''}`}
       >
         {isSelectionMode && (
           <div className="text-primary">
@@ -5181,16 +5249,16 @@ function SongSidebarItem({ song, isSelectionMode, isSelected, onToggleSelect, on
           </div>
         )}
         <div className="flex-1 min-w-0">
-           <div className="font-bold text-sm truncate tracking-normal uppercase leading-none mb-1 text-black">
-             {song.title?.length > 22 ? song.title.substring(0, 22) + '...' : song.title}
-           </div>
-           <div className="flex items-center justify-between gap-3">
-             <div className="text-[10px] text-text-dim uppercase font-bold tracking-widest truncate leading-tight flex-1">
-               {song.artist?.length > 22 ? song.artist.substring(0, 22) + '...' : song.artist}
-             </div>
-             <div className="text-[12px] text-primary font-bold shrink-0 text-right">{song.key}</div>
-           </div>
-         </div>
+          <div className="font-bold text-sm truncate tracking-normal uppercase leading-none mb-1 text-black">
+            {song.title?.length > 22 ? song.title.substring(0, 22) + '...' : song.title}
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-[10px] text-text-dim uppercase font-bold tracking-widest truncate leading-tight flex-1">
+              {song.artist?.length > 22 ? song.artist.substring(0, 22) + '...' : song.artist}
+            </div>
+            <div className="text-[12px] text-primary font-bold shrink-0 text-right">{song.key}</div>
+          </div>
+        </div>
         {!isSelectionMode && <ChevronLeft size={18} className="rotate-180 text-border group-hover:text-primary" />}
       </motion.button>
     </div>
@@ -5542,7 +5610,7 @@ function SidebarNavItem({ icon, label, active, onClick, variant = 'dark', disabl
      title={tooltip || label}
       aria-label={tooltip || label}
       onClick={disabled ? undefined : onClick}
-      className={`relative flex flex-col items-center gap-1 p-2 transition-all ${active ? activeColor : inactiveColor} ${disabled ? 'cursor-not-allowed' : ''}`}
+      className={`relative flex flex-col items-center gap-1 p-2 transition-all ${active ? activeColor : inactiveColor} ${disabled ? 'cursor-not-allowed opacity-35 pointer-events-none' : ''}`}
     >
       {icon}
       <span className="text-[9px] uppercase font-bold tracking-widest">{label}</span>
