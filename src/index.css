@@ -42,3 +42,34 @@
     @apply bg-bg text-text-main antialiased transition-colors duration-200;
   }
 }
+
+
+/* Em tablets e celulares, preservar a formatação original: linhas nunca quebram.
+   O App calcula a escala necessária para a linha mais longa caber na largura útil. */
+@media (max-width: 1023px) {
+  .chordpro-responsive-content {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .chordpro-responsive-line {
+    display: flex;
+    flex-wrap: nowrap !important;
+    white-space: pre;
+    width: max-content;
+    min-width: 100%;
+    max-width: none;
+    overflow: visible;
+  }
+  .chordpro-responsive-chunk {
+    flex: 0 0 auto;
+    min-width: max-content;
+    max-width: none;
+  }
+  .chordpro-responsive-lyric {
+    white-space: pre !important;
+    overflow-wrap: normal !important;
+    word-break: keep-all !important;
+  }
+}

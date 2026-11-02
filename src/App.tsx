@@ -194,6 +194,7 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [transposition, setTransposition] = useState(0);
   const [liveSession, setLiveSession] = useState<Session | null>(null);
+  const initialLiveSessionHandledRef = useRef(false);
   const [isMaestroActive, setIsMaestroActive] = useState(false);
   const [followLeader, setFollowLeader] = useState(false);
   const [userRole, setUserRole] = useState<'maestro' | 'musician'>('musician');
@@ -317,6 +318,27 @@ export default function App() {
     });
     return max;
   }, [selectedSong, transposition]);
+
+  // Em tablets e celulares, ajusta automaticamente a escala para caber a linha mais longa
+  // na largura útil, sem quebrar ou reformatar as linhas da música.
+  useEffect(() => {
+    if (isDesktop || !songViewRef.current || maxLineChars <= 0 || selectedSong?.pdfPages?.length) return;
+    const fitToWidth = () => {
+      const viewWidth = songViewRef.current?.clientWidth || window.innerWidth;
+      let horizontalPadding = 48;
+      if (viewWidth >= 768) horizontalPadding = 96;
+      const availableWidth = Math.max(120, viewWidth - horizontalPadding - 8);
+      const estimatedLineWidthAtScaleOne = maxLineChars * 8.4;
+      const fitScale = Math.min(1, availableWidth / estimatedLineWidthAtScaleOne);
+      setChordProScale(current => Math.min(current, Math.max(0.1, fitScale)));
+    };
+    const frame = window.requestAnimationFrame(fitToWidth);
+    window.addEventListener('resize', fitToWidth);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize', fitToWidth);
+    };
+  }, [isDesktop, maxLineChars, selectedSong?.id, chordProScale]);
 
   // Handle device-specific zoom persistence per song
   useEffect(() => {
@@ -478,10 +500,10 @@ export default function App() {
           const charWidthAtScale1 = 8.4;
           const maxAllowedScale = availableWidth / (maxLineChars * charWidthAtScale1);
           
-          newScale = Math.min(newScale, Math.max(0.6, maxAllowedScale));
+          newScale = Math.min(newScale, Math.max(0.1, maxAllowedScale));
         }
 
-        setChordProScale(prev => Math.min(Math.max(0.6, newScale), 2.5));
+        setChordProScale(prev => Math.min(Math.max(0.1, newScale), 2.5));
         setInitialDist(dist);
       }
     }
@@ -775,13 +797,51 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     const sessionDoc = doc(db, 'sessions', 'current_live');
+    initialLiveSessionHandledRef.current = false;
     const unsubscribe = onSnapshot(sessionDoc, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data() as Session;
-        setLiveSession(data);
-        // O estado de transmissão pertence à sessão compartilhada, não apenas ao estado local.
-        setIsMaestroActive(Boolean(user && data.leaderId === user.uid));
-        if (!data.leaderId) setFollowLeader(false);
+      // Não tome decisões de encerramento com dados apenas do cache local.
+      // Aguarde a primeira confirmação do servidor. Depois disso, uma queda e
+      // recuperação da rede não reinicializa os estados locais do Palco.
+      if (!initialLiveSessionHandledRef.current && snapshot.metadata.fromCache) return;
+
+      if (!snapshot.exists()) {
+        initialLiveSessionHandledRef.current = true;
+        setLiveSession(null);
+        setIsMaestroActive(false);
+        setFollowLeader(false);
+        return;
+      }
+
+      const data = snapshot.data() as Session;
+
+      // Na primeira confirmação REAL do servidor após abrir/recarregar o app,
+      // encerra apenas uma transmissão antiga iniciada pela mesma conta.
+      // Em reconexões posteriores, este bloco não é executado.
+      if (!initialLiveSessionHandledRef.current) {
+        initialLiveSessionHandledRef.current = true;
+        if (data.leaderId === user.uid) {
+          runTransaction(db, async (transaction) => {
+            const currentSnapshot = await transaction.get(sessionDoc);
+            if (currentSnapshot.exists() && (currentSnapshot.data() as Session).leaderId === user.uid) {
+              transaction.update(sessionDoc, {
+                leaderId: null,
+                leaderName: null,
+                updatedAt: new Date().toISOString()
+              });
+            }
+          }).catch(error => console.error('Não foi possível limpar a transmissão anterior:', error));
+          setLiveSession({ ...data, leaderId: null, leaderName: null });
+          setIsMaestroActive(false);
+          setFollowLeader(false);
+          return;
+        }
+      }
+
+      setLiveSession(data);
+      // O estado acompanha o documento: isso recupera o modo Maestro após
+      // uma reconexão, sem reativar uma sessão antiga no primeiro carregamento.
+      setIsMaestroActive(Boolean(data.leaderId === user.uid));
+      if (!data.leaderId) setFollowLeader(false);
         
         // Ao acompanhar, o dispositivo reproduz o contexto enviado pelo Maestro.
         if (followLeader) {
@@ -819,7 +879,6 @@ export default function App() {
             }
           }
         }
-      }
     });
     return () => unsubscribe();
   }, [user, followLeader, songs, selectedSong, repertorios, selectedRepertorio]);
@@ -1127,10 +1186,8 @@ export default function App() {
         // A transação garante que dois Maestros não reservem a mesma sessão ao mesmo tempo.
         await runTransaction(db, async (transaction) => {
           const sessionSnapshot = await transaction.get(sessionRef);
-          const currentLeaderId = sessionSnapshot.exists()
-            ? (sessionSnapshot.data() as Session).leaderId
-            : null;
-
+          const currentSession = sessionSnapshot.exists() ? sessionSnapshot.data() as Session : null;
+          const currentLeaderId = currentSession?.leaderId || null;
           if (currentLeaderId && currentLeaderId !== user.uid) {
             throw new Error('SESSION_ALREADY_CLAIMED');
           }
@@ -1208,7 +1265,10 @@ export default function App() {
   const togglePalco = async () => {
     if (!user) return;
 
-    const leaderId = liveSession?.leaderId || null;
+    // O listener do Firestore pode levar alguns milissegundos para refletir
+    // a gravação recém-feita. O estado local do Maestro evita que um segundo
+    // clique rápido seja interpretado como uma nova ativação.
+    const leaderId = liveSession?.leaderId || (isMaestroActive ? user.uid : null);
 
     // Maestro inicia ou encerra sua própria transmissão.
     if (isMaestro && (!leaderId || leaderId === user.uid)) {
@@ -1224,6 +1284,11 @@ export default function App() {
     if (leaderId && leaderId !== user.uid) {
       const willFollow = !followLeader;
       setFollowLeader(willFollow);
+      if (willFollow) {
+        // Fecha imediatamente a barra lateral ao entrar no acompanhamento.
+        // Ela volta a ficar acessível quando o acompanhamento terminar.
+        setIsSidebarOpen(false);
+      }
       if (willFollow && liveSession?.currentSongId) {
         const song = songs.find(item => item.id === liveSession.currentSongId);
         if (song) {
@@ -2612,12 +2677,12 @@ const handleRepertorioPdfFull = async () => {
               }`}
               title={
                 isMaestroActive
-                  ? 'Desativar Palco e encerrar transmissão'
+                  ? 'Desativar Modo Palco'
                   : followLeader
-                    ? 'Desativar Palco e sair da transmissão'
+                    ? 'Desativar Modo Palco'
                     : liveSession?.leaderId
-                      ? `Palco disponível — acompanhar ${liveSession.leaderName || 'transmissão'}`
-                      : 'Ativar Palco e iniciar transmissão'
+                      ? 'Ativar Modo Palco (ao vivo)'
+                      : 'Ativar Modo Palco (ao vivo)'
               }
             >
               <Mic2 size={17} />
@@ -3671,16 +3736,31 @@ const handleRepertorioPdfFull = async () => {
 
       <div className="w-full max-w-[1000px] bg-bg border-x border-border h-screen flex flex-col relative overflow-hidden">
         {/* Sticky Header Section */}
-        <div className="sticky top-0 z-[100] bg-[#E6ECF5] border-b border-[#D3DDEB] transition-colors">
+        <div className={`sticky top-0 ${followLeader ? "z-[140]" : "z-[100]"} bg-[#E6ECF5] border-b border-[#D3DDEB] transition-colors`}>
           <header className="px-5 py-3 flex items-center justify-between bg-[#E6ECF5]">
           <div className="flex items-center gap-4">
-            <button 
-              onClick={() => setIsSidebarOpen(true)}
-              className="p-2 -ml-2 hover:bg-surface rounded-full transition-colors text-primary"
-              title="Abrir Menu"
-            >
-              <Menu size={24} />
-            </button>
+            {followLeader ? (
+              <button
+                onClick={() => {
+                  setFollowLeader(false);
+                  setIsSidebarOpen(true);
+                }}
+                title="Desativar Modo Palco"
+                aria-label="Sair do Palco"
+                className="p-2 -ml-2 inline-flex items-center justify-center gap-2 rounded-xl bg-[#ff6900] px-3 py-2 text-white text-[11px] font-black uppercase tracking-wide shadow hover:bg-[#e65f00] active:scale-[0.98] transition-all"
+              >
+                <Mic2 size={17} />
+                <span>SAIR DO PALCO</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => setIsSidebarOpen(true)}
+                className="p-2 -ml-2 hover:bg-surface rounded-full transition-colors text-primary"
+                title="Abrir Menu"
+              >
+                <Menu size={24} />
+              </button>
+            )}
             <AnimatePresence mode="wait">
               {currentView === 'details' && selectedRepertorio ? (
                 <motion.div 
@@ -4053,20 +4133,8 @@ const handleRepertorioPdfFull = async () => {
                   </div>
                 </div>
               ) : (
-                <div className="flex min-h-[35vh] items-center justify-center px-4">
-                  <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-6 text-center">
-                    <Radio size={30} className={`mx-auto ${liveSession?.leaderId ? 'text-[#ff6900] animate-pulse' : 'text-text-dim'}`} />
-                    <p className="mt-3 text-sm font-black uppercase tracking-wider">
-                      {liveSession?.leaderId ? 'Transmissão disponível' : 'Aguardando transmissão'}
-                    </p>
-                    <p className="mt-2 text-xs text-text-dim">
-                      {liveSession?.leaderId
-                        ? `O Maestro ${liveSession.leaderName || 'responsável'} está transmitindo. Use o botão Palco no topo para acompanhar.`
-                        : 'Quando um Maestro iniciar a transmissão, o botão Palco ficará disponível no topo.'}
-                    </p>
-                  </div>
-                </div>
-
+                // Sem tela intermediária de espera: o usuário permanece na área normal do aplicativo.
+                <div className="min-h-[12vh]" />
               )}
             </motion.div>
           )}
@@ -4112,7 +4180,7 @@ const handleRepertorioPdfFull = async () => {
                       <div className="flex flex-wrap items-center gap-2">
                         <h2 className="text-[18px] font-extrabold tracking-tight leading-tight mr-2 uppercase">{selectedSong.title}</h2>
                         
-                          <div className="flex items-center bg-surface border border-border rounded-full h-[28px] overflow-hidden ml-2 shadow-sm">
+                          <div className="hidden lg:flex items-center bg-surface border border-border rounded-full h-[28px] overflow-hidden ml-2 shadow-sm">
                             <button 
                               onClick={() => setChordProScale(prev => Math.max(0.6, prev - 0.1))}
                               className="w-8 h-full flex items-center justify-center hover:bg-primary/10 text-text-dim hover:text-primary transition-colors border-r border-border"
@@ -5092,15 +5160,6 @@ const handleRepertorioPdfFull = async () => {
           aria-modal="true"
           aria-label="Acompanhamento do Palco"
         >
-          <button
-            onClick={() => setFollowLeader(false)}
-            title="Sair do acompanhamento e liberar a navegação pelo RECifra."
-            aria-label="Sair do Palco"
-            className="fixed top-4 right-4 z-[130] inline-flex items-center justify-center gap-2 rounded-xl bg-[#ff6900] px-4 py-2.5 text-white text-[11px] font-black uppercase tracking-wide shadow-lg hover:bg-[#e65f00] active:scale-[0.98] transition-all"
-          >
-            <Mic2 size={17} />
-            <span>SAIR DO PALCO</span>
-          </button>
         </div>
       )}
     </div>

@@ -36,7 +36,7 @@ export const ChordProRenderer: React.FC<ChordProRendererProps & { lineRange?: [n
   let textFillColor: string | null = null;
 
   return (
-    <div className="font-mono" style={{ fontSize: `${lyricSize}px`, color: lyricColor, lineHeight: 1.1 }}>
+    <div className="font-mono chordpro-responsive-content w-full max-w-full min-w-0" style={{ fontSize: `${lyricSize}px`, color: lyricColor, lineHeight: 1.1 }}>
       {lines.map((line, i) => {
         const trimmed = line.trim();
         const lineSourceStart = lineOffsets[i];
@@ -129,7 +129,7 @@ export const ChordProRenderer: React.FC<ChordProRendererProps & { lineRange?: [n
           <div
             key={i}
             data-line-index={i}
-            className={`flex flex-nowrap music-line ${isChorus ? 'font-black' : ''} ${isLabel ? 'font-bold uppercase tracking-wider' : 'mb-[0.1em]'}`}
+            className={`flex flex-nowrap whitespace-pre music-line chordpro-responsive-line ${isChorus ? 'font-black' : ''} ${isLabel ? 'font-bold uppercase tracking-wider' : 'mb-[0.1em]'}`}
             data-has-chords={hasChords}
             data-has-lyrics={hasLyrics}
             style={isLabel ? { fontSize: `${lyricSize * 0.9}px`, color: 'var(--color-primary)' } : {}}
@@ -145,7 +145,7 @@ export const ChordProRenderer: React.FC<ChordProRendererProps & { lineRange?: [n
               const trailingSpaces = (textFillColor && !isLabel && isLastChunk) ? fullText.slice(textToHighlight.length) : '';
 
               return (
-                <span key={j} className="inline-flex flex-col align-bottom" style={{ minWidth: widthInChars > 0 ? `${widthInChars}ch` : '0px' }}>
+                <span key={j} className="inline-flex flex-col align-bottom chordpro-responsive-chunk" style={{ minWidth: widthInChars > 0 ? `${widthInChars}ch` : '0px' }}>
                   {hasChords && (
                     <span
                       className="h-[1.1em] font-black whitespace-pre leading-none"
@@ -158,7 +158,7 @@ export const ChordProRenderer: React.FC<ChordProRendererProps & { lineRange?: [n
                     </span>
                   )}
                   <span
-                    className={`whitespace-pre leading-[1.1] ${isLabel ? 'px-2 py-1 rounded font-black tracking-widest text-black' : ''} ${chunk.text ? 'music-lyric-segment' : ''}`}
+                    className={`whitespace-pre leading-[1.1] chordpro-responsive-lyric ${isLabel ? 'px-2 py-1 rounded font-black tracking-widest text-black' : ''} ${chunk.text ? 'music-lyric-segment' : ''}`}
                     data-source-kind="lyric"
                     data-source-start={chunk.text && chunk.sourceStart !== undefined ? chunk.sourceStart : undefined}
                     data-source-end={chunk.text && chunk.sourceStart !== undefined ? chunk.sourceStart + chunk.text.length : undefined}
