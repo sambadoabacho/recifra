@@ -1,0 +1,3804 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReCifra - Editor de Acordes Otimizado</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+
+    <style>
+        html {
+            font-size: 90%; /* Reduz o tamanho base para escalar toda a UI */
+        }
+        /* TEMA ESCURO (PADRÃO) */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827;
+            color: #d1d5db;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        textarea, input, select {
+            font-family: 'Fira Code', monospace;
+            background-color: #1f2937;
+            border-color: #4b5563;
+            color: #e5e7eb;
+        }
+        textarea::placeholder, input::placeholder { color: #6b7280; }
+        select:has(option[value="-"]:checked) { color: #999; }
+        .visor, .bg-secondary { background-color: #1f2937; }
+        .border-secondary { border-color: #4b5563; }
+        .text-main { color: #d1d5db; }
+        .text-secondary { color: #9ca3af; }
+        .text-title { color: white; }
+        .chord-color { color: #D32F2F; } /* Vermelho */
+        .used-chord-btn { background-color: #4f46e5; color: white; } /* indigo-600 */
+        .used-chord-btn:hover { background-color: #4338ca; } /* indigo-700 */
+
+        /* TEMA CLARO */
+        body.light {
+            background-color: #f9fafb; /* gray-50 */
+            color: #1f2937; /* gray-800 */
+        }
+        .light textarea, .light input, .light select {
+            background-color: white;
+            border-color: #d1d5db; /* gray-300 */
+            color: #111827; /* gray-900 */
+        }
+        .light .visor, .light .bg-secondary { background-color: #f3f4f6; } /* gray-100 */
+        .light .border-secondary { border-color: #d1d5db; } /* gray-300 */
+        .light .text-main { color: #1f2937; }
+        .light .text-secondary { color: #4b5563; }
+        .light .text-title { color: #111827; }
+        .light .chord-color { color: #D32F2F; } /* Vermelho */
+        .light select:has(option[value="-"]:checked) { color: #999; }
+        .light .used-chord-btn { background-color: #FFC700; color: #1f2937; }
+        .light .used-chord-btn:hover { background-color: #eab308; }
+
+
+        #ai-settings-modal input, #ai-settings-modal select { box-sizing: border-box; }
+
+        /* ESTILOS COMUNS */
+        /* Estilos para a Visualização Expandida */
+        main.view-expanded {
+            display: block; /* Mudar de grid para block */
+        }
+        main.view-expanded .editor {
+            display: none;
+        }
+        main.view-expanded .visualizacao {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(17, 24, 39, 0.95); /* bg-gray-900 com opacidade */
+            padding: 2rem;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overscroll-behavior: contain; /* Previne scroll do body por trás */
+        }
+        .light main.view-expanded .visualizacao {
+            background-color: rgba(249, 250, 251, 0.95); /* bg-gray-50 com opacidade */
+        }
+        main.view-expanded #visor {
+            position: relative; /* Mudar de absolute para relative */
+            width: 100%;
+            max-width: 900px; /* Largura máxima para a cifra */
+            height: 90%;
+            max-height: 90vh;
+        }
+        main.view-expanded #expand-view-btn {
+            position: fixed; /* Mudar para fixed para ficar no canto da tela */
+            top: 1rem;
+            right: 5rem;
+            z-index: 110;
+        }
+        main.view-expanded #autoscroll-controls {
+            display: flex;
+        }
+        .light #autoscroll-controls {
+            background-color: rgba(229, 231, 235, 0.8); /* gray-200 com opacidade */
+            color: #1f2937; /* gray-800 */
+        }
+        .light #autoscroll-controls button:hover {
+            background-color: #d1d5db; /* gray-300 */
+        }
+
+        #visor.columns-2 {
+            column-count: 2;
+            column-gap: 2.5rem;
+        }
+        #visor.columns-2 .cpro_line,
+        #visor.columns-2 .chorus-section,
+        #visor.columns-2 h3,
+        #visor.columns-2 p {
+            break-inside: avoid;
+        }
+
+        .chorus-section {
+            position: relative;
+            padding-left: 1.25rem; /* Aumenta o espaço para a linha e o texto */
+            padding-top: 0.5rem;
+            padding-bottom: 0.5rem;
+            margin-left: -0.75rem; /* Ajusta o alinhamento com o resto do texto */
+            border-left: 3px solid #0891b2; /* Cor ciano, a mesma da tag Refrão */
+            margin-bottom: 1rem;
+        }
+        .light .chorus-section {
+            border-left-color: #0891b2; /* Mantém a mesma cor no tema claro */
+        }
+        .visor {
+            white-space: pre-wrap;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            overflow-y: auto;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.875rem;
+            border-width: 1px;
+        }
+        .cpro_line { display: flex; flex-direction: column; line-height: 1.2; margin-bottom: 0.5rem; }
+        .cpro_chords { font-weight: bold; line-height: 1; white-space: pre; }
+        .cpro_lyrics { line-height: 1.5; white-space: pre; }
+        .section-label { display: block; text-align: left; font-weight: bold; font-size: 0.8rem; padding: 0.25rem 0.5rem; border-radius: 0.25rem; width: fit-content; margin: 1rem 0 0.5rem; color: white; }
+        .section-label.refrao    { background-color: #0891b2; } /* cyan-600 */
+        .section-label.coro      { background-color: #ca8a04; } /* yellow-600 */
+        .section-label.bis       { background-color: #16a34a; } /* green-600 */
+        .section-label.transicao { background-color: #ea580c; } /* orange-600 */
+        .section-label.observacao{ background-color: #dc2626; } /* red-600 */
+        .toast { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); color: white; padding: 0.75rem 1.5rem; border-radius: 0.5rem; z-index: 50; opacity: 0; visibility: hidden; transition: opacity 0.3s, visibility 0.3s; }
+        .toast.show { opacity: 1; visibility: visible; }
+        
+        .btn-coro { background-color: #FFFF00; color: #1f2937; }
+        .btn-coro:hover { background-color: #e6e600; }
+        .btn-bis { background-color: #00FF00; color: #1f2937; }
+        .btn-bis:hover { background-color: #00e600; }
+        .btn-tagrefrao { background-color: #00FFFF; color: #1f2937; }
+        .btn-tagrefrao:hover { background-color: #00e6e6; }
+        .btn-transicao { background-color: #FFAB44; color: #1f2937; }
+        .btn-transicao:hover { background-color: #ff9f2b; }
+        .btn-observacao { background-color: #FF9999; color: #1f2937; }
+        .btn-observacao:hover { background-color: #ff8080; }
+
+        #chordlist button {
+             display: inline-block;
+             padding: 4px 6px;
+             margin: 1.5px;
+             font-size: 0.75rem;
+             text-align: center;
+             font-weight: normal;
+             border: 1px solid #4b5563;
+             font-family: 'Fira Code', monospace;
+             border-radius: 5px;
+             cursor: pointer;
+        }
+        .light #chordlist button { border-color: #d1d5db; }
+        .natural-chord { background-color: #4b5563; } /* gray-600 */
+        .natural-chord:hover { background-color: #5d6a7e; }
+        .altered-chord { background-color: #374151; } /* gray-700 */
+        .altered-chord:hover { background-color: #4b5563; }
+        .light .natural-chord { background-color: #f9fafb; } /* gray-50 */
+        .light .natural-chord:hover { background-color: #f3f4f6; }
+        .light .altered-chord { background-color: #e5e7eb; } /* gray-200 */
+        .light .altered-chord:hover { background-color: #d1d5db; }
+
+        /* Estilos para o Modal de Ajuda */
+        #help-modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+        #harmonic-analysis-modal-backdrop { background-color: rgba(0, 0, 0, 0.6); }
+        .light #harmonic-analysis-modal-backdrop { background-color: rgba(0, 0, 0, 0.35); }
+        #help-modal-content h1, #help-modal-content h2 {
+            color: white;
+        }
+        .light #help-modal-content h1, .light #help-modal-content h2 {
+            color: #111827;
+        }
+        #help-modal-content strong {
+            color: #a5b4fc; /* indigo-300 */
+        }
+        .light #help-modal-content strong {
+            color: #4f46e5; /* indigo-600 */
+        }
+
+        /* Dicionário de Acordes */
+        .chord-lookup { cursor: help; }
+        .light #chord-diagram-tooltip { background-color: #f9fafb; border-color: #d1d5db;}
+        #instrument-guitar, #instrument-cavaquinho { transition: background-color 0.2s, color 0.2s; }
+        #instrument-guitar.active, #instrument-cavaquinho.active { background-color: #4f46e5; color: white; }
+        .light #instrument-guitar.active, .light #instrument-cavaquinho.active { background-color: #FFC700; color: #1f2937; }
+
+    </style>
+</head>
+<body class="antialiased p-4 md:p-8">
+
+    <div class="container mx-auto max-w-7xl">
+        <header class="text-left mb-10 relative">
+            <h1 class="text-2xl md:text-3xl font-bold text-title">
+                <span class="bg-gray-700 text-white rounded-md px-3 py-2">#ReCifra - Editor de Acordes</span>
+            </h1>
+             <div class="absolute top-0 right-0 flex items-center gap-4">
+                 <div class="flex items-center gap-1 bg-secondary rounded-full p-1 text-xs">
+                    <button id="instrument-guitar" class="px-3 py-1 rounded-full font-semibold" title="Violão">Violão</button>
+                    <button id="instrument-cavaquinho" class="px-3 py-1 rounded-full font-semibold" title="Cavaquinho">Cavaquinho</button>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="help-btn" class="p-2 rounded-full bg-secondary hover:bg-gray-500 focus:outline-none" title="Ajuda">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    </button>
+                    <button id="ai-settings-btn" class="p-2 rounded-full bg-secondary hover:bg-gray-500 focus:outline-none" title="Configurar Consultor Gemini" aria-label="Configurar Consultor Gemini">🤖</button>
+                    <button id="theme-toggle" class="p-2 rounded-full bg-secondary hover:bg-gray-500 focus:outline-none" title="Mudar Tema">
+                        <svg id="theme-icon-sun" class="h-6 w-6 text-yellow-400 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                        <svg id="theme-icon-moon" class="h-6 w-6 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+                    </button>
+                </div>
+             </div>
+        </header>
+
+        <main class="grid grid-cols-1 md:grid-cols-2 gap-12">
+            
+
+<!-- PAINEL DE EDIÇÃO -->
+
+            <div class="editor flex flex-col gap-4">
+                <div class="header grid grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_auto_36px] gap-2 items-center">
+                    <input type="text" id="songTitle" placeholder="TÍTULO" class="py-1.5 px-2 rounded-md border-2 border-secondary focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    <input type="text" id="composer" placeholder="Composição" class="py-1.5 px-2 rounded-md border-2 border-secondary focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    <select id="key" class="py-1.5 px-2 rounded-md border-2 border-secondary focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                         <option value="-">Tom</option>
+                         <option value="C">C</option><option value="C#">C#</option><option value="D">D</option><option value="D#">D#</option><option value="E">E</option><option value="F">F</option><option value="F#">F#</option><option value="G">G</option><option value="G#">G#</option><option value="A">A</option><option value="A#">A#</option><option value="B">B</option>
+                         <option value="Cm">Cm</option><option value="C#m">C#m</option><option value="Dm">Dm</option><option value="D#m">D#m</option><option value="Em">Em</option><option value="Fm">Fm</option><option value="F#m">F#m</option><option value="Gm">Gm</option><option value="G#m">G#m</option><option value="Am">Am</option><option value="A#m">A#m</option><option value="Bm">Bm</option>
+                    </select>
+                    <button id="open-harmonic-analysis" title="Análise Harmônica" aria-label="Análise Harmônica" class="hidden inline-flex w-9 h-9 shrink-0 items-center justify-center bg-indigo-600 hover:bg-indigo-500 text-white font-bold p-0 rounded-md text-xs">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path d="M17.5 3.5v10.07a4 4 0 1 1-1.5-.28V7.1l-7 1.75v8.72a4 4 0 1 1-1.5-.28V7.68a1 1 0 0 1 .76-.97l8.5-2.13a1 1 0 0 1 1.24.97v-2.05h.5z"/></svg>
+                    </button>
+                </div>
+
+                <div class="toolbars flex flex-nowrap gap-1.5">
+                    <button data-tag-type="refrao" title="Envolve o texto selecionado como Refrão (negrito)" class="bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-2 rounded-md text-xs">{REFRÃO}</button>
+                    <button data-tag-type="coro" title="Envolve o texto selecionado como Côro (destaque)" class="btn-coro font-semibold py-2 px-2 rounded-md text-xs">{CÔRO}</button>
+                    <button data-tag-type="bis" title="Insere a marcação #BIS" class="btn-bis font-semibold py-2 px-2 rounded-md text-xs">#BIS</button>
+                    <button data-tag-type="tagRefrao" title="Insere a marcação #REFRÃO" class="btn-tagrefrao font-semibold py-2 px-2 rounded-md text-xs">#REFRÃO</button>
+                    <button data-tag-type="transicao" title="Insere a marcação #TRANSIÇÃO" class="btn-transicao font-semibold py-2 px-2 rounded-md text-xs">#TRANSIÇÃO</button>
+                    <button data-tag-type="observacao" title="Insere a marcação #OBSERVAÇÃO" class="btn-observacao font-semibold py-2 px-2 rounded-md text-xs">#OBSERVAÇÃO</button>
+                    <button id="desfazer" title="Desfazer (Ctrl+Z)" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-2 rounded-md text-xs">&lt;&lt;</button>
+                    <button id="refazer" title="Refazer (Ctrl+Y)" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-2 rounded-md text-xs">&gt;&gt;</button>
+                </div>
+
+                <div id="used-chords" class="p-2 bg-secondary rounded-md min-h-[40px]">
+                    <div id="used-chords-list" class="flex flex-wrap gap-1"></div>
+                </div>
+
+                <textarea id="songLyrics" class="w-full h-96 p-3 rounded-md border-2 border-secondary focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none" title="Shift + Nota (C-B) para abrir seletor de acordes" placeholder="Digite, cole ou importe sua música..."></textarea>
+                <div id="chordlist" class="hidden absolute z-10 bg-secondary border border-secondary rounded-md p-2 shadow-lg grid grid-cols-8 gap-1"></div>
+                
+                <div class="flex flex-wrap gap-2 justify-between">
+                     <div class="flex flex-wrap gap-2">
+                        <button id="chordPro" title="Converter para formato [ChordPro]" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-2 rounded-md text-xs">[CHORDPRO]</button>
+                        <button id="novoArquivo" title="Novo arquivo" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-2 rounded-md text-xs">NOVO</button>
+                        <button id="importar" title="Importar .cho ou .txt" class="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-2 rounded-md text-xs">IMPORTAR</button>
+                        <input type="file" id="importarArquivo" accept=".cho, .txt, .html, .htm" class="hidden">
+                        <button id="exportar" title="Exportar para .cho" class="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-2 rounded-md text-xs">EXPORTAR</button>
+                     </div>
+                     <div class="flex flex-wrap gap-2">
+                        <button id="limparCifra" title="Limpar acordes da letra" class="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-2 rounded-md text-xs">LIMPAR CIFRA</button>
+                        <button id="restaurarTomOriginal" title="Restaurar tom original" class="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-2 rounded-md text-xs">RESTAURAR TOM</button>
+
+
+                     </div>
+<div id="autosaveStatus"
+     class="text-xs text-gray-400 flex items-center gap-1">
+    <span class="w-2 h-2 rounded-full bg-gray-500"></span>
+    <span>Salvo localmente</span>
+</div>
+                </div>
+            </div>
+
+            <!-- PAINEL DE VISUALIZAÇÃO -->
+            <div class="visualizacao relative">
+                 <button id="expand-view-btn" class="absolute top-2 right-2 p-2 rounded-full bg-secondary hover:bg-gray-500 z-20" title="Expandir/Recolher Visualização">
+                    <svg id="icon-expand" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9m12-3.75v4.5m0-4.5h-4.5m4.5 0L15 9m-9 7.5v-4.5m0 4.5h4.5m-4.5 0L9 15m12 3.75v-4.5m0 4.5h-4.5m4.5 0L15 15" />
+                    </svg>
+                    <svg id="icon-collapse" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9V4.5M15 9h4.5M15 9l5.25-5.25M15 15v4.5M15 15h4.5M15 15l5.25 5.25" />
+                    </svg>
+                </button>
+                <div id="visor" class="visor border-secondary absolute inset-0"></div>
+                <div id="autoscroll-controls" class="hidden absolute bottom-4 left-1/2 -translate-x-1/2 z-30 bg-gray-800 bg-opacity-70 rounded-full p-2 flex items-center gap-2 text-white">
+                    <!-- Speed Controls -->
+                    <button id="speed-down" title="Diminuir Velocidade" class="p-2 rounded-full hover:bg-gray-600">
+                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20 12H4" /></svg>
+                    </button>
+                    <button id="play-pause" title="Iniciar/Pausar Rolagem" class="p-2 rounded-full hover:bg-gray-600">
+                        <svg id="icon-play" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        <svg id="icon-pause" class="h-6 w-6 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    </button>
+                     <span id="speed-display" class="text-sm font-mono w-4 text-center">5</span>
+                    <button id="speed-up" title="Aumentar Velocidade" class="p-2 rounded-full hover:bg-gray-600">
+                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+                    </button>
+                    <!-- Separator -->
+                    <div class="border-l border-gray-600 h-6 mx-2"></div>
+                    <!-- Font Size Controls -->
+                    <button id="font-down" title="Diminuir Fonte" class="w-8 h-8 flex items-center justify-center text-xl font-bold rounded-full hover:bg-gray-600">-</button>
+                    <span class="font-semibold text-sm select-none">Fonte</span>
+                    <button id="font-up" title="Aumentar Fonte" class="w-8 h-8 flex items-center justify-center text-xl font-bold rounded-full hover:bg-gray-600">+</button>
+                    <!-- Separator -->
+                    <div class="border-l border-gray-600 h-6 mx-2"></div>
+                    <!-- Columns Control -->
+                    <button id="columns-btn" title="Alternar Colunas" class="w-10 h-8 flex items-center justify-center text-sm font-bold rounded-full hover:bg-gray-600">
+                        <span id="columns-display">1x</span>
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- MODAL DE AJUDA -->
+    <div id="help-modal" class="hidden fixed inset-0 z-50 overflow-auto flex items-center justify-center">
+        <div id="help-modal-backdrop" class="fixed inset-0"></div>
+        <div id="help-modal-content" class="bg-secondary text-main m-4 p-6 rounded-lg max-w-2xl w-full relative max-h-[90vh] overflow-y-auto">
+            <button id="close-help-modal" class="absolute top-4 right-4 text-gray-400 hover:text-white">
+                <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+            <h1 class="text-2xl font-bold mb-4">SOBRE O #ReCifra</h1>
+            <p class="mb-6">O #ReCifra é um editor de acordes online gratuito que permite converter cifras convencionais (acordes sobre a letra) para o formato ChordPro, amplamente utilizado em aplicativos e softwares de música.</p>
+            
+            <h2 class="text-xl font-bold mb-3">FUNCIONALIDADES:</h2>
+            <ul class="list-disc list-inside space-y-2 mb-6">
+                <li><strong>Conversão para ChordPro:</strong> Converte automaticamente cifras no formato "acorde sobre a letra" para o padrão [ChordPro].</li>
+                <li><strong>Transposição de Tom:</strong> Altere a tonalidade da música com um clique.</li>
+                <li><strong>Editor Inteligente:</strong> Adicione acordes facilmente com o seletor (Shift + Nota) e use tags para estruturar sua música ({Refrão}, #BIS, etc.).</li>
+                <li><strong>Importação e Exportação:</strong> Importe arquivos de cifras (.txt, .cho) e exporte no formato ChordPro (.cho).</li>
+                <li><strong>Modo Dia/Noite:</strong> Alterne entre temas claro e escuro para melhor visualização.</li>
+                <li><strong>Desfazer/Refazer:</strong> Histórico de alterações para facilitar a edição.</li>
+            </ul>
+
+            <h2 class="text-xl font-bold mb-3">COMO USAR:</h2>
+            <ol class="list-decimal list-inside space-y-2 mb-6">
+                <li><strong>Cole ou Digite sua Cifra:</strong>
+                    <ul class="list-disc list-inside ml-4 mt-1">
+                        <li>A letra da música será automaticamente convertida para MAIÚSCULAS, preservando os acordes.</li>
+                        <li>Posicione os acordes na linha acima da sílaba correspondente.</li>
+                    </ul>
+                </li>
+                <li><strong>Converta para ChordPro:</strong>
+                    <ul class="list-disc list-inside ml-4 mt-1">
+                        <li>Clique no botão <strong>[CHORDPRO]</strong> para unir os acordes à letra no formato `[C]letra`.</li>
+                    </ul>
+                </li>
+                <li><strong>Estruture a Música:</strong>
+                    <ul class="list-disc list-inside ml-4 mt-1">
+                        <li>Use os botões de tags coloridas (ex: `{REFRÃO}`, `#BIS`) para definir seções como refrão, transição, etc.</li>
+                    </ul>
+                </li>
+                <li><strong>Transponha o Tom:</strong>
+                    <ul class="list-disc list-inside ml-4 mt-1">
+                        <li>Selecione a nova tonalidade no menu "Tom". A cifra será transposta automaticamente.</li>
+                    </ul>
+                </li>
+                 <li><strong>Exporte:</strong>
+                    <ul class="list-disc list-inside ml-4 mt-1">
+                        <li>Preencha os campos "TÍTULO", "Composição" e "Tom" e clique em <strong>EXPORTAR</strong> para salvar o arquivo .cho.</li>
+                    </ul>
+                </li>
+            </ol>
+            <hr class="border-gray-600 my-4">
+            <p class="text-sm text-center text-secondary italic">Desenvolvido com o auxílio do Gemini.</p>
+        </div>
+    </div>
+
+
+    <!-- MODAL DE ANÁLISE HARMÔNICA -->
+    <div id="harmonic-analysis-modal" class="hidden fixed inset-0 z-50 overflow-auto flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="harmonic-analysis-title">
+        <div id="harmonic-analysis-modal-backdrop" class="fixed inset-0 bg-black/60"></div>
+        <div id="harmonic-analysis-modal-content" class="bg-secondary text-main m-4 p-5 rounded-lg max-w-4xl w-full relative max-h-[90vh] overflow-y-auto shadow-2xl">
+            <button id="close-harmonic-analysis" class="absolute top-3 right-3 text-gray-400 hover:text-white text-xl leading-none" title="Fechar análise harmônica" aria-label="Fechar">&times;</button>
+            <div class="pr-8 mb-4">
+                <div id="harmonic-analysis-title" class="text-lg font-bold text-title">Análise Harmônica</div>
+                <div id="harmonic-analysis-summary" class="text-xs text-secondary mt-1"></div>
+            </div>
+            <div id="harmonic-test-bar" class="hidden mb-4 px-3 py-2 rounded-md border border-amber-400/50 bg-amber-50/10 text-xs flex items-center justify-between gap-3">
+                <div class="min-w-0"><div><span class="font-bold">🎵 Teste harmônico ativo</span><span id="harmonic-test-label" class="text-secondary ml-2"></span></div><div id="harmonic-test-comparison" class="mt-1 text-[11px] text-secondary"></div></div>
+                <div class="flex items-center gap-2 shrink-0">
+                    <button id="keep-harmonic-test" type="button" class="font-bold px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white">Manter teste</button>
+                    <button id="restore-harmonic-test" type="button" class="font-bold px-2 py-1 rounded bg-gray-600 hover:bg-gray-500 text-white">Restaurar original</button>
+                </div>
+            </div>
+            <div id="harmonic-analysis-content" class="overflow-x-auto"></div>
+            <div id="harmonic-progression-content" class="mt-5"></div>
+            <div id="harmonic-section-content" class="mt-5"></div>
+        </div>
+    </div>
+
+    <div id="toast-notification" class="toast"></div>
+
+    <div id="chord-diagram-tooltip" class="hidden absolute z-50 p-2 bg-gray-900 border border-gray-600 rounded-md shadow-lg pointer-events-none"></div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        
+        /**
+         * Módulo Principal da Aplicação (Controller)
+         * Gerencia o estado geral, os elementos DOM e a inicialização dos outros módulos.
+         */
+        /**
+         * Utilitários centrais
+         * Mantidos independentes dos módulos musicais para reduzir acoplamento.
+         */
+        const CoreUtils = {
+            escapeHTML(value) {
+                return String(value ?? '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            },
+
+            clamp(value, min, max) {
+                return Math.min(max, Math.max(min, value));
+            }
+        };
+
+        const App = {
+            state: {
+                originalLyrics: '',
+                originalKey: '',
+                usedChords: new Set(),
+                harmonicAnalysis: [],
+                usedChordCounts: new Map(),
+            },
+            DOMElements: {},
+
+            init() {
+                this.cacheDOMElements();
+                
+                // Inicializa os outros módulos, passando a referência do App
+                HistoryModule.init(this);
+                UIModule.init(this);
+                FileModule.init(this);
+                ChordModule.init(this);
+                HarmonicModule.init(this);
+                AutoScrollModule.init(this);
+                ChordDiagramModule.init(this);
+                AutosaveModule.init(this);
+                AIHarmonicModule.init(this);
+                this.registerEventListeners();
+                
+                HistoryModule.saveState(true);
+                this.renderAll();
+            },
+
+            cacheDOMElements() {
+                this.DOMElements = {
+                    body: document.body, songTitle: document.getElementById('songTitle'), composer: document.getElementById('composer'), key: document.getElementById('key'), songLyrics: document.getElementById('songLyrics'), visor: document.getElementById('visor'), chordlist: document.getElementById('chordlist'), usedChordsList: document.getElementById('used-chords-list'), openHarmonicAnalysis: document.getElementById('open-harmonic-analysis'), harmonicAnalysisModal: document.getElementById('harmonic-analysis-modal'), closeHarmonicAnalysis: document.getElementById('close-harmonic-analysis'), harmonicAnalysisModalBackdrop: document.getElementById('harmonic-analysis-modal-backdrop'), harmonicAnalysisSummary: document.getElementById('harmonic-analysis-summary'), harmonicTestBar: document.getElementById('harmonic-test-bar'), harmonicTestComparison: document.getElementById('harmonic-test-comparison'), harmonicTestLabel: document.getElementById('harmonic-test-label'), keepHarmonicTest: document.getElementById('keep-harmonic-test'), restoreHarmonicTest: document.getElementById('restore-harmonic-test'), harmonicAnalysisContent: document.getElementById('harmonic-analysis-content'), harmonicProgressionContent: document.getElementById('harmonic-progression-content'), harmonicSectionContent: document.getElementById('harmonic-section-content'), toast: document.getElementById('toast-notification'), novoArquivo: document.getElementById('novoArquivo'), importar: document.getElementById('importar'), importarArquivo: document.getElementById('importarArquivo'), exportar: document.getElementById('exportar'), chordPro: document.getElementById('chordPro'), limparCifra: document.getElementById('limparCifra'), restaurarTomOriginal: document.getElementById('restaurarTomOriginal'), desfazer: document.getElementById('desfazer'), refazer: document.getElementById('refazer'), themeToggle: document.getElementById('theme-toggle'), themeIconSun: document.getElementById('theme-icon-sun'), themeIconMoon: document.getElementById('theme-icon-moon'),
+                    helpBtn: document.getElementById('help-btn'), helpModal: document.getElementById('help-modal'), closeHelpModal: document.getElementById('close-help-modal'), helpModalBackdrop: document.getElementById('help-modal-backdrop'), mainElement: document.querySelector('main'), expandViewBtn: document.getElementById('expand-view-btn'), iconExpand: document.getElementById('icon-expand'), iconCollapse: document.getElementById('icon-collapse'),
+                    autoscrollControls: document.getElementById('autoscroll-controls'), playPauseBtn: document.getElementById('play-pause'), iconPlay: document.getElementById('icon-play'), iconPause: document.getElementById('icon-pause'), speedUpBtn: document.getElementById('speed-up'), speedDownBtn: document.getElementById('speed-down'), speedDisplay: document.getElementById('speed-display'),
+                    fontUpBtn: document.getElementById('font-up'), fontDownBtn: document.getElementById('font-down'),
+                    columnsBtn: document.getElementById('columns-btn'), columnsDisplay: document.getElementById('columns-display'),
+                    instrumentGuitarBtn: document.getElementById('instrument-guitar'), instrumentCavaquinhoBtn: document.getElementById('instrument-cavaquinho'), chordDiagramTooltip: document.getElementById('chord-diagram-tooltip'),
+                };
+            },
+
+            registerEventListeners() {
+                const { songTitle, composer, key, songLyrics, novoArquivo, importar, importarArquivo, exportar, chordPro, limparCifra, restaurarTomOriginal, desfazer, refazer, expandViewBtn, playPauseBtn, speedUpBtn, speedDownBtn, fontUpBtn, fontDownBtn, columnsBtn, instrumentGuitarBtn, instrumentCavaquinhoBtn, visor, usedChordsList, openHarmonicAnalysis, closeHarmonicAnalysis, harmonicAnalysisModalBackdrop, keepHarmonicTest, restoreHarmonicTest } = this.DOMElements;
+                const debouncedRenderAndSave = UIModule.debounce(() => { HistoryModule.saveState(); AutosaveModule.scheduleSave(); this.renderAll(); }, 250);
+
+songTitle.addEventListener('input', () => {
+  songTitle.value = songTitle.value.toUpperCase();
+  HistoryModule.saveState();
+  AutosaveModule.scheduleSave();
+  this.renderAll();
+});                
+
+composer.addEventListener('input', () => {
+  HistoryModule.saveState();
+  AutosaveModule.scheduleSave();
+  this.renderAll();
+});
+
+key.addEventListener('change', () => {
+  ChordModule.transposeSong(key.value);
+  HistoryModule.saveState();
+  AutosaveModule.scheduleSave();
+  this.renderAll();
+});
+
+openHarmonicAnalysis.addEventListener('click', () => UIModule.openHarmonicAnalysisModal());
+closeHarmonicAnalysis.addEventListener('click', () => UIModule.closeHarmonicAnalysisModal());
+harmonicAnalysisModalBackdrop.addEventListener('click', () => UIModule.closeHarmonicAnalysisModal());
+                keepHarmonicTest.addEventListener('click', () => UIModule.keepHarmonicTest());
+                restoreHarmonicTest.addEventListener('click', () => UIModule.restoreHarmonicTest());                songLyrics.addEventListener('input', () => {
+  // Uma edição manual invalida a base usada pela transposição anterior.
+  if (this.state.originalLyrics) {
+    this.state.originalLyrics = '';
+    this.state.originalKey = '';
+  }
+  if (UIModule.harmonicTestSession.active) {
+    UIModule.harmonicTestSession = { active: false, originalLyrics: '', appliedTest: '', originalSuggestions: [], startedAt: null };
+    UIModule.updateHarmonicTestBar();
+  }
+  debouncedRenderAndSave();
+});
+                songLyrics.addEventListener('paste', (e) => FileModule.handlePaste(e));
+                
+                novoArquivo.addEventListener('click', () => FileModule.newFile());
+                importar.addEventListener('click', () => importarArquivo.click());
+                importarArquivo.addEventListener('change', (e) => FileModule.importFile(e));
+                exportar.addEventListener('click', () => FileModule.exportFile());
+
+                chordPro.addEventListener('click', () => ChordModule.convertToChordPro());
+                limparCifra.addEventListener('click', () => { songLyrics.value = songLyrics.value.replace(/\[.*?\]/g, ''); HistoryModule.saveState(true); AutosaveModule.scheduleSave(); this.renderAll(); });
+                
+                document.querySelector('.toolbars').addEventListener('click', (e) => { if (e.target.dataset.tagType) UIModule.handleTagInsertion(e.target.dataset.tagType); });
+                
+                restaurarTomOriginal.addEventListener('click', () => ChordModule.restoreOriginalKey());
+                desfazer.addEventListener('click', () => HistoryModule.undo());
+                refazer.addEventListener('click', () => HistoryModule.redo());
+                
+                expandViewBtn.addEventListener('click', () => UIModule.toggleExpandedView());
+                playPauseBtn.addEventListener('click', () => AutoScrollModule.toggleScroll());
+                speedUpBtn.addEventListener('click', () => AutoScrollModule.changeSpeed(1));
+                speedDownBtn.addEventListener('click', () => AutoScrollModule.changeSpeed(-1));
+                fontUpBtn.addEventListener('click', () => UIModule.changeFontSize(1));
+                fontDownBtn.addEventListener('click', () => UIModule.changeFontSize(-1));
+                columnsBtn.addEventListener('click', () => UIModule.toggleColumns());
+                instrumentGuitarBtn.addEventListener('click', () => ChordDiagramModule.setInstrument('guitar'));
+                instrumentCavaquinhoBtn.addEventListener('click', () => ChordDiagramModule.setInstrument('cavaquinho'));
+
+                const showChordDiagram = e => { if (e.target.matches('.chord-lookup')) ChordDiagramModule.show(e.target.dataset.chord, e); };
+                const hideChordDiagram = e => { if (e.target.matches('.chord-lookup')) ChordDiagramModule.hide(); };
+
+                visor.addEventListener('mouseover', showChordDiagram);
+                visor.addEventListener('mouseout', hideChordDiagram);
+
+                document.addEventListener('keydown', e => {
+                    if (e.key === 'Escape' && !harmonicAnalysisModal.classList.contains('hidden')) {
+                        UIModule.closeHarmonicAnalysisModal();
+                        return;
+                    }
+                    if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); HistoryModule.undo(); }
+                    if (e.ctrlKey && e.key.toLowerCase() === 'y') { e.preventDefault(); HistoryModule.redo(); }
+                });
+            },
+            
+            renderAll() {
+                UIModule.renderPreview();
+                ChordModule.parseAndDisplayUsedChords();
+                UIModule.renderHarmonicAnalysis();
+                UIModule.updateHarmonicTestBar();
+            },
+
+            resetState() {
+                this.state.originalLyrics = '';
+                this.state.originalKey = '';
+                this.state.usedChords.clear();
+                this.state.usedChordCounts.clear();
+                this.state.harmonicAnalysis = null;
+                UIModule.harmonicTestSession = { active: false, originalLyrics: '', appliedTest: '', originalSuggestions: [], startedAt: null };
+                this.DOMElements.songTitle.value = ''; 
+                this.DOMElements.composer.value = '';
+                this.DOMElements.key.value = '-';
+                this.DOMElements.songLyrics.value = '';
+                this.DOMElements.usedChordsList.innerHTML = '';
+            }
+        };
+
+        /**
+         * Módulo de UI
+         * Responsável por todas as manipulações diretas do DOM, como renderização, modais e notificações.
+         */
+        const UIModule = {
+            fontSize: 14,
+            minFontSize: 10,
+            maxFontSize: 28,
+            columnCount: 1,
+            harmonicSuggestionsCache: [],
+            harmonicTestSession: { active: false, originalLyrics: '', appliedTest: '', originalSuggestions: [], startedAt: null },
+
+            init(app) { this.app = app; this.setupTheme(); this.setupHelpModal(); this.setupChordSelector(); this.initFontSize(); },
+            debounce: (func, delay) => { let timeout; return function(...args) { clearTimeout(timeout); timeout = setTimeout(() => func.apply(this, args), delay); }; },
+            showToast: (message, isError = false) => { const toast = App.DOMElements.toast; toast.textContent = message; toast.className = 'toast show'; toast.style.backgroundColor = isError ? '#dc2626' : '#16a34a'; setTimeout(() => { toast.className = 'toast'; }, 3000); },
+
+            initFontSize() {
+                const savedSize = localStorage.getItem('recifra-fontsize');
+                if (savedSize) {
+                    this.fontSize = parseInt(savedSize, 10);
+                }
+                this.app.DOMElements.visor.style.fontSize = `${this.fontSize}px`;
+            },
+
+            changeFontSize(delta) {
+                const newSize = this.fontSize + delta; // Step é 1px
+                if (newSize >= this.minFontSize && newSize <= this.maxFontSize) {
+                    this.fontSize = newSize;
+                    this.app.DOMElements.visor.style.fontSize = `${this.fontSize}px`;
+                    localStorage.setItem('recifra-fontsize', this.fontSize);
+                }
+            },
+
+            toggleColumns() {
+                this.columnCount = this.columnCount === 1 ? 2 : 1;
+                const { visor, columnsDisplay } = this.app.DOMElements;
+                
+                if (this.columnCount === 2) {
+                    visor.classList.add('columns-2');
+                } else {
+                    visor.classList.remove('columns-2');
+                }
+                columnsDisplay.textContent = `${this.columnCount}x`;
+            },
+
+            resetColumns() {
+                this.columnCount = 1;
+                const { visor, columnsDisplay } = this.app.DOMElements;
+                visor.classList.remove('columns-2');
+                columnsDisplay.textContent = '1x';
+            },
+            
+            setupTheme() {
+                const savedTheme = localStorage.getItem('recifra-theme') || 'dark';
+                this.applyTheme(savedTheme);
+                this.app.DOMElements.themeToggle.addEventListener('click', () => {
+                    const newTheme = this.app.DOMElements.body.classList.contains('light') ? 'dark' : 'light';
+                    this.applyTheme(newTheme);
+                });
+            },
+            applyTheme(theme) {
+                const { body, themeIconSun, themeIconMoon } = this.app.DOMElements;
+                if (theme === 'light') { body.classList.add('light'); themeIconSun.classList.remove('hidden'); themeIconMoon.classList.add('hidden'); } 
+                else { body.classList.remove('light'); themeIconSun.classList.add('hidden'); themeIconMoon.classList.remove('hidden'); }
+                localStorage.setItem('recifra-theme', theme);
+            },
+            
+            setupHelpModal() {
+                const { helpBtn, helpModal, closeHelpModal, helpModalBackdrop } = this.app.DOMElements;
+                const open = () => helpModal.classList.remove('hidden');
+                const close = () => helpModal.classList.add('hidden');
+                helpBtn.addEventListener('click', open);
+                closeHelpModal.addEventListener('click', close);
+                helpModalBackdrop.addEventListener('click', close);
+            },
+            
+            setupChordSelector() {
+                const { songLyrics, chordlist } = this.app.DOMElements;
+                songLyrics.addEventListener('keydown', (e) => {
+                    if (e.shiftKey && /^[CDEFGABcdefgab]$/.test(e.key)) {
+                        e.preventDefault();
+                        const ton = e.key.toUpperCase();
+                        const acordeList = ChordModule.acordes[ton] || [];
+                        chordlist.innerHTML = '';
+                        acordeList.forEach((acorde, index) => {
+                            const button = document.createElement('button');
+                            button.textContent = acorde;
+                            button.className = (index % 8 < 4) ? 'natural-chord' : 'altered-chord';
+                            button.onclick = () => ChordModule.insertChord(acorde);
+                            chordlist.appendChild(button);
+                        });
+                        const coords = this.getCaretCoordinates(songLyrics, songLyrics.selectionStart);
+                        chordlist.style.top = `${coords.top + 20}px`;
+                        chordlist.style.left = `${coords.left}px`;
+                        chordlist.classList.remove('hidden');
+                    }
+                });
+                document.addEventListener('click', (e) => { if (!chordlist.contains(e.target) && e.target !== songLyrics) { chordlist.classList.add('hidden'); } });
+            },
+
+            _renderLine(line, isChorus, currentTextfillColor) {
+                let lyricsLine = '', chordsLine = '', displayPos = 0, i = 0;
+                let chordsToRender = [];
+                let lineWithoutChords = line.replace(/\[([^\]]+)\]/g, '');
+
+                while (i < line.length) {
+                    if (line[i] === '[') {
+                        let end = line.indexOf(']', i);
+                        if (end !== -1) {
+                            const chord = line.substring(i + 1, end);
+                            chordsToRender.push({ text: chord, pos: displayPos });
+                            i = end + 1;
+                        } else {
+                            lyricsLine += line[i++];
+                            displayPos++;
+                        }
+                    } else {
+                        lyricsLine += line[i++];
+                        displayPos++;
+                    }
+                }
+
+                let chordsLineHtml = '';
+                let lastPos = 0;
+                chordsToRender.forEach(c => {
+                    chordsLineHtml += ' '.repeat(c.pos - lastPos);
+                    chordsLineHtml += `<span class="chord-lookup" data-chord="${CoreUtils.escapeHTML(c.text)}">${CoreUtils.escapeHTML(c.text)}</span>`;
+                    lastPos = c.pos;
+                });
+                
+                let finalLyricsHtml;
+                const upperTrimmedLine = line.trim().toUpperCase();
+
+                if (currentTextfillColor && lyricsLine.trim() !== '') {
+                    const isTagLine = ['BIS', 'REFRÃO', 'TRANSIÇÃO', 'OBSERVAÇÃO', 'CÔRO'].includes(upperTrimmedLine.replace(/\[.*?\]/g, ''));
+                    let style = `background-color: ${currentTextfillColor}; color: #1f2937; padding: 0 0.25rem; border-radius: 0.25rem;`;
+                    if (isTagLine) { style += ` font-weight: bold;`; }
+                    const styledContent = isChorus ? `<strong>${lyricsLine}</strong>` : lyricsLine;
+                    finalLyricsHtml = `<span style="${style}">${styledContent}</span>`;
+                } else {
+                    finalLyricsHtml = isChorus ? `<strong>${lyricsLine}</strong>` : lyricsLine;
+                }
+                
+                return `<div class="cpro_line"><div class="cpro_chords chord-color">${chordsLineHtml}</div><div class="cpro_lyrics text-main">${finalLyricsHtml}</div></div>`;
+            },
+
+            renderPreview() {
+                const { songTitle, composer, key, songLyrics, visor } = this.app.DOMElements;
+                const lines = songLyrics.value.split('\n');
+                let htmlContent = `<h3 class="font-bold text-lg mb-1 text-title">${CoreUtils.escapeHTML(songTitle.value || 'TÍTULO')} (${CoreUtils.escapeHTML(key.value !== '-' ? key.value : 'Tom')})</h3><p class="text-sm text-secondary mb-4">${CoreUtils.escapeHTML(composer.value || 'Composição')}</p>`;
+                
+                let inChorus = false;
+                let textfillColor = null;
+                let chorusLinesHtml = '';
+
+                const commitChorus = () => {
+                    if (chorusLinesHtml) {
+                        htmlContent += `<div class="chorus-section"><div class="section-label refrao">REFRÃO</div>${chorusLinesHtml}</div>`;
+                        chorusLinesHtml = '';
+                    }
+                };
+
+                lines.forEach(line => {
+                    const trimmedLine = line.trim();
+                    const upperTrimmedLine = trimmedLine.toUpperCase();
+
+                    if (upperTrimmedLine === '{C:CHORUS}') {
+                        commitChorus();
+                        inChorus = true;
+                        return;
+                    }
+                    if (upperTrimmedLine === '{C:}') {
+                        commitChorus();
+                        inChorus = false;
+                        return;
+                    }
+                    
+                    if (trimmedLine.toLowerCase().startsWith('{textfill:')) {
+                        textfillColor = trimmedLine.slice(10, -1).trim();
+                        return;
+                    }
+                    if (trimmedLine.toLowerCase() === '{textfill}') {
+                        textfillColor = null;
+                        return;
+                    }
+
+                    const lineHtml = this._renderLine(line, inChorus, textfillColor);
+
+                    if (inChorus) {
+                        chorusLinesHtml += lineHtml;
+                    } else {
+                        htmlContent += lineHtml;
+                    }
+                });
+
+                commitChorus(); 
+                visor.innerHTML = htmlContent;
+            },
+
+
+            renderHarmonicAnalysis() {
+                const trigger = this.app.DOMElements.openHarmonicAnalysis;
+                const summary = this.app.DOMElements.harmonicAnalysisSummary;
+                const content = this.app.DOMElements.harmonicAnalysisContent;
+                const progressionContent = this.app.DOMElements.harmonicProgressionContent;
+                const sectionContent = this.app.DOMElements.harmonicSectionContent;
+                const analysis = this.app.state.harmonicAnalysis || [];
+                const key = this.app.DOMElements.key.value || '-';
+
+                if (!trigger || !summary || !content || !progressionContent || !sectionContent) return;
+
+                if (key === '-') {
+                    trigger.classList.add('hidden');
+                    this.closeHarmonicAnalysisModal();
+                    summary.textContent = '';
+                    content.innerHTML = '';
+                    progressionContent.innerHTML = '';
+                    sectionContent.innerHTML = '';
+                    return;
+                }
+
+                trigger.classList.remove('hidden');
+
+                const modeLabel = /m$/.test(key) ? 'menor' : 'maior';
+                summary.textContent = `Tom: ${key} (${modeLabel}) · ${analysis.length} acorde${analysis.length === 1 ? '' : 's'} analisado${analysis.length === 1 ? '' : 's'}`;
+
+                const rows = analysis.map(item => {
+                    let classification = '—';
+                    if (item.classification === 'diatonico') classification = 'Diatônico';
+                    else if (item.classification === 'dominante_secundario') classification = 'Dominante secundário';
+                    else if (item.classification === 'emprestimo_modal') classification = 'Empréstimo modal';
+                    else if (item.classification === 'qualidade_nao_diatonica') classification = 'Qualidade não diatônica';
+                    else if (item.classification === 'cromatico') classification = 'Cromático';
+                    else if (item.classification === 'sem_tonalidade') classification = 'Sem tonalidade';
+                    else if (item.classification === 'acorde_nao_reconhecido') classification = 'Não reconhecido';
+
+                    const functionLabel = item.function || '—';
+                    const confidence = typeof item.confidence === 'number'
+                        ? (item.confidence >= 0.9 ? 'alta' : item.confidence >= 0.7 ? 'média' : item.confidence > 0 ? 'baixa' : '—')
+                        : '—';
+                    const sourceLabel = item.source === 'harmonicMinor' ? 'menor harmônica'
+                        : item.source === 'naturalMinor' ? 'menor natural'
+                        : item.source === 'major' ? 'maior'
+                        : item.source === 'dominanteSecundario' ? 'dominante secundário'
+                        : item.source === 'parallelMinor' ? 'menor paralela'
+                        : item.source === 'parallelMajor' ? 'maior paralela'
+                        : '—';
+
+                    return `<tr class="border-t border-gray-700">
+                        <td class="px-2 py-1.5 font-bold chord-color whitespace-nowrap">${item.chord}</td>
+                        <td class="px-2 py-1.5 font-semibold whitespace-nowrap">${functionLabel}</td>
+                        <td class="px-2 py-1.5 font-semibold whitespace-nowrap">${item.tonalFunction || '—'}</td>
+                        <td class="px-2 py-1.5 whitespace-nowrap">${classification}</td>
+                        <td class="px-2 py-1.5 text-secondary whitespace-nowrap">${sourceLabel}</td>
+                        <td class="px-2 py-1.5 text-secondary whitespace-nowrap">${item.bass ? `baixo ${CoreUtils.escapeHTML(item.bass)}` : '—'}</td>
+                        <td class="px-2 py-1.5 text-secondary whitespace-nowrap">${confidence}</td>
+                    </tr>`;
+                }).join('');
+
+                content.innerHTML = analysis.length === 0
+                    ? `<div class="text-sm text-secondary py-4">Não há acordes para analisar.</div>`
+                    : `<table class="w-full text-xs text-left">
+                        <thead>
+                            <tr class="text-gray-400 uppercase tracking-wide">
+                                <th class="px-2 py-1">Acorde</th>
+                                <th class="px-2 py-1">Função / grau</th>
+                                <th class="px-2 py-1">Função tonal</th>
+                                <th class="px-2 py-1">Classificação</th>
+                                <th class="px-2 py-1">Origem</th>
+                                <th class="px-2 py-1">Inversão</th>
+                                <th class="px-2 py-1">Confiança</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>`;
+
+                const progression = HarmonicModule.analyzeProgression(analysis);
+                const cadenceRows = progression.cadences.map(item => `
+                    <div class="flex flex-wrap items-center gap-2 py-1.5 border-b border-gray-700 last:border-b-0 text-xs">
+                        <span class="font-bold chord-color">${item.chords}</span>
+                        <span class="text-secondary">→</span>
+                        <span class="font-semibold">${item.label}</span>
+                    </div>`).join('');
+
+                const relationRows = progression.relations.map(item => `
+                    <div class="flex flex-wrap items-center gap-2 py-1.5 border-b border-gray-700 last:border-b-0 text-xs">
+                        <span class="font-bold chord-color">${item.from}</span>
+                        <span class="text-secondary">→</span>
+                        <span class="font-bold chord-color">${item.to}</span>
+                        <span class="text-secondary">${item.label}</span>
+                    </div>`).join('');
+
+                const harmonicSummary = HarmonicModule.buildHarmonicSummary(analysis, progression);
+                const harmonicSuggestions = HarmonicModule.generateSuggestions(analysis, progression);
+
+                // Durante um experimento, as sugestões permanecem ancoradas na cifra original.
+                // Assim, testar A e depois B nunca transforma B em uma sugestão derivada de A.
+                if (!this.harmonicTestSession.active) {
+                    this.harmonicSuggestionsCache = harmonicSuggestions;
+                }
+                const visibleSuggestions = this.harmonicTestSession.active && this.harmonicTestSession.originalSuggestions.length
+                    ? this.harmonicTestSession.originalSuggestions
+                    : this.harmonicSuggestionsCache;
+                const suggestionRows = visibleSuggestions.map((item, suggestionIndex) => {
+                    const testButtons = (item.tests || []).map((test, testIndex) => {
+                        const parsed = this.parseSuggestionTest(test);
+                        return parsed ? `<button type="button" class="harmonic-test-btn px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px]" data-suggestion-index="${suggestionIndex}" data-test-index="${testIndex}">Testar ${test}</button>` : '';
+                    }).join('');
+                    return `<div class="py-2 border-b border-gray-700 last:border-b-0 text-xs">
+                        <div class="flex flex-wrap items-center gap-2 mb-1">
+                            <span class="font-bold ${item.type === 'revisao' ? 'text-amber-600' : 'text-green-700'}">${item.type === 'revisao' ? '⚠ Revisão' : '🎵 Experimente'}</span>
+                            <span class="font-bold chord-color">${item.chords}</span>
+                        </div>
+                        <div class="text-secondary">${item.message}</div>
+                        ${item.tests?.length ? `<div class="mt-1 flex flex-wrap items-center gap-2"><span class="font-semibold">Teste:</span><span>${item.tests.join(' · ')}</span>${testButtons}</div>` : ''}
+                        ${item.reason ? `<div class="text-secondary mt-0.5"><span class="font-semibold">Motivo:</span> ${item.reason}</div>` : ''}
+                    </div>`;
+                }).join('');
+
+                progressionContent.innerHTML = `
+                    <div class="border-t border-gray-600 pt-4">
+                        <div class="text-sm font-bold text-title mb-2">Progressões e cadências</div>
+                        ${progression.cadences.length
+                            ? `<div class="mb-4"><div class="text-xs font-semibold text-secondary uppercase tracking-wide mb-1">Cadências / resoluções detectadas</div><div>${cadenceRows}</div></div>`
+                            : ''}
+                        ${progression.relations.length
+                            ? `<div><div class="text-xs font-semibold text-secondary uppercase tracking-wide mb-1">Relações consecutivas relevantes</div><div>${relationRows}</div></div>`
+                            : ''}
+                        ${progression.patterns.length
+                            ? `<div class="mt-4"><div class="text-xs font-semibold text-secondary uppercase tracking-wide mb-1">Padrões harmônicos recorrentes</div><div>${progression.patterns.map(item => `
+                                <div class="flex flex-wrap items-center gap-2 py-1.5 border-b border-gray-700 last:border-b-0 text-xs">
+                                    <span class="font-bold chord-color">${item.chords}</span>
+                                    <span class="text-secondary">→</span>
+                                    <span class="font-semibold">${item.label}</span>
+                                    <span class="text-secondary">${item.description}</span>
+                                </div>`).join('')}</div></div>`
+                            : ''}
+                        ${!progression.cadences.length && !progression.relations.length && !progression.patterns.length
+                            ? `<div class="text-xs text-secondary">Nenhuma relação, cadência ou padrão harmônico relevante foi identificado na sequência atual.</div>`
+                            : ''}
+
+                        <div class="mt-4">
+                            <div class="flex flex-wrap items-center justify-between gap-2 mb-2"><div class="text-sm font-bold text-title">Resumo harmônico</div><button type="button" id="copy-ai-harmonic-context" class="px-2 py-1 rounded bg-gray-600 hover:bg-gray-500 text-white text-[11px] font-bold">Preparar contexto para IA</button></div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-xs">
+                                <div><span class="font-semibold">Centro tonal:</span> ${harmonicSummary.center}</div>
+                                <div><span class="font-semibold">Cadências:</span> ${harmonicSummary.cadences || 'nenhuma identificada'}</div>
+                                <div><span class="font-semibold">Dominantes secundários:</span> ${harmonicSummary.secondaryDominants || 'nenhum'}</div>
+                                <div><span class="font-semibold">Empréstimos modais:</span> ${harmonicSummary.modalBorrowings || 'nenhum'}</div>
+                                <div><span class="font-semibold">Padrões identificados:</span> ${harmonicSummary.patterns || 'nenhum'}</div>
+                                <div><span class="font-semibold">Revisões sugeridas:</span> ${visibleSuggestions.filter(item => item.type === 'revisao').length}</div>
+                                <div><span class="font-semibold">Alternativas para teste:</span> ${visibleSuggestions.filter(item => item.type === 'experimente').length}</div>
+                            </div>
+                        </div>
+
+                        ${visibleSuggestions.length
+                            ? `<div class="mt-4"><div class="text-sm font-bold text-title mb-2">Sugestões harmônicas</div><div>${suggestionRows}</div><div class="text-[11px] text-secondary mt-2">As sugestões são hipóteses para comparação musical, não correções obrigatórias da cifra.</div></div>`
+                            : ''}
+                    </div>`;
+
+                progressionContent.querySelectorAll('.harmonic-test-btn').forEach(button => {
+                    button.addEventListener('click', () => this.applyHarmonicSuggestionTest(Number(button.dataset.suggestionIndex), Number(button.dataset.testIndex)));
+                });
+
+                const aiContextButton = document.getElementById('copy-ai-harmonic-context');
+                if (aiContextButton) {
+                    aiContextButton.addEventListener('click', async () => {
+                        try {
+                            await navigator.clipboard.writeText(AIHarmonicModule.getPromptContext());
+                            this.showToast('Contexto harmônico preparado e copiado.');
+                        } catch (error) {
+                            this.showToast('Não foi possível copiar o contexto para a área de transferência.', true);
+                        }
+                    });
+                }
+
+                const harmonicSections = HarmonicModule.analyzeSections();
+                if (!harmonicSections.length) {
+                    sectionContent.innerHTML = '';
+                } else {
+                    const sectionRows = harmonicSections.map(section => {
+                        const sectionProgression = HarmonicModule.analyzeProgression(section.analysis);
+                        const degrees = section.analysis.map(item => item.function || '—').join(' → ');
+                        const chords = section.analysis.map(item => item.chord).join(' → ');
+                        const highlights = [];
+                        sectionProgression.patterns.forEach(item => highlights.push(item.label));
+                        sectionProgression.cadences.forEach(item => highlights.push(item.label));
+                        const highlightText = [...new Set(highlights)].join(' · ');
+                        return `<div class="py-2 border-b border-gray-700 last:border-b-0 text-xs">
+                            <div class="flex flex-wrap items-center gap-2 mb-1">
+                                <span class="font-bold text-title">${section.label}</span>
+                                <span class="text-secondary">${section.analysis.length} acorde${section.analysis.length === 1 ? '' : 's'}</span>
+                            </div>
+                            <div><span class="font-semibold chord-color">${chords}</span></div>
+                            <div class="text-secondary mt-0.5"><span class="font-semibold">Graus:</span> ${degrees}</div>
+                            ${highlightText ? `<div class="text-secondary mt-0.5"><span class="font-semibold">Destaques:</span> ${highlightText}</div>` : ''}
+                        </div>`;
+                    }).join('');
+                    sectionContent.innerHTML = `<div class="border-t border-gray-600 pt-4">
+                        <div class="text-sm font-bold text-title mb-2">Mapa harmônico por seção</div>
+                        <div class="text-[11px] text-secondary mb-2">Resumo das progressões encontradas em cada seção identificável da cifra.</div>
+                        ${sectionRows}
+                    </div>`;
+                }
+            },
+
+            parseSuggestionTest(test) {
+                if (typeof test !== 'string') return null;
+                const parts = test.split('→').map(part => part.trim()).filter(Boolean);
+                if (!parts.length) return null;
+                const chordPattern = /^[A-G](?:#|b)?(?:m|maj|sus|add|dim|aug|°|º|\+|-|5|6|7|9|11|13|\/|\(|\)|\s)*$/i;
+                return parts.every(part => chordPattern.test(part)) ? parts : null;
+            },
+
+            applyHarmonicSuggestionTest(suggestionIndex, testIndex) {
+                const suggestion = this.harmonicTestSession.active
+                    ? this.harmonicTestSession.originalSuggestions[suggestionIndex]
+                    : this.harmonicSuggestionsCache[suggestionIndex];
+                if (!suggestion || !Array.isArray(suggestion.tests)) return;
+
+                const test = suggestion.tests[testIndex];
+                const replacement = this.parseSuggestionTest(test);
+                if (!replacement) return;
+
+                const lyricsEl = this.app.DOMElements.songLyrics;
+                if (!this.harmonicTestSession.active) {
+                    this.harmonicTestSession = {
+                        active: true,
+                        originalLyrics: lyricsEl.value,
+                        appliedTest: '',
+                        originalSuggestions: this.harmonicSuggestionsCache.map(item => ({
+                            ...item,
+                            tests: Array.isArray(item.tests) ? [...item.tests] : []
+                        })),
+                        startedAt: Date.now()
+                    };
+                }
+
+                const baseLyrics = this.harmonicTestSession.originalLyrics;
+                const source = suggestion.chords.split('→').map(part => part.trim()).filter(Boolean);
+                if (source.length !== replacement.length) {
+                    this.showToast('A sequência da sugestão não corresponde à sequência de teste.', true);
+                    return;
+                }
+
+                let updated = baseLyrics;
+                let searchFrom = 0;
+                let changed = false;
+
+                for (let i = 0; i < source.length; i++) {
+                    const escaped = source[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const re = new RegExp('\\[' + escaped + '\\]', 'g');
+                    re.lastIndex = searchFrom;
+                    const match = re.exec(updated);
+                    if (!match) continue;
+
+                    updated = updated.slice(0, match.index) +
+                        '[' + replacement[i] + ']' +
+                        updated.slice(match.index + match[0].length);
+                    searchFrom = match.index + replacement[i].length + 2;
+                    changed = true;
+                }
+
+                if (!changed) {
+                    this.showToast('Não encontrei a sequência sugerida na cifra original para aplicar o teste.', true);
+                    return;
+                }
+
+                lyricsEl.value = updated;
+                this.harmonicTestSession.appliedTest = test;
+                this.renderAll();
+                this.openHarmonicAnalysisModal();
+                this.updateHarmonicTestBar();
+                this.showToast(`Teste aplicado: ${test}`);
+            },
+
+            updateHarmonicTestBar() {
+                const bar = this.app.DOMElements.harmonicTestBar;
+                const label = this.app.DOMElements.harmonicTestLabel;
+                const comparison = this.app.DOMElements.harmonicTestComparison;
+                if (!bar || !label) return;
+
+                const session = this.harmonicTestSession;
+                bar.classList.toggle('hidden', !session.active);
+                if (!session.active) {
+                    label.textContent = '';
+                    if (comparison) comparison.textContent = '';
+                    return;
+                }
+
+                const original = session.originalLyrics || '';
+                const current = this.app.DOMElements.songLyrics.value || '';
+                const applied = session.appliedTest || 'nenhuma alteração aplicada';
+                label.innerHTML = `· ${CoreUtils.escapeHTML(applied)}`;
+                if (comparison) {
+                    const originalChords = (original.match(/\[([^\]]+)\]/g) || []).map(x => x.slice(1, -1));
+                    const currentChords = (current.match(/\[([^\]]+)\]/g) || []).map(x => x.slice(1, -1));
+                    comparison.innerHTML = `<span class="font-semibold">Original:</span> ${CoreUtils.escapeHTML(originalChords.join(' → ') || '—')} &nbsp; <span class="font-semibold">Teste:</span> ${CoreUtils.escapeHTML(currentChords.join(' → ') || '—')}`;
+                }
+            },
+
+            keepHarmonicTest() {
+                if (!this.harmonicTestSession.active) return;
+                this.harmonicTestSession = { active: false, originalLyrics: '', appliedTest: '', originalSuggestions: [], startedAt: null };
+                HistoryModule.saveState(true);
+                AutosaveModule.scheduleSave();
+                this.updateHarmonicTestBar();
+                this.renderAll();
+                this.showToast('Versão de teste mantida como nova cifra.');
+            },
+
+            restoreHarmonicTest() {
+                if (!this.harmonicTestSession.active) return;
+                this.app.DOMElements.songLyrics.value = this.harmonicTestSession.originalLyrics;
+                this.harmonicTestSession = { active: false, originalLyrics: '', appliedTest: '', originalSuggestions: [], startedAt: null };
+                this.renderAll();
+                this.updateHarmonicTestBar();
+                this.showToast('Cifra original restaurada.');
+            },
+
+            openHarmonicAnalysisModal() {
+                const modal = this.app.DOMElements.harmonicAnalysisModal;
+                if (!modal) return;
+                modal.classList.remove('hidden');
+                document.body.classList.add('overflow-hidden');
+            },
+
+            closeHarmonicAnalysisModal() {
+                const modal = this.app.DOMElements.harmonicAnalysisModal;
+                if (!modal) return;
+                modal.classList.add('hidden');
+                document.body.classList.remove('overflow-hidden');
+            },
+
+            addUsedChordButton(chord, count = 1) {
+                const btn = document.createElement('button');
+                btn.textContent = chord;
+                btn.className = 'used-chord-btn text-xs font-bold py-2 px-2 rounded';
+                btn.dataset.chord = chord;
+                btn.dataset.count = String(count);
+                btn.title = `${count} ocorrência${count === 1 ? '' : 's'}`;
+                btn.onclick = () => ChordModule.insertChord(chord);
+                this.app.DOMElements.usedChordsList.appendChild(btn);
+            },
+            
+            toggleExpandedView() {
+                const { mainElement, iconExpand, iconCollapse, body } = this.app.DOMElements;
+                const isCollapsing = mainElement.classList.contains('view-expanded');
+
+                mainElement.classList.toggle('view-expanded');
+                body.classList.toggle('overflow-hidden');
+                iconExpand.classList.toggle('hidden');
+                iconCollapse.classList.toggle('hidden');
+
+                if (isCollapsing) {
+                    AutoScrollModule.reset();
+                    this.resetColumns();
+                }
+            },
+
+            handleTagInsertion(type) {
+                const textarea = this.app.DOMElements.songLyrics; const start = textarea.selectionStart; const end = textarea.selectionEnd; const selectedText = textarea.value.substring(start, end);
+                const sections = {
+                    refrao: `{C:Chorus}\n${selectedText || ''}\n{C:}`,
+                    coro: `{textfill: yellow}\n${selectedText || 'CÔRO'}\n{textfill}`,
+                    bis: `{textfill: #00ff00}\n${selectedText || 'BIS'}\n{textfill}`,
+                    tagRefrao: `{textfill: #00ffff}\n${selectedText || 'REFRÃO'}\n{textfill}`,
+                    transicao: `{textfill: #ffab44}\n${selectedText || 'TRANSIÇÃO'}\n{textfill}`,
+                    observacao: `{textfill: #ff9999}\n${selectedText || 'OBSERVAÇÃO'}\n{textfill}`,
+                };
+                let newText = sections[type];
+                if (!selectedText) {
+                    newText = `\n${newText}\n`;
+                }
+                textarea.value = textarea.value.substring(0, start) + newText + textarea.value.substring(end); 
+                textarea.selectionStart = textarea.selectionEnd = start + newText.length; 
+                textarea.focus(); 
+HistoryModule.saveState();
+AutosaveModule.scheduleSave();
+this.app.renderAll();
+            },
+            
+            getCaretCoordinates(element, position) {
+                const div = document.createElement("div"); const style = getComputedStyle(element); ['direction', 'boxSizing', 'width', 'height', 'overflowX', 'overflowY', 'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'fontStyle', 'fontVariant', 'fontWeight', 'fontStretch', 'fontSize', 'fontSizeAdjust', 'lineHeight', 'fontFamily', 'textAlign', 'textTransform', 'textIndent', 'textDecoration', 'letterSpacing', 'wordSpacing', 'tabSize', 'MozTabSize'].forEach(prop => { div.style[prop] = style[prop]; }); div.style.whiteSpace = "pre-wrap"; div.style.position = "absolute"; div.style.visibility = "hidden"; document.body.appendChild(div); const text = element.value.substring(0, position); const span = document.createElement("span"); span.textContent = element.value.substring(position) || "."; div.textContent = text; div.appendChild(span); const rect = element.getBoundingClientRect(); const coordinates = { top: rect.top + span.offsetTop - element.scrollTop + window.scrollY, left: rect.left + span.offsetLeft - element.scrollLeft + window.scrollX }; document.body.removeChild(div); return coordinates;
+            }
+        };
+
+        /**
+         * Módulo de Histórico
+         * Gerencia o estado de desfazer e refazer.
+         */
+const HistoryModule = {
+  history: {
+    undo: [],
+    redo: []
+  },
+
+  limit: 50,
+  app: null,
+
+  init(app) {
+    this.app = app;
+  },
+
+  getCurrentState() {
+    return {
+      title: this.app.DOMElements.songTitle.value,
+      composer: this.app.DOMElements.composer.value,
+      key: this.app.DOMElements.key.value,
+      lyrics: this.app.DOMElements.songLyrics.value
+    };
+  },
+
+  statesAreEqual(stateA, stateB) {
+    if (!stateA || !stateB) return false;
+
+    return (
+      stateA.title === stateB.title &&
+      stateA.composer === stateB.composer &&
+      stateA.key === stateB.key &&
+      stateA.lyrics === stateB.lyrics
+    );
+  },
+
+  saveState(force = false) {
+    const currentState = this.getCurrentState();
+    const lastState = this.history.undo[this.history.undo.length - 1];
+
+    if (force || !this.statesAreEqual(currentState, lastState)) {
+      this.history.undo.push(currentState);
+
+      // Qualquer nova alteração depois de um undo
+      // inicia uma nova sequência e elimina o redo.
+      this.history.redo = [];
+
+      if (this.history.undo.length > this.limit) {
+        this.history.undo.shift();
+      }
+    }
+  },
+
+  restoreState(state) {
+    if (!state) return;
+
+    this.app.DOMElements.songTitle.value = state.title || '';
+    this.app.DOMElements.composer.value = state.composer || '';
+    this.app.DOMElements.key.value = state.key || '-';
+    this.app.DOMElements.songLyrics.value = state.lyrics || '';
+
+    this.app.renderAll();
+  },
+
+  undo() {
+    if (this.history.undo.length <= 1) return;
+
+    const currentState = this.history.undo.pop();
+
+    this.history.redo.push(currentState);
+
+    const previousState =
+      this.history.undo[this.history.undo.length - 1];
+
+    this.restoreState(previousState);
+    AutosaveModule.scheduleSave();
+  },
+
+  redo() {
+    if (this.history.redo.length === 0) return;
+
+    const nextState = this.history.redo.pop();
+
+    this.history.undo.push(nextState);
+
+    this.restoreState(nextState);
+    AutosaveModule.scheduleSave();
+  },
+
+  clear() {
+    this.history = {
+      undo: [],
+      redo: []
+    };
+  }
+};
+        /**
+         * Módulo de Acordes
+         * Contém toda a lógica de manipulação de acordes, transposição e conversão.
+         */
+        const ChordModule = {
+            acordes: { C: ['C', 'C7', 'C7+', 'C°', 'C#', 'C#7', 'C#7+', 'C#°', 'C5', 'C5+', 'C6', 'C6/9', 'C#5', 'C#5+', 'C#6', 'C#6/9', 'C7/4', 'C7+/9', 'C7/9-', 'C7/9', 'C#7/4', 'C#7+/9', 'C#7/9-', 'C#7/9', 'C7/9+', 'C7/13-', 'C7/13', 'C7/13+', 'C#7/9+', 'C#7/13-', 'C#7/13', 'C#7/13+', 'C/E', 'C/G', 'C/Bb', 'C7/E', 'C#/F', 'C#/G#', 'C#/B', 'C#7/F', 'C7/G', 'Cm', 'Cm6', 'Cm7', 'C#7/G#', 'C#m', 'C#m6', 'C#m7', 'Cm5+', 'Cm7+', 'Cm9', 'Cm7/9', 'C#m5+', 'C#m7+', 'C#m9', 'C#m7/9', 'Cm7/5-', 'Cm/Eb', 'Cm/G', 'Cm/Bb', 'C#m7/5-', 'C#m/E', 'C#m/G#', 'C#m/B'], D: ['D', 'D7', 'D7+', 'D°', 'D#', 'D#7', 'D#7+', 'D#°', 'D5', 'D5+', 'D6', 'D6/9', 'D#5', 'D#5+', 'D#6', 'D#6/9', 'D7/4', 'D7+/9', 'D7/9-', 'D7/9', 'D#7/4', 'D#7+/9', 'D#7/9-', 'D#7/9', 'D7/9+', 'D7/13-', 'D7/13', 'D7/13+','D#7/9+', 'D#7/13-', 'D#7/13', 'D#7/13+', 'D/F#', 'D/A', 'D/C', 'D7/F#', 'D#/G', 'D#/A#', 'D#/C', 'D#7/G', 'D7/A', 'Dm', 'Dm6', 'Dm7', 'D#7/A#', 'D#m', 'D#m6', 'D#m7', 'Dm5+', 'Dm7+', 'Dm9', 'Dm7/9', 'D#m5+', 'D#m7+', 'D#m9', 'D#m7/9', 'Dm7/5-', 'Dm/F', 'Dm/A', 'Dm/C', 'D#m7/5-', 'D#m/F#', 'D#m/A#', 'D#m/C#'], E: ['E', 'E7', 'E7+', 'E°', 'Eb', 'Eb7', 'Eb7+', 'Eb°', 'E5', 'E5+', 'E6', 'E6/9', 'Eb5', 'Eb5+', 'Eb6', 'Eb6/9', 'E7/4', 'E7+/9', 'E7/9-', 'E7/9', 'Eb7/4', 'Eb7+/9', 'Eb7/9-', 'Eb7/9', 'E7/9+', 'E7/13-', 'E7/13', 'E7/13+', 'Eb7/9+', 'Eb7/13-', 'Eb7/13', 'Eb7/13+', 'E/G#', 'E/B', 'E/D', 'E7/G#', 'Eb/G', 'Eb/Bb', 'Eb/Db', 'Eb7/G', 'E7/B', 'Em', 'Em6', 'Em7', 'Eb7/Bb', 'Ebm', 'Ebm6', 'Ebm7', 'Em5+', 'Em7+', 'Em9', 'Em7/9', 'Ebm5+','Ebm7+', 'Ebm9', 'Ebm7/9', 'Em7/5-', 'Em/G', 'Em/B', 'Em/D', 'Ebm7/5-', 'Ebm/Gb', 'Ebm/Bb', 'Ebm/Db'], F: ['F', 'F7', 'F7+', 'F°', 'F#', 'F#7', 'F#7+', 'F#°', 'F5', 'F5+', 'F6', 'F6/9', 'F#5', 'F#5+', 'F#6', 'F#6/9', 'F7/4', 'F7+/9', 'F7/9-', 'F7/9', 'F#7/4', 'F#7+/9', 'F#7/9-', 'F#7/9', 'F7/9+', 'F7/13-', 'F7/13', 'F7/13+', 'F#7/9+', 'F#7/13-', 'F#7/13', 'F#7/13+', 'F/A', 'F/C', 'F/D', 'F7/A', 'F#/A#', 'F#/C#', 'F#/D#', 'F#7/A#', 'F7/C', 'Fm', 'Fm6', 'Fm7', 'F#7/C#', 'F#m', 'F#m6', 'F#m7', 'Fm5+', 'Fm7+', 'Fm9', 'Fm7/9', 'F#m5+','F#m7+', 'F#m9', 'F#m7/9', 'Fm7/5-', 'Fm/Ab', 'Fm/C', 'Fm/Eb', 'F#m7/5-', 'F#m/A', 'F#m/C#', 'F#m/E'], G: ['G', 'G7', 'G7+', 'G°', 'G#', 'G#7', 'G#7+', 'G#°', 'G5', 'G5+', 'G6', 'G6/9', 'G#5', 'G#5+', 'G#6', 'G#6/9', 'G7/1', 'G7+/9', 'G7/9-', 'G7/9', 'G#7/4', 'G#7+/9', 'G#7/9-', 'G#7/9', 'G7/9+', 'G7/13-', 'G7/13', 'G7/13+', 'G#7/9+', 'G#7/13-', 'G#7/13', 'G#7/13+', 'G/B', 'G/D', 'G/F', 'G7/B', 'G#/C', 'G#/D#', 'G#/F', 'G#7/C', 'G7/D', 'Gm', 'Gm6', 'Gm7', 'G#7/D#', 'G#m', 'G#m6', 'G#m7', 'Gm5+', 'Gm7+', 'Gm9', 'Gm7/9', 'G#m5+','G#m7+', 'G#m9', 'G#m7/9', 'Gm7/5-', 'Gm/Bb', 'Gm/D', 'Gm/F', 'G#m7/5-', 'G#m/B', 'G#m/D#', 'G#m/F#'], A: ['A', 'A7', 'A7+', 'A°', 'A#', 'A#7', 'A#7+', 'A#°', 'A5', 'A5+', 'A6', 'A6/9', 'A#5', 'A#5+', 'A#6', 'A#6/9', 'A7/4', 'A7+/9', 'A7/9-', 'A7/9', 'A#7/4', 'A#7+/9', 'A#7/9-', 'A#7/9', 'A7/9+', 'A7/13-', 'A7/13', 'A7/13+', 'A#7/9+', 'A#7/13-', 'A#7/13', 'A#7/13+', 'A/C#', 'A/E', 'A/G', 'A7/C#', 'A#/D', 'A#/F', 'A#/G#', 'A#7/D', 'A7/E', 'Am', 'Am6', 'Am7', 'A#7/F', 'A#m', 'A#m6', 'A#m7', 'Am5+', 'Am7+', 'Am9', 'Am7/9', 'A#m5+','A#m7+', 'A#m9', 'A#m7/9', 'Am7/5-', 'Am/C', 'Am/E', 'Am/G', 'A#m7/5-', 'A#m/C#', 'A#m/F', 'A#m/G#'], B: ['B', 'B7', 'B7+', 'B°', 'Bb', 'Bb7', 'Bb7+', 'Bb°', 'B5', 'B5+', 'B6', 'B6/9', 'Bb5', 'Bb5+', 'Bb6', 'Bb6/9', 'B7/4', 'B7+/9', 'B7/9-', 'B7/9', 'Bb7/4', 'Bb7+/9', 'Bb7/9-', 'Bb7/9', 'B7/9+', 'B7/13-', 'B7/13', 'B7/13+', 'Bb7/9+', 'Bb7/13-', 'Bb7/13', 'Bb7/13+', 'B/D#', 'B/F#', 'B/A', 'B7/D#', 'Bb/D', 'Bb/F', 'Bb/Ab', 'Bb7/D', 'B7/F#', 'Bm', 'Bm6', 'Bm7', 'Bb7/F', 'Bbm', 'Bbm6', 'Bbm7', 'Bm5+', 'Bm7+', 'Bm9', 'Bm7/9', 'Bbm5+','Bbm7+', 'Bbm9', 'Bbm7/9', 'Bm7/5-', 'Bm/D', 'Bm/F#', 'Bm/A', 'Bbm7/5-', 'Bbm/Db', 'Bbm/F', 'Bbm/Ab'], },
+            semitoneMap: { 'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3, 'E': 4, 'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11, 'Cm': 0, 'C#m': 1, 'Dbm': 1, 'Dm': 2, 'D#m': 3, 'Ebm': 3, 'Em': 4, 'Fm': 5, 'F#m': 6, 'Gbm': 6, 'Gm': 7, 'G#m': 8, 'Abm': 8, 'Am': 9, 'A#m': 10, 'Bbm': 10, 'Bm': 11 },
+            chordOrder: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'],
+            init(app) { this.app = app; },
+
+            getChordRangeAtCursor(textarea) {
+                const text = textarea.value;
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                const cursor = start === end ? start : null;
+                if (cursor === null) return null;
+
+                const lineStart = text.lastIndexOf('\n', cursor - 1) + 1;
+                const lineEndIndex = text.indexOf('\n', cursor);
+                const lineEnd = lineEndIndex === -1 ? text.length : lineEndIndex;
+                const line = text.slice(lineStart, lineEnd);
+                const localCursor = cursor - lineStart;
+                const chordRegex = /\[([^\]\n]+)\]/g;
+                let match;
+                while ((match = chordRegex.exec(line)) !== null) {
+                    const tokenStart = match.index;
+                    const tokenEnd = tokenStart + match[0].length;
+                    if (localCursor >= tokenStart && localCursor <= tokenEnd) {
+                        return {
+                            start: lineStart + tokenStart,
+                            end: lineStart + tokenEnd
+                        };
+                    }
+                }
+                return null;
+            },
+
+            insertChord(chord) {
+                const textarea = this.app.DOMElements.songLyrics;
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                const existingChord = this.getChordRangeAtCursor(textarea);
+
+                let insertStart = start;
+                let insertEnd = end;
+                const replacement = `[${chord}]`;
+
+                if (existingChord) {
+                    insertStart = existingChord.start;
+                    insertEnd = existingChord.end;
+                }
+
+                textarea.value = textarea.value.substring(0, insertStart) + replacement + textarea.value.substring(insertEnd);
+                textarea.selectionStart = textarea.selectionEnd = insertStart + replacement.length;
+                textarea.focus();
+                this.app.DOMElements.chordlist.classList.add('hidden');
+
+                // A alteração manual da cifra invalida uma eventual base
+                // anterior usada pela transposição.
+                this.app.state.originalLyrics = '';
+                this.app.state.originalKey = '';
+
+                HistoryModule.saveState(true);
+                AutosaveModule.scheduleSave();
+                this.app.renderAll();
+            },
+
+            parseAndDisplayUsedChords() {
+                const { songLyrics, usedChordsList } = this.app.DOMElements;
+                const chordsInText = songLyrics.value.match(/\[([^\]]+)\]/g) || [];
+
+                // A lista de acordes utilizados segue a mesma regra de
+                // padronização da conversão para ChordPro: quando houver
+                // uma nomenclatura equivalente cadastrada no banco, usamos
+                // a forma oficial; caso contrário, preservamos a original.
+                const chordCounts = new Map();
+
+                chordsInText.forEach(c => {
+                    const canonicalChord = this.canonicalizeChord(c.slice(1, -1));
+                    chordCounts.set(canonicalChord, (chordCounts.get(canonicalChord) || 0) + 1);
+                });
+
+                this.app.state.usedChords = new Set(chordCounts.keys());
+                this.app.state.usedChordCounts = chordCounts;
+                // A análise exibida no painel usa o módulo harmônico atual.
+                this.app.state.harmonicAnalysis = HarmonicModule.analyzeUsedChords();
+                usedChordsList.innerHTML = '';
+                chordCounts.forEach((count, chord) => UIModule.addUsedChordButton(chord, count));
+            },
+
+            /**
+             * Analisa harmonicamente os acordes utilizados sem alterar a cifra
+             * nem exibir resultados na interface. A tonalidade selecionada no
+             * editor é a referência.
+             *
+             * A análise considera tanto a formação por tríades quanto o campo
+             * harmônico completo de tétrades da escala maior. Assim, em C:
+             * I=C, ii=Dm, iii=Em, IV=F, V=G, vi=Am, vii=B°
+             * e, com sétimas:
+             * I=C7+, ii=Dm7, iii=Em7, IV=F7+, V=G7, vi=Am7, vii=Bm7/5-.
+             *
+             * A qualidade completa do acorde é comparada com a função esperada;
+             * portanto, apenas ter a mesma fundamental não basta para classificá-lo
+             * como diatônico.
+             */
+            analyzeHarmonicContent(chordCounts) {
+                const key = (this.app.DOMElements.key.value || '').trim();
+                const result = {
+                    key,
+                    mode: null,
+                    harmonicField: [],
+                    harmonicFields: {},
+                    chords: new Map(),
+                    diatonic: [],
+                    nonDiatonic: []
+                };
+
+                if (!key || key === '-') return result;
+
+                const minor = /m$/.test(key);
+                result.mode = minor ? 'minor' : 'major';
+
+                const rootMatch = key.match(/^([A-G](?:#|b)?)/);
+                if (!rootMatch) return result;
+
+                const keyRoot = rootMatch[1];
+                const noteIndex = this.noteToIndex(keyRoot);
+                if (noteIndex === null) return result;
+
+                const buildField = (intervals, degreeNames, triadSuffixes, seventhSuffixes, source) => {
+                    return intervals.map((interval, degree) => {
+                        const root = this.chordOrder[(noteIndex + interval) % 12];
+                        return {
+                            degree: degreeNames[degree],
+                            root,
+                            triad: this.canonicalizeChord(root + triadSuffixes[degree]),
+                            seventh: this.canonicalizeChord(root + seventhSuffixes[degree]),
+                            source
+                        };
+                    });
+                };
+
+                const majorField = buildField(
+                    [0, 2, 4, 5, 7, 9, 11],
+                    ['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°'],
+                    ['', 'm', 'm', '', '', 'm', '°'],
+                    ['7+', 'm7', 'm7', '7+', '7', 'm7', 'm7/5-'],
+                    'major'
+                );
+
+                const naturalMinorField = buildField(
+                    [0, 2, 3, 5, 7, 8, 10],
+                    ['i', 'ii°', 'III', 'iv', 'v', 'VI', 'VII'],
+                    ['m', '°', '', 'm', 'm', '', ''],
+                    ['m7', 'm7/5-', '7+', 'm7', 'm7', '7+', '7'],
+                    'naturalMinor'
+                );
+
+                const harmonicMinorField = buildField(
+                    [0, 2, 3, 5, 7, 8, 11],
+                    ['i', 'ii°', 'III+', 'iv', 'V', 'VI', 'vii°'],
+                    ['m', '°', '5+', 'm', '', '', '°'],
+                    ['m7', 'm7/5-', '5+', 'm7', '7', '7+', 'm7/5-'],
+                    'harmonicMinor'
+                );
+
+                if (minor) {
+                    result.harmonicFields.naturalMinor = naturalMinorField;
+                    result.harmonicFields.harmonicMinor = harmonicMinorField;
+                    // Mantém os dois campos disponíveis internamente; o campo principal
+                    // segue sendo o menor natural, enquanto a análise também aceita
+                    // as formações próprias da menor harmônica.
+                    result.harmonicField = naturalMinorField;
+                } else {
+                    result.harmonicFields.major = majorField;
+                    result.harmonicField = majorField;
+                }
+
+                const fieldsToCheck = minor
+                    ? [naturalMinorField, harmonicMinorField]
+                    : [majorField];
+
+                chordCounts.forEach((count, chord) => {
+                    const parsed = this.parseChordForAnalysis(chord);
+                    const entry = {
+                        chord,
+                        count,
+                        root: parsed.root,
+                        suffix: parsed.suffix,
+                        degree: null,
+                        expectedTriad: null,
+                        expectedSeventh: null,
+                        matchedForm: null,
+                        harmonicSource: null,
+                        diatonic: false
+                    };
+
+                    if (parsed.root) {
+                        const pitch = this.noteToIndex(parsed.root);
+
+                        for (const field of fieldsToCheck) {
+                            const fieldEntry = field.find(item => this.noteToIndex(item.root) === pitch);
+                            if (!fieldEntry) continue;
+
+                            // Mantém a referência ao campo correspondente à fundamental.
+                            entry.degree = fieldEntry.degree;
+                            entry.expectedTriad = fieldEntry.triad;
+                            entry.expectedSeventh = fieldEntry.seventh;
+
+                            const quality = this.getChordQualityForAnalysis(parsed);
+                            const matchesSeventh = this.matchesDiatonicSeventh(
+                                quality, fieldEntry.seventh, parsed.root
+                            );
+                            const matchesTriad = this.matchesDiatonicTriad(
+                                quality, fieldEntry.triad, parsed.root
+                            );
+
+                            if (matchesSeventh || matchesTriad) {
+                                entry.matchedForm = matchesSeventh ? 'seventh' : 'triad';
+                                entry.harmonicSource = fieldEntry.source;
+                                entry.diatonic = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    result.chords.set(chord, entry);
+                    (entry.diatonic ? result.diatonic : result.nonDiatonic).push(chord);
+                });
+
+                return result;
+            },
+
+            noteToIndex(note) {
+                const normalized = note.trim().replace('♯', '#').replace('♭', 'b');
+                const notes = {
+                    'C': 0, 'B#': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3,
+                    'E': 4, 'Fb': 4, 'E#': 5, 'F': 5, 'F#': 6, 'Gb': 6, 'G': 7,
+                    'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11, 'Cb': 11
+                };
+                return Object.prototype.hasOwnProperty.call(notes, normalized) ? notes[normalized] : null;
+            },
+
+            parseChordForAnalysis(chord) {
+                const clean = chord.trim();
+                const match = clean.match(/^([A-G](?:#|b)?)(.*)$/i);
+                if (!match) return { root: null, suffix: '' };
+                return {
+                    root: match[1].charAt(0).toUpperCase() + match[1].slice(1),
+                    suffix: match[2].replace(/\s+/g, '')
+                };
+            },
+
+            /**
+             * Retira somente a indicação de baixo invertido (ex.: C/E).
+             * Barras numéricas como /9, /13 e /4 continuam fazendo parte
+             * da qualidade do acorde.
+             */
+            getChordQualityForAnalysis(parsed) {
+                return {
+                    root: parsed.root,
+                    suffix: parsed.suffix.replace(/\/[A-G](?:#|b)?$/i, '')
+                };
+            },
+
+            matchesDiatonicTriad(quality, expectedChord, root) {
+                const candidate = this.canonicalizeChord(root + quality.suffix);
+                return candidate === expectedChord;
+            },
+
+            matchesDiatonicSeventh(quality, expectedChord, root) {
+                const candidate = this.canonicalizeChord(root + quality.suffix);
+                return candidate === expectedChord;
+            },
+
+            isChordLine(line) {
+                const trimmed = line.trim();
+                if (!trimmed) return false;
+
+                // Reconhece os formatos de acorde mais usados no editor,
+                // incluindo extensões, alterações, baixo invertido e tensões
+                // escritas após a barra (ex.: C7/9, C7/9-, C/E, F#m7(11)).
+                const chordRegex = /^[A-G](?:#|b)?(?:m(?:aj|min)?|M(?:aj)?|maj|min|dim|aug|sus(?:2|4)?|add\d+|\d+)?(?:M|maj|\+|-|°|º)?(?:\d+)?(?:[+\-])?(?:\/(?:[A-G](?:#|b)?|\d+)(?:[+\-])?)?(?:\([^)]*\))?$/i;
+                const words = trimmed.split(/\s+/).filter(Boolean);
+
+                // Uma linha só é considerada uma linha de acordes quando
+                // todas as palavras podem ser interpretadas como acordes.
+                return words.length > 0 && words.every(word => chordRegex.test(word));
+            },
+
+            /**
+             * Retorna o conjunto oficial de acordes cadastrados no banco.
+             * Esta é a única fonte usada para decidir se uma nomenclatura
+             * alternativa pode ser substituída por uma forma padrão.
+             */
+            getChordBank() {
+                if (!this._chordBankCache) {
+                    this._chordBankCache = new Set(Object.values(this.acordes).flat());
+                }
+                return this._chordBankCache;
+            },
+
+            /**
+             * Gera as formas canônicas possíveis para uma nomenclatura.
+             * A função não escolhe a forma final: apenas traduz grafias
+             * equivalentes para candidatos que serão validados contra o banco.
+             */
+            getEquivalentChordCandidates(chord) {
+                const original = chord.trim();
+                if (!original) return [];
+
+                const match = original.match(/^([A-G](?:#|b)?)(.*)$/i);
+                if (!match) return [];
+
+                const root = match[1].charAt(0).toUpperCase() + match[1].slice(1);
+                const suffix = match[2].replace(/\s+/g, '');
+                const candidates = [];
+
+                const add = value => {
+                    const candidate = root + value;
+                    if (!candidates.includes(candidate)) candidates.push(candidate);
+                };
+
+                // Acordes maiores com sétima maior:
+                // C7M, CM7 e Cmaj7 -> C7+
+                if (/^(?:7M|M7|maj7)$/i.test(suffix)) {
+                    add('7+');
+                }
+
+                // Extensões entre parênteses:
+                // C7(9) -> C7/9, C7(13) -> C7/13 etc.
+                let extensionMatch = suffix.match(
+                    /^(7M|M7|maj7|7)\((9|13|9-|9\+|13-|13\+|4)\)$/i
+                );
+
+                if (extensionMatch) {
+                    const base = /^(7M|M7|maj7)$/i.test(extensionMatch[1])
+                        ? '7+'
+                        : '7';
+                    add(base + '/' + extensionMatch[2]);
+                }
+
+                // Grafias como Cmaj7/9 e C7M/9 também podem apontar
+                // para a nomenclatura cadastrada no banco.
+                extensionMatch = suffix.match(
+                    /^(7M|M7|maj7|7)\/(9|13|9-|9\+|13-|13\+|4)$/i
+                );
+
+                if (extensionMatch) {
+                    const base = /^(7M|M7|maj7)$/i.test(extensionMatch[1])
+                        ? '7+'
+                        : '7';
+                    add(base + '/' + extensionMatch[2]);
+                }
+
+                return candidates;
+            },
+
+            /**
+             * Normaliza a nomenclatura de um acorde somente quando existe
+             * uma forma equivalente no banco de acordes do ReCifra.
+             *
+             * A regra fica centralizada aqui: primeiro verificamos se o acorde
+             * já é oficial; depois procuramos candidatos equivalentes e usamos
+             * o primeiro que realmente estiver cadastrado. Se nenhum existir,
+             * preservamos a nomenclatura original.
+             */
+            canonicalizeChord(chord) {
+                const original = chord.trim();
+                if (!original) return original;
+
+                const chordBank = this.getChordBank();
+
+                if (chordBank.has(original)) return original;
+
+                const candidates = this.getEquivalentChordCandidates(original);
+                const canonical = candidates.find(candidate => chordBank.has(candidate));
+
+                return canonical || original;
+            },
+
+            convertToChordPro() {
+                const textarea = this.app.DOMElements.songLyrics;
+                const lines = textarea.value.split('\n');
+                let pro = '';
+
+                for (let i = 0; i < lines.length; i++) {
+                    const cLine = lines[i];
+                    const nLine = (i + 1 < lines.length) ? lines[i + 1] : null;
+
+                    if (
+                        this.isChordLine(cLine) &&
+                        nLine &&
+                        nLine.trim() !== '' &&
+                        !this.isChordLine(nLine)
+                    ) {
+                        let merged = nLine;
+                        const chords = [];
+                        const regex = /\S+/g;
+                        let match;
+
+                        while ((match = regex.exec(cLine)) !== null) {
+                            const normalizedChord = this.canonicalizeChord(match[0]);
+                            chords.push({
+                                text: `[${normalizedChord}]`,
+                                index: match.index
+                            });
+                        }
+
+                        for (let j = chords.length - 1; j >= 0; j--) {
+                            const { text, index } = chords[j];
+                            merged =
+                                merged.substring(0, index) +
+                                text +
+                                merged.substring(index);
+                        }
+
+                        pro += merged + '\n';
+                        i++; // Pula a próxima linha, pois já foi mesclada.
+                    } else {
+                        pro += cLine + '\n';
+                    }
+                }
+
+                textarea.value = pro.trim();
+                HistoryModule.saveState(true);
+                AutosaveModule.scheduleSave();
+                this.app.renderAll();
+            },
+
+            transposeChord(chord, interval) {
+                const chordParts = chord.split('/');
+                if (chordParts.length === 2) {
+                    const mainChordStr = chordParts[0];
+                    const bassNoteStr = chordParts[1];
+                    const bassNoteRegex = /^[A-G][#b]?/;
+                    const bassMatch = bassNoteStr.match(bassNoteRegex);
+
+                    if (bassMatch) {
+                        const mainNoteRegex = /^([A-G][#b]?)(.*)$/;
+                        const mainMatch = mainChordStr.match(mainNoteRegex);
+                        if (mainMatch) {
+                            const [, mainNote, suffix] = mainMatch;
+                            
+                            const transposeSingleNote = (note) => {
+                                const noteIndex = this.semitoneMap[note];
+                                if (noteIndex === undefined) return note;
+                                const newNoteIndex = (noteIndex + interval + 12) % 12;
+                                return this.chordOrder[newNoteIndex];
+                            };
+
+                            const newMainNote = transposeSingleNote(mainNote);
+                            const newBassNote = transposeSingleNote(bassMatch[0]);
+                            
+                            const bassSuffix = bassNoteStr.substring(bassMatch[0].length);
+                            return newMainNote + suffix + '/' + newBassNote + bassSuffix;
+                        }
+                    }
+                }
+
+                // Fallback for simple chords or chords like E7/9 where /9 is a suffix
+                const mainNoteRegex = /^([A-G][#b]?)(.*)$/;
+                const mainMatch = chord.match(mainNoteRegex);
+                if (!mainMatch) return chord;
+
+                const [, mainNote, suffix] = mainMatch;
+                const mainNoteIndex = this.semitoneMap[mainNote];
+                if (mainNoteIndex === undefined) return chord;
+                
+                const newMainNoteIndex = (mainNoteIndex + interval + 12) % 12;
+                return this.chordOrder[newMainNoteIndex] + suffix;
+            },
+
+            detectKey(chords) {
+                if (!chords || chords.length === 0) return 'C';
+                const chordCounts = {};
+                chords.forEach(chord => {
+                    let match = chord.replace(/[\[\]]/g, '').match(/^([A-G][#b]?m?)/);
+                    if (match && this.semitoneMap.hasOwnProperty(match[1])) {
+                        const root = match[1];
+                        chordCounts[root] = (chordCounts[root] || 0) + 1;
+                    }
+                });
+                if (Object.keys(chordCounts).length === 0) return 'C';
+                return Object.keys(chordCounts).reduce((a, b) => chordCounts[a] > chordCounts[b] ? a : b);
+            },
+
+            transposeSong(selectedKey = this.app.DOMElements.key.value) {
+                const { songLyrics } = this.app.DOMElements;
+
+                if (!selectedKey || selectedKey === '-') return;
+
+                // Sempre parte da cifra original da sessão de transposição.
+                // Isso permite trocar C -> D -> E sem acumular erros.
+                let songText = this.app.state.originalLyrics || songLyrics.value;
+                let songChords = songText.match(/\[([^\]]+)\]/g);
+
+                if (!songChords || songChords.length === 0) return;
+
+                let currentKey = this.app.state.originalKey || this.detectKey(songChords);
+
+                // Na primeira transposição, guarda a cifra e o tom de origem.
+                if (!this.app.state.originalLyrics) {
+                    this.app.state.originalLyrics = songLyrics.value;
+                    this.app.state.originalKey = currentKey;
+                }
+
+                const currentSemitone = this.semitoneMap[currentKey];
+                const selectedSemitone = this.semitoneMap[selectedKey];
+
+                if (currentSemitone === undefined || selectedSemitone === undefined) {
+                    UIModule.showToast('Não foi possível identificar o tom para transposição.', true);
+                    return;
+                }
+
+                const interval = selectedSemitone - currentSemitone;
+
+                // Se o usuário escolher novamente o tom de origem, restaura a cifra original.
+                if (interval === 0) {
+                    songLyrics.value = this.app.state.originalLyrics;
+                    HistoryModule.saveState(true);
+                    AutosaveModule.scheduleSave();
+                    this.app.renderAll();
+                    return;
+                }
+
+                songLyrics.value = songText.replace(
+                    /\[([^\]]+)\]/g,
+                    (_, chord) => `[${this.transposeChord(chord, interval)}]`
+                );
+
+                HistoryModule.saveState(true);
+                AutosaveModule.scheduleSave();
+                this.app.renderAll();
+            },
+            
+            restoreOriginalKey() {
+                if (this.app.state.originalLyrics) {
+                    this.app.DOMElements.songLyrics.value = this.app.state.originalLyrics;
+                    this.app.DOMElements.key.value = this.app.state.originalKey;
+                    this.app.state.originalLyrics = '';
+                    this.app.state.originalKey = '';
+                    HistoryModule.saveState(true);
+                    AutosaveModule.scheduleSave();
+                    this.app.renderAll();
+                    UIModule.showToast("Tom original restaurado.");
+                } else {
+                    UIModule.showToast("Nenhuma transposição foi feita.", true);
+                }
+            }
+        };
+
+        /**
+         * Módulo de Rolagem Automática
+         * Gerencia a funcionalidade de auto-scroll na visualização expandida.
+         */
+        const AutoScrollModule = {
+            isScrolling: false,
+            scrollSpeed: 5, // Velocidade padrão
+            scrollIntervalId: null,
+            minSpeed: 1,
+            maxSpeed: 10,
+
+            init(app) {
+                this.app = app;
+                this.updateSpeedDisplay();
+            },
+
+            toggleScroll() {
+                this.isScrolling = !this.isScrolling;
+                if (this.isScrolling) {
+                    this.startScroll();
+                } else {
+                    this.stopScroll();
+                }
+            },
+
+            startScroll() {
+                const { visor, iconPlay, iconPause } = this.app.DOMElements;
+                if (visor.scrollTop >= visor.scrollHeight - visor.clientHeight) {
+                    visor.scrollTop = 0; // Reinicia se já estiver no final
+                }
+
+                this.isScrolling = true;
+                iconPlay.classList.add('hidden');
+                iconPause.classList.remove('hidden');
+
+                const interval = 1000 / (this.scrollSpeed * 5); // Ajuste a sensibilidade aqui
+                this.scrollIntervalId = setInterval(() => {
+                    visor.scrollTop += 1;
+                    if (visor.scrollTop >= visor.scrollHeight - visor.clientHeight) {
+                        this.stopScroll();
+                    }
+                }, interval);
+            },
+
+            stopScroll() {
+                if (this.scrollIntervalId) {
+                    clearInterval(this.scrollIntervalId);
+                    this.scrollIntervalId = null;
+                }
+                this.isScrolling = false;
+                this.app.DOMElements.iconPlay.classList.remove('hidden');
+                this.app.DOMElements.iconPause.classList.add('hidden');
+            },
+            
+            reset() { // Chamado ao sair da visualização expandida
+                this.stopScroll();
+                this.app.DOMElements.visor.scrollTop = 0; // Reseta a posição do scroll
+            },
+
+            changeSpeed(delta) {
+                const newSpeed = this.scrollSpeed + delta;
+                if (newSpeed >= this.minSpeed && newSpeed <= this.maxSpeed) {
+                    this.scrollSpeed = newSpeed;
+                    this.updateSpeedDisplay();
+                    if (this.isScrolling) {
+                        // Reinicia a rolagem com a nova velocidade
+                        this.stopScroll();
+                        this.startScroll();
+                    }
+                }
+            },
+
+            updateSpeedDisplay() {
+                this.app.DOMElements.speedDisplay.textContent = this.scrollSpeed;
+            }
+        };
+
+        /**
+         * Módulo de Dicionário de Acordes
+         * Gerencia a exibição de diagramas de acordes.
+         */
+        const ChordDiagramModule = {
+            currentInstrument: 'guitar',
+            chordData: {
+                guitar: {
+                    // Major Chords
+                    'C': { frets: [-1, 3, 2, 0, 1, 0] }, 'C#': { baseFret: 4, frets: [-1, 4, 6, 6, 6, 4] }, 'Db': { baseFret: 4, frets: [-1, 4, 6, 6, 6, 4] },
+                    'D': { frets: [-1, -1, 0, 2, 3, 2] }, 'D#': { baseFret: 6, frets: [-1, 6, 8, 8, 8, 6] }, 'Eb': { baseFret: 6, frets: [-1, 6, 8, 8, 8, 6] },
+                    'E': { frets: [0, 2, 2, 1, 0, 0] }, 'F': { frets: [1, 3, 3, 2, 1, 1] }, 'F#': { frets: [2, 4, 4, 3, 2, 2] }, 'Gb': { frets: [2, 4, 4, 3, 2, 2] },
+                    'G': { frets: [3, 2, 0, 0, 0, 3] }, 'G#': { baseFret: 4, frets: [4, 6, 6, 5, 4, 4] }, 'Ab': { baseFret: 4, frets: [4, 6, 6, 5, 4, 4] },
+                    'A': { frets: [-1, 0, 2, 2, 2, 0] }, 'A#': { baseFret: 1, frets: [-1, 1, 3, 3, 3, 1] }, 'Bb': { baseFret: 1, frets: [-1, 1, 3, 3, 3, 1] },
+                    'B': { baseFret: 2, frets: [-1, 2, 4, 4, 4, 2] },
+                    // Minor Chords
+                    'Cm': { baseFret: 3, frets: [-1, 3, 5, 5, 4, 3] }, 'C#m': { baseFret: 4, frets: [-1, 4, 6, 6, 5, 4] }, 'Dbm': { baseFret: 4, frets: [-1, 4, 6, 6, 5, 4] },
+                    'Dm': { frets: [-1, -1, 0, 2, 3, 1] }, 'D#m': { baseFret: 6, frets: [-1, 6, 8, 8, 7, 6] }, 'Ebm': { baseFret: 6, frets: [-1, 6, 8, 8, 7, 6] },
+                    'Em': { frets: [0, 2, 2, 0, 0, 0] }, 'Fm': { baseFret: 1, frets: [1, 3, 3, 1, 1, 1] }, 'F#m': { frets: [2, 4, 4, 2, 2, 2] }, 'Gbm': { frets: [2, 4, 4, 2, 2, 2] },
+                    'Gm': { baseFret: 3, frets: [3, 5, 5, 3, 3, 3] }, 'G#m': { baseFret: 4, frets: [4, 6, 6, 4, 4, 4] }, 'Abm': { baseFret: 4, frets: [4, 6, 6, 4, 4, 4] },
+                    'Am': { frets: [-1, 0, 2, 2, 1, 0] }, 'A#m': { baseFret: 1, frets: [-1, 1, 3, 3, 2, 1] }, 'Bbm': { baseFret: 1, frets: [-1, 1, 3, 3, 2, 1] },
+                    'Bm': { baseFret: 2, frets: [-1, 2, 4, 4, 3, 2] },
+                    // 7th Chords
+                    'C7': { frets: [-1, 3, 2, 3, 1, 0] }, 'C#7': { baseFret: 4, frets: [-1, 4, 6, 4, 6, 4] }, 'Db7': { baseFret: 4, frets: [-1, 4, 6, 4, 6, 4] },
+                    'D7': { frets: [-1, -1, 0, 2, 1, 2] }, 'D#7': { baseFret: 6, frets: [-1, 6, 8, 6, 8, 6] }, 'Eb7': { baseFret: 6, frets: [-1, 6, 8, 6, 8, 6] },
+                    'E7': { frets: [0, 2, 0, 1, 0, 0] }, 'F7': { baseFret: 1, frets: [1, 3, 1, 2, 1, 1] }, 'F#7': { frets: [2, 4, 2, 3, 2, 2] }, 'Gb7': { frets: [2, 4, 2, 3, 2, 2] },
+                    'G7': { frets: [3, 2, 0, 0, 0, 1] }, 'G#7': { baseFret: 4, frets: [4, 6, 4, 5, 4, 4] }, 'Ab7': { baseFret: 4, frets: [4, 6, 4, 5, 4, 4] },
+                    'A7': { frets: [-1, 0, 2, 0, 2, 0] }, 'A#7': { baseFret: 1, frets: [-1, 1, 3, 1, 3, 1] }, 'Bb7': { baseFret: 1, frets: [-1, 1, 3, 1, 3, 1] },
+                    'B7': { frets: [-1, 2, 1, 2, 0, 2] },
+                },
+                cavaquinho: { // Afinação Re-Si-Sol-Re (D-B-G-D)
+                    // Major Chords
+                    'C': { frets: [2, 1, 2, 0] }, 'C#': { frets: [3, 2, 3, 1] }, 'Db': { frets: [3, 2, 3, 1] },
+                    'D': { frets: [0, 3, 0, 2] }, 'D#': { frets: [1, 4, 1, 3] }, 'Eb': { frets: [1, 4, 1, 3] },
+                    'E': { frets: [2, 1, 0, 2] }, 'F': { frets: [3, 2, 1, 3] }, 'F#': { frets: [4, 3, 2, 4] }, 'Gb': { frets: [4, 3, 2, 4] },
+                    'G': { frets: [0, 0, 0, 2] }, 'G#': { frets: [1, 1, 1, 3] }, 'Ab': { frets: [1, 1, 1, 3] },
+                    'A': { frets: [2, 2, 2, 4] }, 'A#': { frets: [3, 3, 3, 5] }, 'Bb': { frets: [3, 3, 3, 5] },
+                    'B': { frets: [4, 4, 4, 6] },
+                    // Minor Chords
+                    'Cm': { frets: [2, 1, 2, 2] }, 'C#m': { frets: [3, 2, 3, 3] }, 'Dbm': { frets: [3, 2, 3, 3] },
+                    'Dm': { frets: [0, 2, 0, 1] }, 'D#m': { frets: [1, 3, 1, 2] }, 'Ebm': { frets: [1, 3, 1, 2] },
+                    'Em': { frets: [2, 0, 0, 2] }, 'Fm': { frets: [3, 1, 1, 3] }, 'F#m': { frets: [4, 2, 2, 4] }, 'Gbm': { frets: [4, 2, 2, 4] },
+                    'Gm': { frets: [0, 3, 3, 1] }, 'G#m': { frets: [1, 4, 4, 3] }, 'Abm': { frets: [1, 4, 4, 3] },
+                    'Am': { frets: [2, 0, 0, 0] }, 'A#m': { frets: [3, 1, 1, 1] }, 'Bbm': { frets: [3, 1, 1, 1] },
+                    'Bm': { frets: [4, 2, 2, 2] },
+                    // 7th Chords
+                    'C7': { frets: [2, 1, 2, 3] }, 'C#7': { frets: [3, 2, 3, 4] }, 'Db7': { frets: [3, 2, 3, 4] },
+                    'D7': { frets: [0, 1, 0, 2] }, 'D#7': { frets: [1, 2, 1, 3] }, 'Eb7': { frets: [1, 2, 1, 3] },
+                    'E7': { frets: [2, 0, 0, 0] }, 'F7': { frets: [3, 1, 1, 1] }, 'F#7': { frets: [4, 2, 2, 2] }, 'Gb7': { frets: [4, 2, 2, 2] },
+                    'G7': { frets: [0, 0, 0, 0] }, 'G#7': { frets: [1, 1, 1, 1] }, 'Ab7': { frets: [1, 1, 1, 1] },
+                    'A7': { frets: [2, 2, 2, 2] }, 'A#7': { frets: [3, 3, 3, 3] }, 'Bb7': { frets: [3, 3, 3, 3] },
+                    'B7': { frets: [1, 2, 2, 2] },
+                }
+            },
+            
+            init(app) {
+                this.app = app;
+                const savedInstrument = localStorage.getItem('recifra-instrument') || 'guitar';
+                this.setInstrument(savedInstrument);
+            },
+
+            setInstrument(instrumentName) {
+                this.currentInstrument = instrumentName;
+                const { instrumentGuitarBtn, instrumentCavaquinhoBtn } = this.app.DOMElements;
+                if (instrumentName === 'guitar') {
+                    instrumentGuitarBtn.classList.add('active');
+                    instrumentCavaquinhoBtn.classList.remove('active');
+                } else {
+                    instrumentGuitarBtn.classList.remove('active');
+                    instrumentCavaquinhoBtn.classList.add('active');
+                }
+                localStorage.setItem('recifra-instrument', instrumentName);
+            },
+
+            show(chordName, event) {
+                const chordInfo = this.chordData[this.currentInstrument][chordName];
+                if (!chordInfo) return;
+
+                const { chordDiagramTooltip } = this.app.DOMElements;
+                chordDiagramTooltip.innerHTML = '';
+                const svg = this._drawDiagram(chordName, chordInfo);
+                chordDiagramTooltip.appendChild(svg);
+                
+                chordDiagramTooltip.classList.remove('hidden');
+                let x = event.pageX + 15;
+                let y = event.pageY + 15;
+                if (x + chordDiagramTooltip.offsetWidth > window.innerWidth) {
+                    x = event.pageX - chordDiagramTooltip.offsetWidth - 15;
+                }
+                if (y + chordDiagramTooltip.offsetHeight > window.innerHeight) {
+                    y = event.pageY - chordDiagramTooltip.offsetHeight - 15;
+                }
+                chordDiagramTooltip.style.left = `${x}px`;
+                chordDiagramTooltip.style.top = `${y}px`;
+            },
+
+            hide() {
+                this.app.DOMElements.chordDiagramTooltip.classList.add('hidden');
+            },
+
+            _drawDiagram(chordName, chordInfo) {
+                const isLight = this.app.DOMElements.body.classList.contains('light');
+                const colors = {
+                    line: isLight ? '#9ca3af' : '#6b7280',
+                    text: isLight ? '#1f2937' : '#d1d5db',
+                    dot: isLight ? '#111827' : '#e5e7eb',
+                };
+                const baseFret = chordInfo.baseFret || 1;
+                const frets = chordInfo.frets;
+                const numStrings = this.currentInstrument === 'guitar' ? 6 : 4;
+                const numFrets = 4;
+                const stringSpacing = 12;
+                const fretSpacing = 15;
+                const dotRadius = 4;
+                const paddingTop = 30;
+                const paddingLeft = 10;
+                
+                const width = (numStrings - 1) * stringSpacing + paddingLeft * 2;
+                const height = numFrets * fretSpacing + paddingTop + 15;
+                
+                const svgNS = "http://www.w3.org/2000/svg";
+                const svg = document.createElementNS(svgNS, 'svg');
+                svg.setAttribute('width', width);
+                svg.setAttribute('height', height);
+
+                // Title
+                const title = document.createElementNS(svgNS, 'text');
+                title.setAttribute('x', width / 2);
+                title.setAttribute('y', 15);
+                title.setAttribute('font-size', '12px');
+                title.setAttribute('font-weight', 'bold');
+                title.setAttribute('fill', colors.text);
+                title.setAttribute('text-anchor', 'middle');
+                title.textContent = chordName;
+                svg.appendChild(title);
+                
+                // Base Fret
+                if (baseFret > 1) {
+                    const fretNum = document.createElementNS(svgNS, 'text');
+                    fretNum.setAttribute('x', paddingLeft - 8);
+                    fretNum.setAttribute('y', paddingTop + fretSpacing * 0.5 + 4);
+                    fretNum.setAttribute('font-size', '10px');
+                    fretNum.setAttribute('fill', colors.text);
+                    fretNum.setAttribute('text-anchor', 'middle');
+                    fretNum.textContent = baseFret;
+                    svg.appendChild(fretNum);
+                }
+
+                // Frets
+                for (let i = 0; i <= numFrets; i++) {
+                    const line = document.createElementNS(svgNS, 'line');
+                    line.setAttribute('x1', paddingLeft);
+                    line.setAttribute('y1', paddingTop + i * fretSpacing);
+                    line.setAttribute('x2', width - paddingLeft);
+                    line.setAttribute('y2', paddingTop + i * fretSpacing);
+                    line.setAttribute('stroke', colors.line);
+                    line.setAttribute('stroke-width', i === 0 && baseFret === 1 ? '3' : '1');
+                    svg.appendChild(line);
+                }
+                
+                // Strings
+                for (let i = 0; i < numStrings; i++) {
+                    const line = document.createElementNS(svgNS, 'line');
+                    line.setAttribute('x1', paddingLeft + i * stringSpacing);
+                    line.setAttribute('y1', paddingTop);
+                    line.setAttribute('x2', paddingLeft + i * stringSpacing);
+                    line.setAttribute('y2', paddingTop + numFrets * fretSpacing);
+                    line.setAttribute('stroke', colors.line);
+                    svg.appendChild(line);
+                }
+                
+                // Dots, Open/Muted strings
+                for (let i = 0; i < numStrings; i++) {
+                    const fret = frets[i];
+                    const stringX = paddingLeft + i * stringSpacing;
+                    
+                    if (fret === -1) { // Muted string
+                        const x1 = document.createElementNS(svgNS, 'line');
+                        const x2 = document.createElementNS(svgNS, 'line');
+                        Object.assign(x1.style, { stroke: colors.text, strokeWidth: '1.5px' });
+                        Object.assign(x2.style, { stroke: colors.text, strokeWidth: '1.5px' });
+                        x1.setAttribute('x1', stringX - 3); x1.setAttribute('y1', paddingTop - 12);
+                        x1.setAttribute('x2', stringX + 3); x1.setAttribute('y2', paddingTop - 6);
+                        x2.setAttribute('x1', stringX - 3); x2.setAttribute('y1', paddingTop - 6);
+                        x2.setAttribute('x2', stringX + 3); x2.setAttribute('y2', paddingTop - 12);
+                        svg.appendChild(x1);
+                        svg.appendChild(x2);
+                    } else if (fret === 0) { // Open string
+                        const circle = document.createElementNS(svgNS, 'circle');
+                        circle.setAttribute('cx', stringX);
+                        circle.setAttribute('cy', paddingTop - 9);
+                        circle.setAttribute('r', 2.5);
+                        circle.setAttribute('stroke', colors.text);
+                        circle.setAttribute('stroke-width', '1');
+                        circle.setAttribute('fill', 'none');
+                        svg.appendChild(circle);
+                    } else { // Fingered note
+                        const fretPos = fret - (baseFret - 1);
+                        const dotY = paddingTop + fretPos * fretSpacing - (fretSpacing / 2);
+                        const circle = document.createElementNS(svgNS, 'circle');
+                        circle.setAttribute('cx', stringX);
+                        circle.setAttribute('cy', dotY);
+                        circle.setAttribute('r', dotRadius);
+                        circle.setAttribute('fill', colors.dot);
+                        svg.appendChild(circle);
+                    }
+                }
+                return svg;
+            }
+        };
+
+
+// AutosaveModule
+
+
+
+/**
+ * Módulo de Análise Harmônica
+ * Mantém a análise interna dos acordes utilizados.
+ *
+ * Maior:
+ * I   = maior / maj7
+ * ii  = menor / m7
+ * iii = menor / m7
+ * IV  = maior / maj7
+ * V   = maior / 7
+ * vi  = menor / m7
+ * vii° = diminuto / m7/5-
+ *
+ * Menor natural:
+ * i   = menor / m7
+ * ii° = diminuto / m7/5-
+ * III = maior / maj7
+ * iv  = menor / m7
+ * v   = menor / m7
+ * VI  = maior / maj7
+ * VII = maior / 7
+ *
+ * Menor harmônica:
+ * i    = menor / m7
+ * ii°  = diminuto / m7/5-
+ * III+ = aumentado
+ * iv   = menor / m7
+ * V    = maior / 7
+ * VI   = maior / maj7
+ * vii° = diminuto / m7/5-
+ */
+const HarmonicModule = {
+    app: null,
+
+    chromaticRoots: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'],
+
+    majorIntervals: [0, 2, 4, 5, 7, 9, 11],
+    naturalMinorIntervals: [0, 2, 3, 5, 7, 8, 10],
+    harmonicMinorIntervals: [0, 2, 3, 5, 7, 8, 11],
+
+    majorTriads: ['', 'm', 'm', '', '', 'm', '°'],
+    majorSevenths: ['7+', 'm7', 'm7', '7+', '7', 'm7', 'm7/5-'],
+
+    naturalMinorTriads: ['m', '°', '', 'm', 'm', '', ''],
+    naturalMinorSevenths: ['m7', 'm7/5-', '7+', 'm7', 'm7', '7+', '7'],
+
+    harmonicMinorTriads: ['m', '°', '5+', 'm', '', '', '°'],
+    harmonicMinorSevenths: ['m7', 'm7/5-', '5+', 'm7', '7', '7+', 'm7/5-'],
+
+    degreeNamesMajor: ['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°'],
+    degreeNamesNaturalMinor: ['i', 'ii°', 'III', 'iv', 'v', 'VI', 'VII'],
+    degreeNamesHarmonicMinor: ['i', 'ii°', 'III+', 'iv', 'V', 'VI', 'vii°'],
+
+    init(app) {
+        this.app = app;
+    },
+
+    normalizeRoot(root) {
+        const map = {
+            'Db': 'C#',
+            'Eb': 'D#',
+            'Gb': 'F#',
+            'Ab': 'G#',
+            'Bb': 'A#'
+        };
+        return map[root] || root;
+    },
+
+    rootAt(root, interval) {
+        const normalized = this.normalizeRoot(root);
+        const index = this.chromaticRoots.indexOf(normalized);
+        if (index < 0) return root;
+        return this.chromaticRoots[(index + interval) % 12];
+    },
+
+    getRootAndSuffix(chord) {
+        const match = String(chord || '').trim().match(/^([A-G](?:#|b)?)(.*)$/);
+        if (!match) return null;
+        return {
+            root: match[1],
+            suffix: match[2] || ''
+        };
+    },
+
+    canonical(root, suffix) {
+        // A análise harmônica trabalha com equivalência enarmônica.
+        // O banco do ReCifra usa principalmente sustenidos, então
+        // normalizamos a fundamental antes de consultar a nomenclatura.
+        const normalizedRoot = this.normalizeRoot(root);
+        const chord = normalizedRoot + suffix;
+
+        if (typeof ChordModule !== 'undefined' &&
+            typeof ChordModule.canonicalizeChord === 'function') {
+            return ChordModule.canonicalizeChord(chord);
+        }
+
+        return chord;
+    },
+
+    buildField(keyRoot, intervals, triads, sevenths, degreeNames) {
+        return degreeNames.map((degree, i) => {
+            const root = this.rootAt(keyRoot, intervals[i]);
+
+            return {
+                degree,
+                root,
+                triad: this.canonical(root, triads[i]),
+                seventh: this.canonical(root, sevenths[i])
+            };
+        });
+    },
+
+    getMajorField(keyRoot) {
+        return this.buildField(
+            keyRoot,
+            this.majorIntervals,
+            this.majorTriads,
+            this.majorSevenths,
+            this.degreeNamesMajor
+        );
+    },
+
+    getNaturalMinorField(keyRoot) {
+        return this.buildField(
+            keyRoot,
+            this.naturalMinorIntervals,
+            this.naturalMinorTriads,
+            this.naturalMinorSevenths,
+            this.degreeNamesNaturalMinor
+        );
+    },
+
+    getHarmonicMinorField(keyRoot) {
+        return this.buildField(
+            keyRoot,
+            this.harmonicMinorIntervals,
+            this.harmonicMinorTriads,
+            this.harmonicMinorSevenths,
+            this.degreeNamesHarmonicMinor
+        );
+    },
+
+    getFields(key) {
+        const cleanKey = String(key || '').trim();
+        const isMinor = /m$/.test(cleanKey);
+        const root = isMinor ? cleanKey.slice(0, -1) : cleanKey;
+
+        if (!root || root === '-') return null;
+
+        if (!isMinor) {
+            return {
+                mode: 'major',
+                root,
+                major: this.getMajorField(root),
+                naturalMinor: null,
+                harmonicMinor: null
+            };
+        }
+
+        return {
+            mode: 'minor',
+            root,
+            major: null,
+            naturalMinor: this.getNaturalMinorField(root),
+            harmonicMinor: this.getHarmonicMinorField(root)
+        };
+    },
+
+    /**
+     * Remove apenas a inversão / baixo do acorde para análise funcional.
+     * Extensões como /9, /13 e /4 permanecem parte da qualidade do acorde.
+     */
+    splitChord(chord) {
+        const text = String(chord || '').trim();
+        const match = text.match(/^([A-G](?:#|b)?)(.*)$/);
+        if (!match) return null;
+
+        const root = match[1];
+        let suffix = match[2] || '';
+        let bass = null;
+
+        const slash = suffix.match(/\/([A-G](?:#|b)?)$/);
+        if (slash) {
+            bass = slash[1];
+            suffix = suffix.slice(0, -slash[0].length);
+        }
+
+        return { root, suffix, bass };
+    },
+
+    rootDistance(fromRoot, toRoot) {
+        const from = this.chromaticRoots.indexOf(this.normalizeRoot(fromRoot));
+        const to = this.chromaticRoots.indexOf(this.normalizeRoot(toRoot));
+
+        if (from < 0 || to < 0) return null;
+        return (to - from + 12) % 12;
+    },
+
+    /**
+     * Retorna o conjunto de graus possíveis da tonalidade.
+     * Em menor, a análise considera menor natural e menor harmônica.
+     */
+    getScaleDegrees(key) {
+        const fields = this.getFields(key);
+        if (!fields) return [];
+
+        if (fields.mode === 'major') {
+            return fields.major.map((item, index) => ({
+                index,
+                degree: item.degree,
+                root: item.root
+            }));
+        }
+
+        return fields.naturalMinor.map((item, index) => ({
+            index,
+            degree: item.degree,
+            root: item.root
+        }));
+    },
+
+    findDiatonic(chord, fields) {
+        const parsed = this.splitChord(chord);
+        if (!parsed) return null;
+
+        const canonical = this.canonical(parsed.root, parsed.suffix);
+
+        const candidates = fields.mode === 'major'
+            ? [{ name: 'major', field: fields.major }]
+            : [
+                { name: 'naturalMinor', field: fields.naturalMinor },
+                { name: 'harmonicMinor', field: fields.harmonicMinor }
+            ];
+
+        for (const candidate of candidates) {
+            for (const item of candidate.field) {
+                if (canonical === item.triad) {
+                    return {
+                        degree: item.degree,
+                        root: item.root,
+                        form: 'triad',
+                        source: candidate.name,
+                        canonicalChord: canonical
+                    };
+                }
+
+                if (canonical === item.seventh) {
+                    return {
+                        degree: item.degree,
+                        root: item.root,
+                        form: 'seventh',
+                        source: candidate.name,
+                        canonicalChord: canonical
+                    };
+                }
+            }
+        }
+
+        return null;
+    },
+
+    /**
+     * Identifica dominante secundário:
+     * um acorde dominante (ou dominante 7) cuja fundamental está
+     * uma quinta acima de um grau-alvo da tonalidade.
+     *
+     * Ex.: em C, A7 -> V/ii, pois A está uma quinta acima de D.
+     */
+    findSecondaryDominant(chord, fields) {
+        const parsed = this.splitChord(chord);
+        if (!parsed) return null;
+
+        const suffix = parsed.suffix;
+
+        // Para esta primeira camada, restringimos a dominante 7 e maior.
+        const isDominantQuality =
+            /^7(?:\/(?:9|13|4)|\/9[+-]?|\/13[+-]?)?$/.test(suffix) ||
+            suffix === '7';
+
+        if (!isDominantQuality) return null;
+
+        const degrees = fields.mode === 'major'
+            ? fields.major
+            : fields.naturalMinor;
+
+        for (const target of degrees) {
+            // Não tratamos a própria dominante da tonalidade como secundária.
+            if (this.normalizeRoot(target.root) === this.normalizeRoot(fields.root)) {
+                continue;
+            }
+
+            const targetRoot = this.normalizeRoot(target.root);
+            const dominantRoot = this.rootAt(targetRoot, 7);
+
+            if (this.normalizeRoot(parsed.root) === dominantRoot) {
+                return {
+                    function: `V/${target.degree}`,
+                    targetDegree: target.degree,
+                    targetRoot: target.root,
+                    canonicalChord: this.canonical(parsed.root, parsed.suffix)
+                };
+            }
+        }
+
+        return null;
+    },
+
+    /**
+     * Procura acordes que pertençam ao campo paralelo.
+     * Em maior, o campo paralelo é a menor natural.
+     * Em menor, o campo paralelo é o maior.
+     */
+    findModalBorrowing(chord, fields) {
+        const parsed = this.splitChord(chord);
+        if (!parsed) return null;
+
+        const canonical = this.canonical(parsed.root, parsed.suffix);
+
+        let borrowedField = null;
+        let source = null;
+
+        if (fields.mode === 'major') {
+            borrowedField = {
+                mode: 'minor',
+                root: fields.root,
+                naturalMinor: this.getNaturalMinorField(fields.root)
+            };
+            source = 'parallelMinor';
+        } else {
+            borrowedField = {
+                mode: 'major',
+                root: fields.root,
+                major: this.getMajorField(fields.root)
+            };
+            source = 'parallelMajor';
+        }
+
+        const field = fields.mode === 'major'
+            ? borrowedField.naturalMinor
+            : borrowedField.major;
+
+        for (const item of field) {
+            if (canonical === item.triad || canonical === item.seventh) {
+                return {
+                    function: item.degree,
+                    source,
+                    canonicalChord: canonical
+                };
+            }
+        }
+
+        return null;
+    },
+
+    getTonalFunction(degree, mode) {
+        const d = String(degree || '').trim();
+        if (!d) return null;
+
+        if (mode === 'major') {
+            if (/^(I|iii|vi)$/.test(d)) return 'Tônica';
+            if (/^(ii|IV)$/.test(d)) return 'Subdominante';
+            if (/^(V|vii°)$/.test(d)) return 'Dominante';
+        } else {
+            if (/^(i|III|VI)$/.test(d)) return 'Tônica';
+            if (/^(ii°|iv)$/.test(d)) return 'Subdominante';
+            if (/^(v|V|VII|vii°)$/.test(d)) return 'Dominante';
+        }
+        return null;
+    },
+
+    classifyChord(chord, key) {
+        const fields = this.getFields(key);
+        if (!fields) {
+            return {
+                chord,
+                key,
+                mode: null,
+                function: null,
+                classification: 'sem_tonalidade',
+                confidence: 0,
+                diatonic: false
+            };
+        }
+
+        const parsed = this.splitChord(chord);
+        if (!parsed) {
+            return {
+                chord,
+                key,
+                mode: fields.mode,
+                function: null,
+                classification: 'acorde_nao_reconhecido',
+                confidence: 0,
+                diatonic: false
+            };
+        }
+
+        const diatonic = this.findDiatonic(chord, fields);
+
+        if (diatonic) {
+            return {
+                chord,
+                canonicalChord: diatonic.canonicalChord,
+                key,
+                mode: fields.mode,
+                root: parsed.root,
+                bass: parsed.bass,
+                degree: diatonic.degree,
+                function: diatonic.degree,
+                tonalFunction: this.getTonalFunction(diatonic.degree, diatonic.source === 'major' ? 'major' : 'minor'),
+                form: diatonic.form,
+                source: diatonic.source,
+                classification: 'diatonico',
+                confidence: 1,
+                diatonic: true
+            };
+        }
+
+        const secondary = this.findSecondaryDominant(chord, fields);
+
+        if (secondary) {
+            return {
+                chord,
+                canonicalChord: secondary.canonicalChord,
+                key,
+                mode: fields.mode,
+                root: parsed.root,
+                bass: parsed.bass,
+                degree: null,
+                function: secondary.function,
+                tonalFunction: 'Dominante',
+                form: 'dominante',
+                source: 'dominanteSecundario',
+                classification: 'dominante_secundario',
+                confidence: 0.95,
+                diatonic: false
+            };
+        }
+
+        const borrowed = this.findModalBorrowing(chord, fields);
+
+        if (borrowed) {
+            return {
+                chord,
+                canonicalChord: borrowed.canonicalChord,
+                key,
+                mode: fields.mode,
+                root: parsed.root,
+                bass: parsed.bass,
+                degree: borrowed.function,
+                function: borrowed.function,
+                tonalFunction: this.getTonalFunction(borrowed.function, fields.mode === 'major' ? 'minor' : 'major'),
+                form: null,
+                source: borrowed.source,
+                classification: 'emprestimo_modal',
+                confidence: 0.9,
+                diatonic: false
+            };
+        }
+
+        const scale = fields.mode === 'major'
+            ? this.majorIntervals
+            : this.naturalMinorIntervals;
+
+        const keyIndex = this.chromaticRoots.indexOf(
+            this.normalizeRoot(fields.root)
+        );
+        const rootIndex = this.chromaticRoots.indexOf(
+            this.normalizeRoot(parsed.root)
+        );
+
+        const relativeDistance = keyIndex >= 0 && rootIndex >= 0
+            ? (rootIndex - keyIndex + 12) % 12
+            : null;
+
+        const rootInScale = relativeDistance !== null &&
+            scale.includes(relativeDistance);
+
+        return {
+            chord,
+            canonicalChord: this.canonical(parsed.root, parsed.suffix),
+            key,
+            mode: fields.mode,
+            root: parsed.root,
+            bass: parsed.bass,
+            degree: null,
+            function: null,
+            tonalFunction: null,
+            form: null,
+            source: null,
+            classification: rootInScale
+                ? 'qualidade_nao_diatonica'
+                : 'cromatico',
+            rootInScale
+                : rootInScale,
+            confidence: rootInScale ? 0.65 : 0.55,
+            diatonic: false
+        };
+    },
+
+    getDegreeToken(item) {
+        return String(item?.function || item?.degree || '').trim();
+    },
+
+    getTargetFromSecondary(functionText) {
+        const match = String(functionText || '').match(/^V\/(.+)$/);
+        return match ? match[1] : null;
+    },
+
+    analyzeProgression(analysis) {
+        const items = Array.isArray(analysis) ? analysis : [];
+        const relations = [];
+        const cadences = [];
+        const patterns = [];
+
+        const isPredominant = item => ['Subdominante'].includes(item?.tonalFunction);
+        const isDominant = item => item?.tonalFunction === 'Dominante';
+        const isTonic = item => item?.tonalFunction === 'Tônica';
+        const degreeOf = item => this.getDegreeToken(item);
+
+        // Relações entre acordes consecutivos.
+        for (let i = 0; i < items.length - 1; i++) {
+            const a = items[i];
+            const b = items[i + 1];
+            if (!a || !b) continue;
+
+            const aDegree = degreeOf(a);
+            const bDegree = degreeOf(b);
+            const secondaryTarget = this.getTargetFromSecondary(a.function);
+
+            // Se dois acordes são apenas grafias enarmônicas do mesmo acorde,
+            // não devemos inventar uma relação funcional entre eles.
+            // Ex.: Ab7+ → G#7+ representa o mesmo acorde em grafias diferentes.
+            const sameEnharmonicChord = a.chord !== b.chord &&
+                a.canonicalChord && b.canonicalChord &&
+                a.canonicalChord === b.canonicalChord;
+
+            if (sameEnharmonicChord) {
+                relations.push({
+                    from: a.chord,
+                    to: b.chord,
+                    label: 'equivalência enarmônica (mesmo acorde)'
+                });
+                continue;
+            }
+
+            if (secondaryTarget && bDegree === secondaryTarget) {
+                relations.push({
+                    from: a.chord,
+                    to: b.chord,
+                    label: `${a.function} → ${bDegree} (resolução de dominante secundário)`
+                });
+                continue;
+            }
+
+            const isBorrowed = a.classification === 'emprestimo_modal';
+            const isBorrowedPredominant = isBorrowed && /^(?:iv|ii°)$/.test(a.function || '');
+
+            // V → vi/VI é deceptiva. Não usar a função tonal genérica
+            // de vi/VI (região de tônica) para chamar isso de dominante → tônica.
+            if (isDominant(a) && (bDegree === 'vi' || bDegree === 'VI')) {
+                relations.push({
+                    from: a.chord,
+                    to: b.chord,
+                    label: `resolução deceptiva (${aDegree}–${bDegree})`
+                });
+            } else if (isBorrowedPredominant && isDominant(b)) {
+                relations.push({ from: a.chord, to: b.chord, label: 'predominante emprestado → dominante' });
+            } else if (isPredominant(a) && isDominant(b)) {
+                relations.push({ from: a.chord, to: b.chord, label: 'predominante → dominante' });
+            } else if (isDominant(a) && isTonic(b)) {
+                relations.push({ from: a.chord, to: b.chord, label: 'dominante → tônica' });
+            } else if (isBorrowed && isTonic(b)) {
+                relations.push({ from: a.chord, to: b.chord, label: 'acorde emprestado → tônica' });
+            }
+        }
+
+        // Cadências e resoluções.
+        for (let i = 0; i < items.length - 1; i++) {
+            const a = items[i];
+            const b = items[i + 1];
+            if (!a || !b) continue;
+
+            const aDegree = degreeOf(a);
+            const bDegree = degreeOf(b);
+
+            if (aDegree === 'V' && (bDegree === 'I' || bDegree === 'i')) {
+                cadences.push({ chords: `${a.chord} → ${b.chord}`, label: 'cadência autêntica (V–I)' });
+            }
+            if (aDegree === 'IV' && bDegree === 'I') {
+                cadences.push({ chords: `${a.chord} → ${b.chord}`, label: 'cadência plagal (IV–I)' });
+            }
+            if (aDegree === 'iv' && bDegree === 'i') {
+                cadences.push({ chords: `${a.chord} → ${b.chord}`, label: 'cadência plagal (iv–i)' });
+            }
+            if (a.classification === 'emprestimo_modal' && a.function === 'iv' && bDegree === 'I') {
+                cadences.push({ chords: `${a.chord} → ${b.chord}`, label: 'cadência plagal por empréstimo modal (iv–I)' });
+            }
+            // V → vi/VI é resolução deceptiva; deve ser avaliada antes
+            // de qualquer regra genérica de dominante → função de tônica.
+            if ((aDegree === 'V' || aDegree === 'v') && (bDegree === 'vi' || bDegree === 'VI')) {
+                cadences.push({ chords: `${a.chord} → ${b.chord}`, label: 'resolução deceptiva (V–vi/VI)' });
+            }
+        }
+
+        for (let i = 0; i < items.length - 2; i++) {
+            const a = items[i];
+            const b = items[i + 1];
+            const c = items[i + 2];
+            if (!a || !b || !c) continue;
+
+            const ad = degreeOf(a);
+            const bd = degreeOf(b);
+            const cd = degreeOf(c);
+            const predominant = ['ii', 'ii°', 'IV', 'iv'].includes(ad);
+            const dominant = ['V', 'v'].includes(bd);
+            const tonic = ['I', 'i'].includes(cd);
+
+            if (predominant && dominant && tonic) {
+                const borrowedPredominant =
+                    a.classification === 'emprestimo_modal' &&
+                    ['iv', 'ii°'].includes(ad);
+
+                let cadenceLabel;
+                if (borrowedPredominant) {
+                    cadenceLabel = `cadência ${ad}–${bd}–${cd} com empréstimo modal`;
+                } else if (ad === 'ii' && a.classification === 'diatonico') {
+                    cadenceLabel = 'cadência ii–V–I';
+                } else if (ad === 'ii°' && a.classification === 'diatonico') {
+                    cadenceLabel = 'cadência ii°–V–i';
+                } else {
+                    cadenceLabel = `cadência ${ad}–${bd}–${cd}`;
+                }
+
+                cadences.push({
+                    chords: `${a.chord} → ${b.chord} → ${c.chord}`,
+                    label: cadenceLabel
+                });
+            }
+        }
+
+        // Padrões recorrentes: além da sequência de graus, levamos em conta
+        // classificação, função e contexto. Isso evita, por exemplo, tratar
+        // iv emprestado como se fosse ii diatônico.
+        const degreeSequence = items.map(degreeOf);
+        const patternDefinitions = [
+            { seq: ['I', 'V', 'vi', 'IV'], label: 'I–V–vi–IV', description: 'progressão recorrente de quatro acordes' },
+            { seq: ['vi', 'IV', 'I', 'V'], label: 'vi–IV–I–V', description: 'variação recorrente da mesma família de quatro acordes' },
+            { seq: ['I', 'vi', 'IV', 'V'], label: 'I–vi–IV–V', description: 'progressão recorrente' },
+            { seq: ['I', 'IV', 'V'], label: 'I–IV–V', description: 'progressão tonal recorrente' },
+            { seq: ['I', 'V', 'IV', 'I'], label: 'I–V–IV–I', description: 'progressão tonal recorrente' },
+            { seq: ['ii', 'V', 'I'], label: 'ii–V–I', description: 'predominante–dominante–tônica', predicate: win =>
+                win[0]?.classification === 'diatonico' && win[0]?.function === 'ii' &&
+                win[1]?.function === 'V' && win[1]?.classification === 'diatonico' &&
+                ['I', 'i'].includes(win[2]?.function) },
+            { seq: ['IV', 'V', 'I'], label: 'IV–V–I', description: 'predominante–dominante–tônica', predicate: win =>
+                win[0]?.function === 'IV' && win[1]?.function === 'V' && ['I', 'i'].includes(win[2]?.function) },
+            { seq: ['V', 'vi'], label: 'V–vi', description: 'resolução deceptiva' },
+            { seq: ['I', 'IV', 'iv', 'I'], label: 'I–IV–iv–I', description: 'retorno à tônica com empréstimo modal', predicate: win =>
+                win[2]?.classification === 'emprestimo_modal' && win[2]?.function === 'iv' },
+            { seq: ['I', 'iv', 'V', 'I'], label: 'I–iv–V–I', description: 'tônica–subdominante emprestada–dominante–tônica', predicate: win =>
+                win[1]?.classification === 'emprestimo_modal' && win[1]?.function === 'iv' &&
+                win[2]?.function === 'V' && win[3]?.function === 'I' },
+            { seq: ['iv', 'V', 'I'], label: 'iv–V–I', description: 'predominante emprestado–dominante–tônica', predicate: win =>
+                win[0]?.classification === 'emprestimo_modal' && win[0]?.function === 'iv' &&
+                win[1]?.function === 'V' && win[2]?.function === 'I' },
+            { seq: ['i', 'VI', 'III', 'VII'], label: 'i–VI–III–VII', description: 'progressão recorrente em tonalidade menor' },
+            { seq: ['i', 'VII', 'VI', 'VII'], label: 'i–VII–VI–VII', description: 'progressão recorrente em tonalidade menor' },
+            { seq: ['i', 'iv', 'V', 'i'], label: 'i–iv–V–i', description: 'progressão tonal em menor' },
+            { seq: ['iv', 'V', 'i'], label: 'iv–V–i', description: 'predominante–dominante–tônica em menor' },
+            { seq: ['ii°', 'V', 'i'], label: 'ii°–V–i', description: 'cadência predominante–dominante–tônica em menor', predicate: win =>
+                win[0]?.function === 'ii°' && win[1]?.function === 'V' && win[2]?.function === 'i' },
+            { seq: ['V/ii', 'ii', 'V', 'I'], label: 'V/ii–ii–V–I', description: 'dominante secundário encadeado a ii–V–I', predicate: win =>
+                win[0]?.classification === 'dominante_secundario' && win[0]?.function === 'V/ii' &&
+                win[1]?.function === 'ii' && win[2]?.function === 'V' && win[3]?.function === 'I' },
+            { seq: ['V/V', 'V', 'I'], label: 'V/V–V–I', description: 'dominante da dominante resolvendo em V–I', predicate: win =>
+                win[0]?.classification === 'dominante_secundario' && win[0]?.function === 'V/V' &&
+                win[1]?.function === 'V' && win[2]?.function === 'I' },
+            { seq: ['V/vi', 'vi'], label: 'V/vi–vi', description: 'dominante secundário resolvendo em vi', predicate: win =>
+                win[0]?.classification === 'dominante_secundario' && win[0]?.function === 'V/vi' &&
+                win[1]?.function === 'vi' },
+            { seq: ['V/iii', 'iii'], label: 'V/iii–iii', description: 'dominante secundário resolvendo em iii', predicate: win =>
+                win[0]?.classification === 'dominante_secundario' && win[0]?.function === 'V/iii' &&
+                win[1]?.function === 'iii' },
+            { seq: ['V/IV', 'IV'], label: 'V/IV–IV', description: 'dominante secundário resolvendo em IV', predicate: win =>
+                win[0]?.classification === 'dominante_secundario' && win[0]?.function === 'V/IV' &&
+                win[1]?.function === 'IV' }
+        ];
+
+        const sameSequence = (source, target, offset) =>
+            target.every((degree, index) => source[offset + index] === degree);
+
+        for (const pattern of patternDefinitions) {
+            for (let i = 0; i <= degreeSequence.length - pattern.seq.length; i++) {
+                if (!sameSequence(degreeSequence, pattern.seq, i)) continue;
+                const matchedItems = items.slice(i, i + pattern.seq.length);
+                if (pattern.predicate && !pattern.predicate(matchedItems)) continue;
+                patterns.push({
+                    chords: matchedItems.map(item => item.chord).join(' → '),
+                    label: pattern.label,
+                    description: pattern.description
+                });
+            }
+        }
+
+        // Padrões contextuais para cadeias com dominante secundário.
+        // Aqui não dependemos apenas de uma janela fixa de graus.
+        for (let i = 0; i < items.length - 1; i++) {
+            const a = items[i];
+            const b = items[i + 1];
+            if (!a || !b) continue;
+            const target = this.getTargetFromSecondary(a.function);
+            if (a.classification === 'dominante_secundario' && target && degreeOf(b) === target) {
+                patterns.push({
+                    chords: `${a.chord} → ${b.chord}`,
+                    label: `${a.function}–${target}`,
+                    description: 'dominante secundário → acorde-alvo'
+                });
+            }
+        }
+
+        // Remove duplicações quando uma mesma ocorrência for encontrada mais de uma vez.
+        const uniqueBy = (list, keyFn) => {
+            const seen = new Set();
+            return list.filter(item => {
+                const key = keyFn(item);
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+        };
+
+        return {
+            relations: uniqueBy(relations, item => `${item.from}|${item.to}|${item.label}`),
+            cadences: uniqueBy(cadences, item => `${item.chords}|${item.label}`),
+            patterns: uniqueBy(patterns, item => `${item.chords}|${item.label}`)
+        };
+    },
+
+    analyzeSections() {
+        const lyrics = this.app?.DOMElements?.songLyrics?.value || '';
+        const key = this.app?.DOMElements?.key?.value || '-';
+        if (!lyrics || key === '-') return [];
+
+        const sections = [];
+        let current = { label: 'Seção 1', chords: [] };
+        let sectionNumber = 1;
+        let inChorus = false;
+
+        const flush = () => {
+            if (!current.chords.length) return;
+            const analysis = current.chords.map(chord => this.classifyChord(chord, key));
+            sections.push({ label: current.label, analysis });
+            sectionNumber++;
+            current = { label: `Seção ${sectionNumber}`, chords: [] };
+        };
+
+        lyrics.split('\n').forEach(line => {
+            const trimmed = line.trim();
+            const upper = trimmed.toUpperCase();
+            if (upper === '{C:CHORUS}') {
+                flush();
+                inChorus = true;
+                current.label = 'Refrão';
+                return;
+            }
+            if (upper === '{C:}') {
+                flush();
+                inChorus = false;
+                return;
+            }
+            if (!trimmed) {
+                flush();
+                return;
+            }
+            const chords = [...trimmed.matchAll(/\[([^\]]+)\]/g)].map(m => m[1]);
+            if (chords.length) {
+                if (inChorus) current.label = 'Refrão';
+                current.chords.push(...chords);
+            }
+        });
+        flush();
+        return sections;
+    },
+
+    buildHarmonicSummary(analysis, progression) {
+        const items = Array.isArray(analysis) ? analysis : [];
+        const key = this.app?.DOMElements?.key?.value || '-';
+        const mode = /m$/.test(key) ? 'menor' : 'maior';
+        const secondary = [...new Set(items.filter(i => i.classification === 'dominante_secundario').map(i => i.function).filter(Boolean))];
+        const borrowed = [...new Set(items.filter(i => i.classification === 'emprestimo_modal').map(i => i.function).filter(Boolean))];
+        const cadences = [...new Set((progression?.cadences || []).map(i => i.label))];
+        const patterns = [...new Set((progression?.patterns || []).map(i => i.label))];
+        return {
+            center: key === '-' ? 'não definido' : `${key} (${mode})`,
+            cadences: cadences.join(' · '),
+            secondaryDominants: secondary.join(' · '),
+            modalBorrowings: borrowed.join(' · '),
+            patterns: patterns.join(' · ')
+        };
+    },
+
+    generateSuggestions(analysis, progression) {
+        const items = Array.isArray(analysis) ? analysis : [];
+        const suggestions = [];
+        const add = (item) => {
+            const key = `${item.type}|${item.chords}|${item.message}`;
+            if (!suggestions.some(s => `${s.type}|${s.chords}|${s.message}` === key)) suggestions.push(item);
+        };
+
+        const degreeOfSafe = item => this.getDegreeToken(item);
+
+        // 1) Dominante secundário sem resolução no acorde-alvo: revisar ou testar a resolução esperada.
+        for (let i = 0; i < items.length - 1; i++) {
+            const a = items[i], b = items[i + 1];
+            if (a?.classification !== 'dominante_secundario') continue;
+            const target = this.getTargetFromSecondary(a.function);
+            if (target && degreeOfSafe(b) !== target) {
+                const targetItem = items.find(x => degreeOfSafe(x) === target);
+                add({
+                    type: 'revisao',
+                    chords: `${a.chord} → ${b.chord}`,
+                    message: `${a.chord} está classificado como ${a.function}, mas não segue para ${target}.`,
+                    tests: targetItem ? [`${a.chord} → ${targetItem.chord}`] : [`${a.chord} → acorde ${target}`],
+                    reason: 'Se a intenção era uma dominante secundária, vale testar a resolução no acorde-alvo; se o efeito atual for intencional, a passagem pode ser mantida.'
+                });
+            }
+        }
+
+        // 2) Acorde cromático: não declarar erro; oferecer teste contextual simples.
+        for (let i = 0; i < items.length; i++) {
+            const a = items[i];
+            if (a?.classification !== 'cromatico') continue;
+            const prev = items[i - 1];
+            const next = items[i + 1];
+            const tests = [];
+            if (next?.degree) {
+                const root = next.root;
+                const domRoot = this.rootAt(root, 7);
+                tests.push(`${domRoot}7 → ${next.chord}`);
+            }
+            add({
+                type: 'revisao',
+                chords: a.chord,
+                message: `${a.chord} não apresenta uma função diatônica clara em ${a.key}.`,
+                tests: tests.length ? tests : ['compare com o acorde diatônico da mesma região'],
+                reason: prev && next ? `O contexto ${prev.chord} → ${a.chord} → ${next.chord} pode justificar uma função cromática específica; vale ouvir alternativas antes de alterar a cifra.` : 'A função pode ser intencionalmente cromática; a sugestão serve apenas para comparação.'
+            });
+        }
+
+        // 3) Qualidade não diatônica com fundamental dentro da escala: sugerir a qualidade diatônica correspondente.
+        for (const a of items) {
+            if (a?.classification !== 'qualidade_nao_diatonica') continue;
+            const parsed = this.splitChord(a.chord);
+            if (!parsed) continue;
+            const fields = this.getFields(a.key);
+            const fieldList = fields?.mode === 'major' ? fields.major : [...(fields?.naturalMinor || []), ...(fields?.harmonicMinor || [])];
+            const root = this.normalizeRoot(parsed.root);
+            const candidate = fieldList.find(x => this.normalizeRoot(x.root) === root);
+            if (candidate) {
+                add({
+                    type: 'revisao',
+                    chords: a.chord,
+                    message: `${a.chord} tem fundamental pertencente à tonalidade, mas sua qualidade não é diatônica.`,
+                    tests: [candidate.seventh, candidate.triad],
+                    reason: `Compare a qualidade atual com ${candidate.seventh} ou ${candidate.triad} para verificar se a intenção era permanecer no campo harmônico.`
+                });
+            }
+        }
+
+        // 4) Empréstimo modal predominante: oferecer a versão diatônica correspondente para comparação.
+        for (const a of items) {
+            if (a?.classification !== 'emprestimo_modal' || !/^(iv|ii°)$/.test(a.function || '')) continue;
+            const fields = this.getFields(a.key);
+            const field = fields?.mode === 'major' ? fields.major : fields?.naturalMinor;
+            const candidate = field?.find(x => this.normalizeRoot(x.root) === this.normalizeRoot(a.root));
+            if (candidate) {
+                add({
+                    type: 'experimente',
+                    chords: a.chord,
+                    message: `${a.chord} é um acorde emprestado.`,
+                    tests: [candidate.seventh, candidate.triad],
+                    reason: 'Compare a cor modal atual com a versão diatônica de mesma fundamental.'
+                });
+            }
+        }
+
+        // 5) V→vi: sugerir comparação com V→I apenas quando o acorde seguinte é vi e existe uma tônica disponível.
+        for (let i = 0; i < items.length - 1; i++) {
+            const a = items[i], b = items[i + 1];
+            if (a?.function !== 'V' || !['vi', 'VI'].includes(b?.function || '')) continue;
+            const tonic = items.find(x => ['I', 'i'].includes(x?.function || ''));
+            if (tonic) {
+                add({
+                    type: 'experimente',
+                    chords: `${a.chord} → ${b.chord}`,
+                    message: 'A resolução atual é deceptiva.',
+                    tests: [`${a.chord} → ${tonic.chord}`],
+                    reason: 'Compare a resolução deceptiva V→vi com a resolução V→I e escolha pelo efeito musical desejado.'
+                });
+            }
+        }
+
+        return suggestions.slice(0, 8);
+    },
+
+    analyzeUsedChords() {
+        if (!this.app ||
+            !this.app.DOMElements ||
+            !this.app.DOMElements.songLyrics) {
+            return [];
+        }
+
+        const key = this.app.DOMElements.key.value;
+        const matches =
+            this.app.DOMElements.songLyrics.value.match(/\[([^\]]+)\]/g) || [];
+
+        const analysis = matches.map(item => {
+            const chord = item.slice(1, -1);
+            return this.classifyChord(chord, key);
+        });
+
+        this.app.state.harmonicAnalysis = analysis;
+        return analysis;
+    }
+};
+/**
+ * Camada de IA (preparação)
+ *
+ * Não faz chamadas externas nesta versão. Ela cria um payload estável para uma
+ * futura integração com um modelo, mantendo o motor musical determinístico como
+ * fonte dos fatos e a IA apenas como camada de interpretação/sugestão.
+ */
+const AIHarmonicModule = {
+    app: null,
+    STORAGE_KEY: 'recifra_ai_config',
+    DEFAULT_CONFIG: {
+        provider: 'gemini',
+        model: 'gemini-3.6-flash',
+        apiKey: '',
+        saveKey: true
+    },
+
+    init(app) {
+        this.app = app;
+        this.config = this.loadConfig();
+        this.createSettingsModal();
+        this.bindAnalysisButton();
+    },
+
+    loadConfig() {
+        try {
+            const raw = localStorage.getItem(this.STORAGE_KEY);
+            if (!raw) return { ...this.DEFAULT_CONFIG };
+            const saved = JSON.parse(raw);
+            return { ...this.DEFAULT_CONFIG, ...saved };
+        } catch (error) {
+            console.warn('Não foi possível carregar a configuração da IA:', error);
+            return { ...this.DEFAULT_CONFIG };
+        }
+    },
+
+    saveConfig(config) {
+        this.config = { ...this.DEFAULT_CONFIG, ...config };
+        try {
+            const data = { ...this.config };
+            if (!data.saveKey) data.apiKey = '';
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data));
+        } catch (error) {
+            console.warn('Não foi possível salvar a configuração da IA:', error);
+        }
+    },
+
+    getConfig() {
+        return { ...this.config };
+    },
+
+    createSettingsModal() {
+        if (document.getElementById('ai-settings-modal')) return;
+
+        const modal = document.createElement('div');
+        modal.id = 'ai-settings-modal';
+        modal.className = 'hidden fixed inset-0 z-[70] overflow-auto flex items-center justify-center';
+        modal.innerHTML = `
+            <div id="ai-settings-backdrop" class="fixed inset-0 bg-black/60"></div>
+            <div class="bg-secondary text-main m-4 p-5 rounded-lg max-w-lg w-full relative shadow-2xl border border-gray-600">
+                <button id="ai-settings-close" type="button" class="absolute top-3 right-3 text-gray-400 hover:text-white text-xl" aria-label="Fechar">&times;</button>
+                <div class="pr-8 mb-4">
+                    <div class="text-lg font-bold text-title">🤖 Consultor Harmônico</div>
+                    <div class="text-xs text-secondary mt-1">Configure a conexão da IA usada pelo ReCifra.</div>
+                </div>
+                <div class="space-y-3">
+                    <label class="block text-xs font-semibold">Provedor
+                        <select id="ai-provider" class="w-full mt-1 px-2 py-2 rounded-md border border-secondary">
+                            <option value="gemini">Google Gemini</option>
+                        </select>
+                    </label>
+                    <label class="block text-xs font-semibold">Modelo
+                        <input id="ai-model" type="text" class="w-full mt-1 px-2 py-2 rounded-md border border-secondary" placeholder="gemini-3.6-flash">
+                    </label>
+                    <label class="block text-xs font-semibold">Chave da API Gemini
+                        <input id="ai-api-key" type="password" autocomplete="off" class="w-full mt-1 px-2 py-2 rounded-md border border-secondary" placeholder="Cole sua chave aqui">
+                    </label>
+                    <label class="flex items-center gap-2 text-xs text-secondary">
+                        <input id="ai-save-key" type="checkbox" class="accent-indigo-600">
+                        Salvar a chave neste navegador
+                    </label>
+                    <div id="ai-settings-status" class="text-xs text-secondary min-h-[18px]"></div>
+                    <div class="flex justify-end gap-2 pt-2">
+                        <button id="ai-test-connection" type="button" class="px-3 py-2 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs">Testar conexão</button>
+                        <button id="ai-save-settings" type="button" class="px-3 py-2 rounded-md bg-green-600 hover:bg-green-500 text-white font-bold text-xs">Salvar</button>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(modal);
+
+        const provider = modal.querySelector('#ai-provider');
+        const model = modal.querySelector('#ai-model');
+        const apiKey = modal.querySelector('#ai-api-key');
+        const saveKey = modal.querySelector('#ai-save-key');
+        const status = modal.querySelector('#ai-settings-status');
+
+        provider.value = this.config.provider;
+        model.value = this.config.model || this.DEFAULT_CONFIG.model;
+        apiKey.value = this.config.apiKey || '';
+        saveKey.checked = this.config.saveKey !== false;
+
+        const close = () => modal.classList.add('hidden');
+        document.getElementById('ai-settings-btn')?.addEventListener('click', () => {
+            const current = this.getConfig();
+            provider.value = current.provider;
+            model.value = current.model || this.DEFAULT_CONFIG.model;
+            apiKey.value = current.apiKey || '';
+            saveKey.checked = current.saveKey !== false;
+            status.textContent = '';
+            modal.classList.remove('hidden');
+        });
+        modal.querySelector('#ai-settings-close').addEventListener('click', close);
+        modal.querySelector('#ai-settings-backdrop').addEventListener('click', close);
+
+        modal.querySelector('#ai-save-settings').addEventListener('click', () => {
+            const key = apiKey.value.trim();
+            this.saveConfig({
+                provider: provider.value,
+                model: model.value.trim() || this.DEFAULT_CONFIG.model,
+                apiKey: key,
+                saveKey: saveKey.checked
+            });
+            if (!saveKey.checked) apiKey.value = '';
+            status.textContent = key || !saveKey.checked
+                ? 'Configuração salva.'
+                : 'Modelo salvo. A chave não foi armazenada.';
+            status.className = 'text-xs text-green-400 min-h-[18px]';
+        });
+
+        modal.querySelector('#ai-test-connection').addEventListener('click', async () => {
+            const key = apiKey.value.trim();
+            const selectedModel = model.value.trim() || this.DEFAULT_CONFIG.model;
+            if (!key) {
+                status.textContent = 'Informe uma chave de API antes de testar.';
+                status.className = 'text-xs text-red-400 min-h-[18px]';
+                return;
+            }
+            status.textContent = 'Testando conexão...';
+            status.className = 'text-xs text-yellow-400 min-h-[18px]';
+            try {
+                const response = await this.callGemini('Responda apenas: OK', key, selectedModel, 50);
+                if (!response) throw new Error('Resposta vazia do Gemini.');
+                status.textContent = 'Conexão com o Gemini funcionando.';
+                status.className = 'text-xs text-green-400 min-h-[18px]';
+            } catch (error) {
+                status.textContent = `Falha na conexão: ${error.message}`;
+                status.className = 'text-xs text-red-400 min-h-[18px]';
+            }
+        });
+    },
+
+    bindAnalysisButton() {
+        const modal = this.app?.DOMElements?.harmonicAnalysisModal;
+        if (!modal || modal.querySelector('#ai-consult-btn')) return;
+        const title = modal.querySelector('#harmonic-analysis-title');
+        if (!title) return;
+        const button = document.createElement('button');
+        button.id = 'ai-consult-btn';
+        button.type = 'button';
+        button.className = 'mt-3 px-3 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs';
+        button.textContent = '🤖 Consultar Gemini';
+        title.parentElement.appendChild(button);
+
+        const result = document.createElement('div');
+        result.id = 'ai-consult-result';
+        result.className = 'hidden mt-4 mb-5 rounded-lg border border-indigo-400/40 bg-indigo-50/5 p-4';
+        result.innerHTML = `
+            <div class="flex items-center justify-between gap-3 mb-2">
+                <div class="text-sm font-bold text-title">🤖 Análise do Gemini</div>
+                <span id="ai-consult-status" class="text-[10px] text-secondary"></span>
+            </div>
+            <div id="ai-consult-result-body" class="text-xs text-main whitespace-pre-wrap leading-relaxed max-h-[38vh] overflow-y-auto pr-2"></div>`;
+
+        // O resultado da IA fica logo abaixo do cabeçalho da análise, e não
+        // depois do mapa harmônico. Assim ele permanece visível mesmo quando
+        // a análise determinística é extensa.
+        const summaryBlock = modal.querySelector('#harmonic-analysis-summary');
+        if (summaryBlock) {
+            summaryBlock.parentElement.after(result);
+        } else {
+            modal.querySelector('#harmonic-analysis-content')?.before(result);
+        }
+        button.addEventListener('click', () => this.consult());
+    },
+
+    buildContext() {
+        const analysis = Array.isArray(this.app?.state?.harmonicAnalysis)
+            ? this.app.state.harmonicAnalysis
+            : [];
+        const progression = HarmonicModule.analyzeProgression(analysis);
+        const key = this.app?.DOMElements?.key?.value || '-';
+        return {
+            schemaVersion: '1.0',
+            key,
+            title: this.app?.DOMElements?.songTitle?.value || '',
+            chords: analysis.map(item => item.chord),
+            functions: analysis.map(item => item.function || null),
+            classifications: analysis.map(item => item.classification || null),
+            progression: {
+                cadences: progression.cadences,
+                relations: progression.relations,
+                patterns: progression.patterns
+            },
+            suggestions: HarmonicModule.generateSuggestions(analysis, progression).map(item => ({
+                type: item.type,
+                chords: item.chords,
+                tests: item.tests || [],
+                reason: item.reason || '',
+                message: item.message || ''
+            }))
+        };
+    },
+
+    getPromptContext() {
+        return JSON.stringify(this.buildContext(), null, 2);
+    },
+
+    async callGemini(prompt, apiKey, model, maxOutputTokens = 1200) {
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': apiKey
+            },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                    temperature: 0.3,
+                    maxOutputTokens
+                }
+            })
+        });
+        let data = null;
+        try { data = await response.json(); } catch (_) {}
+        if (!response.ok) {
+            const message = data?.error?.message || `HTTP ${response.status}`;
+            throw new Error(message);
+        }
+        return data?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('').trim() || '';
+    },
+
+    async consult() {
+        const result = document.getElementById('ai-consult-result');
+        const body = document.getElementById('ai-consult-result-body');
+        const status = document.getElementById('ai-consult-status');
+        if (!result || !body) return;
+        const config = this.getConfig();
+        if (config.provider !== 'gemini') {
+            body.textContent = 'Este provedor ainda não está implementado.';
+            if (status) status.textContent = 'Indisponível';
+            result.classList.remove('hidden');
+            result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            return;
+        }
+        if (!config.apiKey) {
+            body.textContent = 'Configure sua chave Gemini no botão 🤖 antes de consultar.';
+            if (status) status.textContent = 'Configuração necessária';
+            result.classList.remove('hidden');
+            result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            return;
+        }
+        const context = this.getPromptContext();
+        const prompt = `Você é o Consultor Harmônico do ReCifra.\n\nAnalise os dados harmônicos abaixo. Não altere a cifra diretamente. Explique de forma objetiva as relações relevantes, possíveis substituições ou reharmonizações e indique quais hipóteses valem um teste. Preserve a tonalidade informada. Se não houver uma sugestão musicalmente convincente, diga isso claramente.\n\nDados do ReCifra:\n${context}`;
+        result.classList.remove('hidden');
+        if (status) status.textContent = `Consultando ${config.model || this.DEFAULT_CONFIG.model}...`;
+        body.textContent = 'Consultando o Gemini...';
+        try {
+            const answer = await this.callGemini(prompt, config.apiKey, config.model || this.DEFAULT_CONFIG.model, 1400);
+            body.textContent = answer || 'O Gemini não retornou conteúdo.';
+            if (status) status.textContent = answer ? 'Resposta recebida' : 'Resposta vazia';
+            result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } catch (error) {
+            body.textContent = `Erro ao consultar o Gemini:
+${error.message}`;
+            if (status) status.textContent = 'Erro na consulta';
+            result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+};
+
+const AutosaveModule = {
+  STORAGE_KEY: 'recifra_autosave',
+
+  app: null,
+  saveTimer: null,
+  debounceTime: 1000,
+
+  init(app) {
+    this.app = app;
+    this.setupListeners();
+    this.checkForRecovery();
+  },
+
+  updateStatus(status, message) {
+    const element = document.getElementById('autosaveStatus');
+
+    if (!element) return;
+
+    const dot = element.querySelector('span:first-child');
+    const text = element.querySelector('span:last-child');
+
+    if (!dot || !text) return;
+
+    text.textContent = message;
+    dot.className = 'w-2 h-2 rounded-full';
+
+    if (status === 'saving') {
+      dot.classList.add('bg-yellow-400');
+    } else if (status === 'saved') {
+      dot.classList.add('bg-green-500');
+    } else if (status === 'error') {
+      dot.classList.add('bg-red-500');
+    } else {
+      dot.classList.add('bg-gray-500');
+    }
+  },
+
+  getCurrentState() {
+    return {
+      title: this.app.DOMElements.songTitle.value,
+      composer: this.app.DOMElements.composer.value,
+      key: this.app.DOMElements.key.value,
+      lyrics: this.app.DOMElements.songLyrics.value,
+      savedAt: new Date().toISOString()
+    };
+  },
+
+save() {
+  const state = this.getCurrentState();
+
+  try {
+    localStorage.setItem(
+      this.STORAGE_KEY,
+      JSON.stringify(state)
+    );
+
+    this.updateStatus('saved', 'Salvo localmente');
+
+  } catch (error) {
+    console.warn('Não foi possível salvar o autosave:', error);
+
+    this.updateStatus(
+      'error',
+      'Não foi possível salvar'
+    );
+  }
+},
+
+scheduleSave() {
+  clearTimeout(this.saveTimer);
+
+  this.updateStatus('saving', 'Salvando...');
+
+  this.saveTimer = setTimeout(() => {
+    this.save();
+  }, this.debounceTime);
+},
+
+
+  clear() {
+    clearTimeout(this.saveTimer);
+
+    try {
+      localStorage.removeItem(this.STORAGE_KEY);
+    } catch (error) {
+      console.warn('Não foi possível limpar o autosave:', error);
+    }
+  },
+
+  getSavedState() {
+    try {
+      const saved = localStorage.getItem(this.STORAGE_KEY);
+
+      if (!saved) return null;
+
+      const state = JSON.parse(saved);
+
+      if (
+        !state ||
+        typeof state !== 'object' ||
+        typeof state.lyrics !== 'string'
+      ) {
+        return null;
+      }
+
+      return state;
+
+    } catch (error) {
+      console.warn('Autosave inválido:', error);
+      return null;
+    }
+  },
+
+  restore(state) {
+    if (!state) return;
+
+    this.app.DOMElements.songTitle.value = state.title || '';
+    this.app.DOMElements.composer.value = state.composer || '';
+    this.app.DOMElements.key.value = state.key || '-';
+    this.app.DOMElements.songLyrics.value = state.lyrics || '';
+
+    this.app.state.originalLyrics =
+      this.app.DOMElements.songLyrics.value;
+
+    this.app.state.originalKey =
+      this.app.DOMElements.key.value;
+
+    HistoryModule.clear();
+    HistoryModule.saveState(true);
+
+    this.app.renderAll();
+  },
+
+  checkForRecovery() {
+    const state = this.getSavedState();
+
+    if (!state) return;
+
+    const hasContent =
+      state.title ||
+      state.composer ||
+      state.lyrics;
+
+    if (!hasContent) return;
+
+    const date = state.savedAt
+      ? new Date(state.savedAt).toLocaleString('pt-BR')
+      : '';
+
+    const message = date
+      ? `Existe uma edição salva automaticamente em ${date}.\n\nDeseja restaurá-la?`
+      : `Existe uma edição salva automaticamente.\n\nDeseja restaurá-la?`;
+
+    if (confirm(message)) {
+      this.restore(state);
+    } else {
+      this.clear();
+    }
+  },
+
+  setupListeners() {
+    const elements = this.app.DOMElements;
+
+    // O ciclo principal de edição é controlado pelo App.
+    // Mantemos o módulo pronto para autosave explícito (undo/redo, importar, manter teste),
+    // evitando listeners duplicados sobre os mesmos campos.
+    this.listenersReady = true;
+  }
+};
+
+
+        /**
+         * Módulo de Arquivos
+         * Gerencia importação, exportação e manipulação de texto colado.
+         */
+        const FileModule = {
+            pendingHtmlImport: null,
+            init(app) {
+                this.app = app;
+                this.createHtmlImportModal();
+            },
+
+            createHtmlImportModal() {
+                if (document.getElementById('html-import-modal')) return;
+                const modal = document.createElement('div');
+                modal.id = 'html-import-modal';
+                modal.className = 'hidden fixed inset-0 z-[80] overflow-y-auto flex items-center justify-center';
+                modal.innerHTML = `
+                    <div id="html-import-backdrop" class="fixed inset-0 bg-black/70"></div>
+                    <section class="relative z-10 m-4 w-full max-w-xl rounded-xl border border-gray-600 bg-secondary p-5 text-main shadow-2xl">
+                        <button id="html-import-close" type="button" class="absolute right-3 top-2 text-2xl text-gray-400 hover:text-white" aria-label="Fechar">&times;</button>
+                        <h2 class="mb-1 pr-8 text-lg font-bold text-title">Importar cifra de HTML</h2>
+                        <p class="mb-4 text-xs text-secondary">Confira os dados encontrados no arquivo antes de substituir a cifra atual.</p>
+                        <div class="grid grid-cols-1 gap-2 rounded-lg border border-secondary p-3 sm:grid-cols-3">
+                            <div><div class="text-[10px] uppercase text-secondary">Título</div><div id="html-import-title" class="break-words text-sm font-semibold"></div></div>
+                            <div><div class="text-[10px] uppercase text-secondary">Artista</div><div id="html-import-artist" class="break-words text-sm font-semibold"></div></div>
+                            <div><div class="text-[10px] uppercase text-secondary">Tom</div><div id="html-import-key" class="text-sm font-semibold"></div></div>
+                        </div>
+                        <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+                            <div class="rounded-md bg-black/10 p-2">Linhas identificadas: <strong id="html-import-lines">0</strong></div>
+                            <div class="rounded-md bg-black/10 p-2">Acordes identificados: <strong id="html-import-chords">0</strong></div>
+                        </div>
+                        <p id="html-import-warning" class="mt-3 text-xs text-yellow-400"></p>
+                        <div class="mt-5 flex justify-end gap-2">
+                            <button id="html-import-cancel" type="button" class="rounded-md bg-gray-600 px-3 py-2 text-xs font-bold text-white hover:bg-gray-500">Cancelar</button>
+                            <button id="html-import-confirm" type="button" class="rounded-md bg-green-600 px-3 py-2 text-xs font-bold text-white hover:bg-green-500">Importar cifra</button>
+                        </div>
+                    </section>`;
+                document.body.appendChild(modal);
+                const close = () => this.closeHtmlImportPreview();
+                document.getElementById('html-import-close').addEventListener('click', close);
+                document.getElementById('html-import-cancel').addEventListener('click', close);
+                document.getElementById('html-import-backdrop').addEventListener('click', close);
+                document.getElementById('html-import-confirm').addEventListener('click', () => this.confirmHtmlImport());
+            },
+
+            closeHtmlImportPreview() {
+                document.getElementById('html-import-modal')?.classList.add('hidden');
+                this.pendingHtmlImport = null;
+            },
+
+            parseChordClubHtml(html) {
+                const doc = new DOMParser().parseFromString(html, 'text/html');
+                const titleMeta = doc.querySelector('meta[property="og:title"]')?.content || doc.title || '';
+                let title = titleMeta.replace(/\s*-\s*Cifra Club\s*$/i, '').trim();
+                let artist = '';
+                const split = title.match(/^(.*?)\s+-\s+(.+)$/);
+                if (split) { title = split[1].trim(); artist = split[2].trim(); }
+                const canonical = doc.querySelector('link[rel="canonical"]')?.href || '';
+                if (!artist && canonical) {
+                    const parts = new URL(canonical).pathname.split('/').filter(Boolean);
+                    if (parts.length > 0) artist = parts[0].replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                }
+                const content = doc.querySelector('article[data-chord-container] [data-chord-content]') || doc.querySelector('[data-chord-content]');
+                if (!content) throw new Error('Não encontrei a área da cifra neste HTML. Salve a página da música completa e tente novamente.');
+                const lines = Array.from(content.querySelectorAll('.kvMV'));
+                if (!lines.length) throw new Error('O arquivo foi reconhecido como HTML, mas não encontrei as linhas da cifra.');
+                const chordSet = new Set();
+                // O Cifra Club salva cada acorde como um elemento separado e usa os espaços
+                // anteriores para indicar sua coluna sobre a letra. Não devemos simplesmente
+                // concatenar os acordes antes do verso: isso destrói o alinhamento ChordPro.
+                const parseLine = (line) => {
+                    const chordRow = [];
+                    const lyricParts = [];
+                    let column = 0;
+                    let lyricText = '';
+                    let crossedLineBreak = false;
+                    const chords = [];
+                    const addText = (text) => {
+                        text = (text || '').replace(/\u00a0/g, ' ');
+                        if (!crossedLineBreak) {
+                            const nl = text.indexOf('\n');
+                            if (nl >= 0) {
+                                column += text.slice(0, nl).length;
+                                crossedLineBreak = true;
+                                lyricText += text.slice(nl + 1);
+                            } else {
+                                column += text.length;
+                            }
+                        } else {
+                            lyricText += text;
+                        }
+                    };
+                    const walk = (node) => {
+                        if (node.nodeType === Node.TEXT_NODE) { addText(node.nodeValue || ''); return; }
+                        if (node.nodeType !== Node.ELEMENT_NODE) return;
+                        if (node.matches('b[data-chord-name]')) {
+                            const rawChord = (node.getAttribute('data-chord-name') || node.textContent || '').trim();
+                            // O importador usa a mesma nomenclatura canônica do banco
+                            // de acordes do ReCifra (ex.: G7M/GM7/Gmaj7 -> G7+).
+                            // Assim, a padronização já ocorre na cifra importada,
+                            // e não apenas na lista de acordes ou na conversão posterior.
+                            const chord = rawChord && typeof ChordModule?.canonicalizeChord === 'function'
+                                ? ChordModule.canonicalizeChord(rawChord)
+                                : rawChord;
+                            if (chord) {
+                                chordSet.add(chord);
+                                if (!crossedLineBreak) chords.push({ chord, column });
+                                else chords.push({ chord, column: lyricText.length });
+                                // No HTML do Cifra Club, o próprio nome do acorde ocupa coluna
+                                // na linha superior; contamos seu tamanho para localizar os próximos.
+                                if (!crossedLineBreak) column += chord.length;
+                            }
+                            return;
+                        }
+                        if (node.matches('script, style, button, svg')) return;
+                        Array.from(node.childNodes).forEach(walk);
+                    };
+                    Array.from(line.childNodes).forEach(walk);
+                    lyricText = lyricText.replace(/\r/g, '').replace(/[ \t]+$/gm, '').trim();
+                    // Linhas instrumentais/introduções sem letra mantêm a sequência de acordes.
+                    if (!lyricText) {
+                        const prefix = (line.textContent || '').match(/\[(intro|final|solo|verso|refr[aã]o|pr[eé]-refr[aã]o|ponte|interl[uú]dio)(?:\s+[^\]]*)?\]/i);
+                        const section = prefix ? prefix[0].toUpperCase() + ' ' : '';
+                        return (section + chords.map(item => `[${item.chord}]`).join(' ')).trim();
+                    }
+                    const wordStarts = [];
+                    const re = /\S+/g;
+                    let match;
+                    while ((match = re.exec(lyricText))) wordStarts.push(match.index);
+                    const insertions = new Map();
+                    chords.forEach(item => {
+                        const targetColumn = Math.max(0, item.column);
+                        let target = wordStarts[0] ?? 0;
+                        let bestDistance = Infinity;
+                        wordStarts.forEach(start => {
+                            const distance = Math.abs(start - targetColumn);
+                            if (distance < bestDistance) { bestDistance = distance; target = start; }
+                        });
+                        if (!insertions.has(target)) insertions.set(target, []);
+                        insertions.get(target).push(`[${item.chord}]`);
+                    });
+                    let output = '';
+                    for (let i = 0; i <= lyricText.length; i++) {
+                        if (insertions.has(i)) output += insertions.get(i).join('');
+                        if (i < lyricText.length) output += lyricText[i];
+                    }
+                    return output.trim();
+                };
+                const lyrics = lines.map(parseLine).filter(Boolean).join('\n')
+                    .replace(/\[(intro|final|solo|verso|refr[aã]o|pr[eé]-refr[aã]o|ponte|interl[uú]dio)(?:\s+[^\]]*)?\]/gi, (_, section) => section.toUpperCase());
+                // Identificação da tonalidade: o Cifra Club pode expor o tom
+                // no texto visível, em atributos ou no estado serializado do Next.js.
+                let key = '';
+                const validKey = value => {
+                    const candidate = (value || '').replace(/♭/g, 'b').replace(/♯/g, '#').trim();
+                    return /^[A-G](?:#|b)?m?$/i.test(candidate) ? candidate : '';
+                };
+                const visibleText = (doc.body?.innerText || doc.body?.textContent || '').replace(/\u00a0/g, ' ');
+                const visibleKeyMatch = visibleText.match(/(?:^|\n|\s)Tom\s*:?\s*([A-G](?:#|b)?m?)\b/i)
+                    || visibleText.match(/Tonalidade\s*:?\s*([A-G](?:#|b)?m?)\b/i);
+                if (visibleKeyMatch) key = validKey(visibleKeyMatch[1]);
+
+                // Primeiro tenta campos estruturados comuns do site.
+                if (!key) {
+                    const patterns = [
+                        /["']keyShape["']\s*:\s*["']([A-G](?:#|b)?m?)["']/i,
+                        /\\["']keyShape\\["']\s*:\s*\\["']([A-G](?:#|b)?m?)\\["']/i,
+                        /["'](?:key|tonality|tone)["']\s*:\s*["']([A-G](?:#|b)?m?)["']/i
+                    ];
+                    for (const pattern of patterns) {
+                        const match = html.match(pattern);
+                        if (match) { key = validKey(match[1]); if (key) break; }
+                    }
+                }
+                // Último fallback: rótulo de tom em texto HTML, inclusive quando
+                // o texto visível está dentro de componentes serializados.
+                if (!key) {
+                    const rawKeyMatch = html.match(/Tom(?:\s|&nbsp;|<[^>]*>)*:?(?:\s|&nbsp;|<[^>]*>)*([A-G](?:#|b)?m?)\b/i);
+                    if (rawKeyMatch) key = validKey(rawKeyMatch[1]);
+                }
+                return { title, artist, key, lyrics, lineCount: lines.length, chordCount: chordSet.size, chords: Array.from(chordSet) };
+            },
+
+            previewHtmlImport(data) {
+                this.pendingHtmlImport = data;
+                document.getElementById('html-import-title').textContent = data.title || 'Não identificado';
+                document.getElementById('html-import-artist').textContent = data.artist || 'Não identificado';
+                document.getElementById('html-import-key').textContent = data.key || 'Não identificado';
+                document.getElementById('html-import-lines').textContent = data.lineCount;
+                document.getElementById('html-import-chords').textContent = data.chordCount;
+                document.getElementById('html-import-warning').textContent = data.key ? '' : 'A tonalidade não foi identificada com segurança; você poderá defini-la no editor depois da importação.';
+                document.getElementById('html-import-modal').classList.remove('hidden');
+            },
+
+            confirmHtmlImport() {
+                const data = this.pendingHtmlImport;
+                if (!data) return;
+                this.newFile();
+                const { songTitle, composer, key, songLyrics } = this.app.DOMElements;
+                songTitle.value = (data.title || '').toUpperCase();
+                composer.value = data.artist || '';
+                const normalizedKey = (data.key || '').replace(/♭/g, 'b').replace(/♯/g, '#');
+                const keyOption = Array.from(key.options).find(option => option.value.toLowerCase() === normalizedKey.toLowerCase());
+                key.value = keyOption ? keyOption.value : '-';
+                songLyrics.value = this.processTextForUppercase(data.lyrics);
+                this.app.state.originalLyrics = songLyrics.value;
+                this.app.state.originalKey = key.value;
+                this.closeHtmlImportPreview();
+                HistoryModule.clear();
+                HistoryModule.saveState(true);
+                AutosaveModule.save();
+                this.app.renderAll();
+                UIModule.showToast('Cifra HTML importada! Confira a formatação antes de salvar/exportar.');
+            },
+
+         newFile() {
+  this.app.resetState();
+  HistoryModule.clear();
+  HistoryModule.saveState(true);
+
+  AutosaveModule.clear();
+
+  this.app.renderAll();
+},
+
+            handlePaste(event) {
+                event.preventDefault();
+                const pastedText = (event.clipboardData || window.clipboardData).getData('text');
+                const processedText = this.processTextForUppercase(pastedText);
+                const textarea = this.app.DOMElements.songLyrics;
+                const start = textarea.selectionStart; const end = textarea.selectionEnd;
+                textarea.value = textarea.value.substring(0, start) + processedText + textarea.value.substring(end);
+                textarea.selectionStart = textarea.selectionEnd = start + processedText.length;
+                const debouncedRenderAndSave = UIModule.debounce(() => { HistoryModule.saveState(); AutosaveModule.scheduleSave(); this.app.renderAll(); }, 250);
+                debouncedRenderAndSave();
+            },
+
+            processTextForUppercase(text) {
+                const isLikelyChordPro = text.includes('[') && text.includes(']');
+                if (isLikelyChordPro) {
+                    const tokens = text.match(/(\[.*?\]|\{.*?\}|[^\[\]\{\}]+)/g) || [];
+                    return tokens.map(token => (token.startsWith('[') || token.startsWith('{')) ? token : token.toUpperCase()).join('');
+                } else {
+                    return text.split('\n').map(line => ChordModule.isChordLine(line) ? line : line.toUpperCase()).join('\n');
+                }
+            },
+            
+            importFile(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+                const isHtml = /\.html?$/i.test(file.name) || file.type === 'text/html';
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    if (isHtml) {
+                        try {
+                            const parsed = this.parseChordClubHtml(String(e.target.result || ''));
+                            this.previewHtmlImport(parsed);
+                        } catch (error) {
+                            UIModule.showToast(error.message || 'Não foi possível ler esse HTML.', true);
+                        }
+                        event.target.value = '';
+                        return;
+                    }
+                    this.newFile();
+                    let lyrics = "";
+                    e.target.result.split('\n').forEach(line => {
+                        if (line.toLowerCase().startsWith('{title:')) this.app.DOMElements.songTitle.value = line.slice(7, -1).trim();
+                        else if (line.toLowerCase().startsWith('{artist:')) this.app.DOMElements.composer.value = line.slice(8, -1).trim();
+                        else if (line.toLowerCase().startsWith('{key:')) this.app.DOMElements.key.value = line.slice(5, -1).trim();
+                        else lyrics += line + '\n';
+                    });
+                    this.app.DOMElements.songLyrics.value = this.processTextForUppercase(lyrics.trim());
+                    this.app.state.originalLyrics = this.app.DOMElements.songLyrics.value;
+                    this.app.state.originalKey = this.app.DOMElements.key.value;
+                    HistoryModule.saveState(true);
+AutosaveModule.save();
+                    this.app.renderAll();
+                    UIModule.showToast('Arquivo importado!');
+                };
+                reader.readAsText(file);
+            },
+            
+            exportFile() {
+                const { songTitle, composer, key, songLyrics } = this.app.DOMElements;
+                if (!songTitle.value || !composer.value || key.value === "-") {
+                    UIModule.showToast("Preencha Título, Composição e Tom.", true);
+                    return;
+                }
+                const content = `{title: ${songTitle.value}}\n{artist: ${composer.value}}\n{key: ${key.value}}\n\n${songLyrics.value}`;
+                const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(blob);
+                link.download = `${songTitle.value.replace(/[\\/:*?"<>|]/g, "_")}.cho`;
+                link.click();
+            }
+        };
+
+        // Inicia a aplicação
+        App.init();
+    });
+    </script>
+</body>
+</html>
+
