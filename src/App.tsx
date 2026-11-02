@@ -3999,18 +3999,6 @@ const handleRepertorioPdfFull = async () => {
           </div>
         </header>
 
-        {/* Ações principais da biblioteca: atalhos no topo em todas as telas */}
-        {currentView === 'list' && sidebarTab === 'songs' && (
-          <div className="px-5 pt-3 pb-2 flex gap-2">
-            <button type="button" disabled={!isMaestro} onClick={() => { setEditingSong(null); setSelectedRepertorio(null); setCurrentView('form'); }} className="flex-1 h-10 rounded-xl bg-[#174EA6] text-white flex items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-wide disabled:opacity-40">
-              <Plus size={16} /> Música
-            </button>
-            <button type="button" disabled={!isMaestro} onClick={() => setManagingFolderType('song')} className="flex-1 h-10 rounded-xl bg-[#174EA6] text-white flex items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-wide disabled:opacity-40">
-              <FolderPlus size={16} /> Pasta
-            </button>
-          </div>
-        )}
-
         {/* Busca, ordenação e filtros permanecem disponíveis na navegação lateral. */}
         {false && currentView === 'list' && isMaestro && (
           <div className="px-5 pb-4 space-y-4">
@@ -4123,6 +4111,18 @@ const handleRepertorioPdfFull = async () => {
           </div>
         )}
       </div>
+
+      {/* Atalhos de cadastro ficam fora do cabeçalho, imediatamente abaixo dele. */}
+      {currentView === 'list' && sidebarTab === 'songs' && (
+        <div className="px-5 pt-3 pb-2 flex gap-2 bg-bg">
+          <button type="button" disabled={!isMaestro} onClick={() => { setEditingSong(null); setSelectedRepertorio(null); setCurrentView('form'); }} className="flex-1 h-10 rounded-xl bg-[#174EA6] text-white flex items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-wide disabled:opacity-40">
+            <Plus size={16} /> Música
+          </button>
+          <button type="button" disabled={!isMaestro} onClick={() => setManagingFolderType('song')} className="flex-1 h-10 rounded-xl bg-[#174EA6] text-white flex items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-wide disabled:opacity-40">
+            <FolderPlus size={16} /> Pasta
+          </button>
+        </div>
+      )}
 
       <main className={`flex-1 p-5 ${currentView === 'details' ? 'pb-0 overflow-hidden' : 'pb-32 overflow-y-auto'}`}>
         <AnimatePresence mode="wait">
@@ -7231,7 +7231,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                 </div>
               </div>
 
-              <div className="space-y-1">
+              <div className="space-y-1 col-span-3 md:col-span-1">
                 <label className="text-[10px] font-black text-text-dim uppercase tracking-widest flex items-center gap-1.5 ml-1">
                   Andamento <span className="text-red-500">*</span>
                 </label>
@@ -7249,7 +7249,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                 </div>
               </div>
 
-              <div className="space-y-1">
+              <div className="space-y-1 col-span-3 md:col-span-1">
                 <div className="flex items-center justify-between ml-1">
                   <label className="text-[10px] font-black text-text-dim uppercase tracking-widest">
                     Categoria <span className="text-red-500">*</span>
@@ -7283,10 +7283,10 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
               </div>
             </div>
           </div>
-          <div className="flex-1 lg:overflow-hidden min-h-[400px]">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4 h-full items-stretch">
+          <div className="flex-none lg:flex-1 lg:overflow-hidden min-h-0">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4 lg:h-full items-start lg:items-stretch">
               {/* COLUMN 1: Editor */}
-              <div className="flex h-full min-h-0 flex-col bg-white border border-primary rounded-2xl overflow-hidden shadow-sm">
+              <div className="flex h-auto lg:h-full min-h-0 flex-col bg-white border border-primary rounded-2xl overflow-hidden shadow-sm">
                 <div className="flex items-center justify-between px-4 h-12 bg-primary">
                   <div className="flex items-center gap-2">
                     <button 
@@ -7328,7 +7328,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
 
                 {isEditorExpanded && (
                   <>
-                    <div className="relative flex-1 min-h-[280px] lg:min-h-0 bg-white shadow-inner overflow-hidden">
+                    <div className="relative flex-none lg:flex-1 min-h-[280px] lg:min-h-0 bg-white shadow-inner overflow-hidden" style={{ height: window.matchMedia('(max-width: 1023px)').matches ? Math.max(280, formData.chordPro.split('\\n').reduce((total, line) => total + Math.max(1, Math.ceil(line.length / 58)), 0) * 18 + 64) : undefined }}>
                       <div aria-hidden="true" className="absolute z-20 inset-0 w-full h-full py-6 px-4 sm:px-8 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-words overflow-hidden pointer-events-none">
                         {formData.chordPro.split(/(\\[[^\\]\\n]+\\])/g).map((part, index) =>
                           /^\\[[^\\]\\n]+\\]$/.test(part)
@@ -7371,7 +7371,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
               </div>
               
               {/* COLUMN 2: Preview */}
-              <div className="flex h-full min-h-0 flex-col bg-white border border-primary rounded-2xl overflow-hidden shadow-sm">
+              <div className="flex h-auto lg:h-full min-h-0 flex-col bg-white border border-primary rounded-2xl overflow-hidden shadow-sm">
                 <div className="flex items-center justify-between px-4 h-12 bg-primary">
                   <div className="flex items-center gap-2">
                     <button 
