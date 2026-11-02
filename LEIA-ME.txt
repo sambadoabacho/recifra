@@ -1,0 +1,31 @@
+# #RECifra — pacote consolidado
+
+Este pacote reúne a estrutura do projeto e os arquivos mais recentes disponíveis nesta conversa.
+
+## Arquivos ativos do projeto
+- `src/App.tsx`: versão consolidada mais recente, com identidade visual, tooltips, importação/exportação de cifras e melhorias da página de adição/edição. A importação HTML continua reservada para uma etapa posterior.
+- `index.html`: título #RECifra, idioma pt-BR e registro do service worker.
+- `public/manifest.json`: configuração PWA final.
+- `public/sw.js`: service worker.
+- `public/icons/recifra-192.png` e `public/icons/recifra-512.png`: ícones PWA.
+
+## Referências
+- `referencias/ReCifra_v9_ESTAVEL_importador_html_tom_e_notacao_corrigidos.html`: versão HTML independente anterior, mantida apenas como referência para melhorias futuras. Não substitui o projeto React.
+- `referencias/marca/`: alternativas de imagens de marca geradas anteriormente.
+- `referencias/configuracoes/`: cópias avulsas dos arquivos de configuração usados na consolidação.
+
+## Como usar
+1. Faça uma cópia de segurança da pasta atual `C:\Apps\#Recifra`.
+2. Extraia este ZIP em uma pasta separada para conferir o conteúdo.
+3. Se for substituir o projeto atual, preserve seus arquivos locais de configuração e credenciais Firebase. Compare-os antes de copiar, especialmente `firebase-applet-config.json` e `.env`.
+4. Na pasta do projeto, abra o Prompt de Comando e execute:
+   `npm install`
+   Depois:
+   `npm run dev`
+5. Abra o endereço local informado pelo Vite, normalmente `http://localhost:3000/`.
+
+Observação: este pacote não inclui `node_modules`, credenciais privadas nem dados armazenados no Firebase. O ZIP-base continha a estrutura do projeto de 26/10; o `src/App.tsx` e os arquivos PWA foram atualizados com as versões consolidadas disponíveis.
+
+
+cd C:\Apps\RECifra
+npm run dev

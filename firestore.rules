@@ -55,6 +55,8 @@ service cloud.firestore {
              (data.get('createdBy', '') is string) &&
              (data.get('folderId', null) == null || data.get('folderId', '') == '' || isValidId(data.get('folderId', ''))) &&
              (data.get('pdfPages', null) == null || data.get('pdfPages', []) is list) &&
+             // Anotações visuais do VISOR, independentes do conteúdo ChordPro.
+             (data.get('visualBraces', []) is list && data.get('visualBraces', []).size() <= 100) &&
              (data.get('createdAt', request.time) is timestamp || data.get('createdAt', '') is string) &&
              (data.get('updatedAt', request.time) is timestamp || data.get('updatedAt', '') is string);
     }
@@ -124,7 +126,7 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isMaestro() && isValidSong(incoming()) && incoming().createdBy == request.auth.uid;
       allow update: if isMaestro() && isValidSong(incoming()) && (
-        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'artist', 'composition', 'category', 'tempo', 'key', 'chordPro', 'updatedAt', 'folderId', 'pdfPages'])
+        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'artist', 'composition', 'category', 'tempo', 'key', 'chordPro', 'updatedAt', 'folderId', 'pdfPages', 'visualBraces'])
       );
       allow delete: if isMaestro();
     }
