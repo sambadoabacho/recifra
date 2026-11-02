@@ -32,7 +32,7 @@ import {
   ChevronLeft, ChevronRight, ChevronUp, Play, Users, Save, X, Search, Minus, Type, Filter,
   ArrowUp, ArrowDown, Radio, Menu, Layout, Settings, ListMusic, Sun, Moon, Archive, Library,
   Share2, CheckSquare, Square, GripVertical, ArrowLeft, Download, Upload, FilePlus, Boxes, Brain, FileText, Check, Plus,
-  Folder as FolderIcon, Hash, Info, Gamepad, LayoutList, Mic2, Music2, FolderOpen, ChevronDown, Tag, RotateCcw, RotateCw, Smile, PlusCircle, FileUp, Eraser, Eye
+  Folder as FolderIcon, FolderPlus, Hash, Info, Gamepad, LayoutList, Mic2, Music2, FolderOpen, ChevronDown, Tag, RotateCcw, RotateCw, Smile, PlusCircle, FileUp, Eraser, Eye
 } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -3999,8 +3999,20 @@ const handleRepertorioPdfFull = async () => {
           </div>
         </header>
 
-        {/* List Controls (Sticky) */}
-        {currentView === 'list' && isMaestro && (
+        {/* Ações principais da biblioteca: atalhos no topo em todas as telas */}
+        {currentView === 'list' && sidebarTab === 'songs' && (
+          <div className="px-5 pt-3 pb-2 flex gap-2">
+            <button type="button" disabled={!isMaestro} onClick={() => { setEditingSong(null); setSelectedRepertorio(null); setCurrentView('form'); }} className="flex-1 h-10 rounded-xl bg-[#174EA6] text-white flex items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-wide disabled:opacity-40">
+              <Plus size={16} /> Música
+            </button>
+            <button type="button" disabled={!isMaestro} onClick={() => setManagingFolderType('song')} className="flex-1 h-10 rounded-xl bg-[#174EA6] text-white flex items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-wide disabled:opacity-40">
+              <FolderPlus size={16} /> Pasta
+            </button>
+          </div>
+        )}
+
+        {/* Busca, ordenação e filtros permanecem disponíveis na navegação lateral. */}
+        {false && currentView === 'list' && isMaestro && (
           <div className="px-5 pb-4 space-y-4">
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
@@ -4356,8 +4368,8 @@ const handleRepertorioPdfFull = async () => {
                           <div className="md:px-12 lg:px-20">
                             <ChordProRenderer 
                               text={transposeChordPro(selectedSong.chordPro, transposition)} 
-                              chordSize={13 * chordProScale}
-                              lyricSize={14 * chordProScale}
+                              chordSize={Number(localStorage.getItem('recifra_chord_size') || 13) * chordProScale}
+                              lyricSize={Number(localStorage.getItem('recifra_lyric_size') || 14) * chordProScale}
                             />
                           </div>
                         </div>
@@ -4382,8 +4394,8 @@ const handleRepertorioPdfFull = async () => {
                               <div className="md:px-12 lg:px-20">
                                 <ChordProRenderer 
                                   text={transposeChordPro(selectedSong.chordPro, transposition)} 
-                                  chordSize={13 * chordProScale}
-                                  lyricSize={14 * chordProScale}
+                                  chordSize={Number(localStorage.getItem('recifra_chord_size') || 13) * chordProScale}
+                                  lyricSize={Number(localStorage.getItem('recifra_lyric_size') || 14) * chordProScale}
                                   lineRange={pageBreakIndices[idx]}
                                 />
                               </div>
@@ -4544,93 +4556,35 @@ const handleRepertorioPdfFull = async () => {
               </div>
 
               {activeSettingsTab === 'geral' && (
-                <div className="space-y-8 max-w-2xl">
-                  {/* Perfil Informação Card */}
-                  <section className="relative overflow-hidden bg-primary text-white rounded-[32px] p-8 shadow-2xl shadow-primary/30">
-                    <div className="absolute top-0 right-0 p-8 opacity-10">
-                      <Mic2 size={120} />
+                <div className="max-w-2xl space-y-4">
+                  <section className="rounded-2xl border border-border bg-surface p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div><h3 className="text-sm font-bold text-primary">Aparência</h3><p className="text-[11px] text-text-dim">Personalize a leitura das músicas.</p></div>
+                      <Settings size={20} className="text-primary" />
                     </div>
-                    
-                    <div className="relative z-10 space-y-6">
-                      <div className="flex items-center gap-4">
-                        <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-2.5xl flex items-center justify-center border border-white/30 shadow-lg">
-                          {isMaestro ? <UserIcon size={32} /> : <Music size={32} />}
-                        </div>
-                        <div>
-                          <div className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 mb-1">Status da Conta</div>
-                          <div className="inline-flex items-center gap-2 px-3 py-1 bg-white text-primary rounded-full text-[10px] font-bold uppercase tracking-widest">
-                            {appUser?.status === 'active' ? '● Ativo' : '○ Pendente'}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 mb-1">Perfil Selecionado</div>
-                        <h2 className="text-4xl font-bold uppercase tracking-tighter leading-none">{isMaestro ? 'Maestro' : 'Músico'}</h2>
-                      </div>
-
-                      <div className="pt-4 border-t border-white/20 grid grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                          <div className="text-[8px] font-bold uppercase tracking-widest opacity-60">Nome</div>
-                          <div className="text-xs font-bold truncate">{appUser?.displayName}</div>
-                        </div>
-                        <div className="space-y-1">
-                          <div className="text-[8px] font-bold uppercase tracking-widest opacity-60">E-mail</div>
-                          <div className="text-xs font-bold truncate">{appUser?.email}</div>
-                        </div>
-                      </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button onClick={() => setDarkMode(false)} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${!darkMode ? 'border-primary bg-primary/10 text-primary' : 'border-border text-text-dim'}`}>Claro</button>
+                      <button onClick={() => setDarkMode(true)} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${darkMode ? 'border-primary bg-primary/10 text-primary' : 'border-border text-text-dim'}`}>Escuro</button>
                     </div>
                   </section>
-
-                  <section>
-                    <h3 className="text-sm font-bold uppercase tracking-widest text-text-dim mb-4">Tema:</h3>
-                    <div className="space-y-3">
-                      <button 
-                        onClick={() => setDarkMode(false)}
-                        className="flex items-center gap-4 group"
-                      >
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${!darkMode ? 'border-primary' : 'border-border'}`}>
-                          {!darkMode && <div className="w-2.5 h-2.5 bg-primary rounded-full transition-transform" />}
-                        </div>
-                        <span className={`text-lg font-bold uppercase transition-colors ${!darkMode ? 'text-primary' : 'text-text-dim group-hover:text-text-main'}`}>Claro</span>
-                      </button>
-                      <button 
-                        onClick={() => setDarkMode(true)}
-                        className="flex items-center gap-4 group"
-                      >
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${darkMode ? 'border-primary' : 'border-border'}`}>
-                          {darkMode && <div className="w-2.5 h-2.5 bg-primary rounded-full transition-transform" />}
-                        </div>
-                        <span className={`text-lg font-bold uppercase transition-colors ${darkMode ? 'text-primary' : 'text-text-dim group-hover:text-text-main'}`}>Escuro</span>
-                      </button>
+                  <section className="rounded-2xl border border-border bg-surface p-4 space-y-3">
+                    <div><h3 className="text-sm font-bold text-primary">Tipografia das músicas</h3><p className="text-[11px] text-text-dim">As preferências são aplicadas ao editor e ao visor.</p></div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="space-y-1"><span className="block text-[10px] font-bold uppercase text-text-dim">Tamanho da letra</span><input type="range" min="10" max="24" defaultValue={Number(localStorage.getItem('recifra_lyric_size') || 14)} onChange={e => { localStorage.setItem('recifra_lyric_size', e.target.value); window.dispatchEvent(new Event('recifra:display-settings')); }} className="w-full accent-[#174EA6]" /><span className="text-xs text-text-dim">{localStorage.getItem('recifra_lyric_size') || '14'} px</span></label>
+                      <label className="space-y-1"><span className="block text-[10px] font-bold uppercase text-text-dim">Tamanho dos acordes</span><input type="range" min="9" max="24" defaultValue={Number(localStorage.getItem('recifra_chord_size') || 13)} onChange={e => { localStorage.setItem('recifra_chord_size', e.target.value); window.dispatchEvent(new Event('recifra:display-settings')); }} className="w-full accent-[#174EA6]" /><span className="text-xs text-text-dim">{localStorage.getItem('recifra_chord_size') || '13'} px</span></label>
+                      <label className="space-y-1"><span className="block text-[10px] font-bold uppercase text-text-dim">Cor da letra</span><div className="flex items-center gap-2"><input type="color" defaultValue={localStorage.getItem('recifra_lyric_color') || '#333333'} onChange={e => { localStorage.setItem('recifra_lyric_color', e.target.value); window.dispatchEvent(new Event('recifra:display-settings')); }} className="h-8 w-12 rounded border border-border" /><span className="text-xs text-text-dim">{localStorage.getItem('recifra_lyric_color') || '#333333'}</span></div></label>
+                      <label className="space-y-1"><span className="block text-[10px] font-bold uppercase text-text-dim">Cor dos acordes</span><div className="flex items-center gap-2"><input type="color" defaultValue={localStorage.getItem('recifra_chord_color') || '#ff6900'} onChange={e => { localStorage.setItem('recifra_chord_color', e.target.value); window.dispatchEvent(new Event('recifra:display-settings')); }} className="h-8 w-12 rounded border border-border" /><span className="text-xs text-text-dim">{localStorage.getItem('recifra_chord_color') || '#ff6900'}</span></div></label>
                     </div>
                   </section>
-
-                  <section>
-                    <h3 className="text-sm font-bold uppercase tracking-widest text-text-dim mb-4">Qualidade de Importação PDF (Imagem):</h3>
-                    <div className="flex gap-2">
-                      {(['low', 'medium', 'high'] as PDFQuality[]).map((q) => (
-                        <button
-                          key={q}
-                          onClick={() => {
-                            setPdfQuality(q);
-                            localStorage.setItem('pdfQuality', q);
-                          }}
-                          className={`flex-1 py-3 px-4 rounded-xl border-2 font-bold uppercase tracking-widest text-[10px] transition-all ${
-                            pdfQuality === q 
-                              ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20' 
-                              : 'bg-surface border-border text-text-dim hover:border-text-dim'
-                          }`}
-                        >
-                          {q === 'low' ? 'Baixa' : q === 'medium' ? 'Média' : 'Alta'}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="mt-2 text-[10px] text-text-dim uppercase font-bold tracking-widest">
-                      {pdfQuality === 'low' && 'Ideal para economizar espaço e carregar rápido.'}
-                      {pdfQuality === 'medium' && 'Equilíbrio ideal entre nitidez e performance.'}
-                      {pdfQuality === 'high' && 'Máxima nitidez, recomendado para telas grandes.'}
-                    </p>
+                  <section className="rounded-2xl border border-border bg-surface p-4 space-y-2">
+                    <h3 className="text-sm font-bold text-primary">Conta</h3>
+                    <div className="flex items-center justify-between text-xs"><span className="text-text-dim">Perfil</span><strong>{isMaestro ? 'Maestro' : 'Músico'}</strong></div>
+                    <div className="flex items-center justify-between text-xs"><span className="text-text-dim">Status</span><strong>{appUser?.status === 'active' ? 'Ativo' : 'Pendente'}</strong></div>
+                    <div className="text-[11px] text-text-dim truncate">{appUser?.displayName} · {appUser?.email}</div>
+                  </section>
+                  <section className="rounded-2xl border border-border bg-surface p-4 space-y-2">
+                    <h3 className="text-sm font-bold text-primary">Qualidade de importação PDF</h3>
+                    <div className="flex gap-2">{(['low', 'medium', 'high'] as PDFQuality[]).map(q => <button key={q} onClick={() => { setPdfQuality(q); localStorage.setItem('pdfQuality', q); }} className={`flex-1 rounded-lg border py-2 text-[10px] font-bold uppercase ${pdfQuality === q ? 'bg-primary border-primary text-white' : 'border-border text-text-dim'}`}>{q === 'low' ? 'Baixa' : q === 'medium' ? 'Média' : 'Alta'}</button>)}</div>
                   </section>
                 </div>
               )}
@@ -6510,14 +6464,14 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
   const [isManagingCategories, setIsManagingCategories] = useState(false);
   const [isManagingLabels, setIsManagingLabels] = useState(false);
   const [isKeyPickerOpen, setIsKeyPickerOpen] = useState(false);
-  const [chordSize, setChordSize] = useState(12);
-  const [lyricSize, setLyricSize] = useState(13);
+  const [chordSize, setChordSize] = useState(() => Number(localStorage.getItem('recifra_chord_size') || 13));
+  const [lyricSize, setLyricSize] = useState(() => Number(localStorage.getItem('recifra_lyric_size') || 14));
   const [chordColor, setChordColor] = useState(() => {
     if (typeof window === 'undefined') return '#ff6900';
     const saved = localStorage.getItem('recifra_chord_color');
     return !saved || saved.toLowerCase() === '#dc2626' ? '#ff6900' : saved;
   });
-  const [lyricColor, setLyricColor] = useState('#333333');
+  const [lyricColor, setLyricColor] = useState(() => localStorage.getItem('recifra_lyric_color') || '#333333');
   const [coroColor, setCoroColor] = useState(() => {
     if (typeof window === 'undefined') return '#ffff00';
     return localStorage.getItem('recifra_coro_color') || '#ffff00';
@@ -6528,6 +6482,17 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
   const [isPreviewExpanded, setIsPreviewExpanded] = useState(true);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const originalTransposeRef = useRef<{ chordPro: string; key: string } | null>(null);
+  useEffect(() => {
+    const syncDisplaySettings = () => {
+      setChordSize(Number(localStorage.getItem('recifra_chord_size') || 13));
+      setLyricSize(Number(localStorage.getItem('recifra_lyric_size') || 14));
+      setChordColor(localStorage.getItem('recifra_chord_color') || '#ff6900');
+      setLyricColor(localStorage.getItem('recifra_lyric_color') || '#333333');
+    };
+    window.addEventListener('recifra:display-settings', syncDisplaySettings);
+    return () => window.removeEventListener('recifra:display-settings', syncDisplaySettings);
+  }, []);
+
   const [previewColumns, setPreviewColumns] = useState<1 | 2>(1);
   const importFileRef = useRef<HTMLInputElement>(null);
   const autoSaveIdRef = useRef<string | null>(initialData?.id || null);
@@ -7363,8 +7328,8 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
 
                 {isEditorExpanded && (
                   <>
-                    <div className="relative flex-1 min-h-0 bg-white shadow-inner overflow-hidden">
-                      <div aria-hidden="true" className="absolute inset-0 w-full h-full py-6 px-8 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-words overflow-hidden pointer-events-none">
+                    <div className="relative flex-1 min-h-[280px] lg:min-h-0 bg-white shadow-inner overflow-hidden">
+                      <div aria-hidden="true" className="absolute z-20 inset-0 w-full h-full py-6 px-4 sm:px-8 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-words overflow-hidden pointer-events-none">
                         {formData.chordPro.split(/(\\[[^\\]\\n]+\\])/g).map((part, index) =>
                           /^\\[[^\\]\\n]+\\]$/.test(part)
                             ? <span key={index} style={{ color: chordColor }}>{part}</span>
@@ -7376,7 +7341,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                         value={formData.chordPro}
                         onChange={e => updateChordPro(e.target.value)}
                         onKeyDown={handleEditorKeyDown}
-                        className="absolute inset-0 w-full h-full bg-transparent py-6 px-8 font-mono text-[11px] leading-relaxed text-transparent caret-zinc-900 outline-none resize-none overflow-auto placeholder:text-zinc-300 selection:bg-primary/20"
+                        className="absolute z-10 inset-0 w-full h-full bg-transparent py-6 px-4 sm:px-8 font-mono text-[11px] leading-relaxed text-transparent caret-zinc-900 outline-none resize-none overflow-auto placeholder:text-zinc-300 selection:bg-primary/20" style={{ WebkitTextFillColor: 'transparent', color: 'transparent' }}
                         placeholder="[C] Digite ou [G] cole sua [Am] cifra aqui..."
                         spellCheck={false}
                         required
@@ -7422,36 +7387,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                       <button type="button" onClick={() => setPreviewColumns(v => v === 1 ? 2 : 1)} className="h-7 px-2 rounded-md border border-zinc-200 text-[9px] font-bold text-white hover:text-primary" title="Alternar entre uma e duas colunas">{previewColumns} col.</button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div 
-                      className="flex items-center gap-2 cursor-pointer group" 
-                      onClick={() => document.getElementById('chord-color-input')?.click()}
-                    >
-                       <span className="text-[11px] font-semiblack uppercase text-white group-hover:text-zinc-200 transition-colors">Cifra</span>
-                       <div className="w-5 h-5 rounded-sm border border-white" style={{ backgroundColor: chordColor }} />
-                       <input 
-                         id="chord-color-input" 
-                         type="color" 
-                         value={chordColor} 
-                         onChange={(e) => setChordColor(e.target.value)} 
-                         className="sr-only" 
-                       />
-                    </div>
-                    <div 
-                      className="flex items-center gap-2 cursor-pointer group"
-                      onClick={() => document.getElementById('lyric-color-input')?.click()}
-                    >
-                       <span className="text-[11px] font-semiblack uppercase text-white group-hover:text-zinc-200 transition-colors">Letra</span>
-                       <div className="w-5 h-5 rounded-sm border border-white" style={{ backgroundColor: lyricColor }} />
-                       <input 
-                         id="lyric-color-input" 
-                         type="color" 
-                         value={lyricColor} 
-                         onChange={(e) => setLyricColor(e.target.value)} 
-                         className="sr-only" 
-                       />
-                    </div>
-                  </div>
+
                 </div>
                 {isPreviewExpanded && (
                   <div className="flex flex-wrap items-center gap-1 p-1.5 bg-zinc-50 border-b border-zinc-200">
