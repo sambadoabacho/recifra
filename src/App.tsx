@@ -32,7 +32,7 @@ import {
   ChevronLeft, ChevronRight, ChevronUp, Play, Users, Save, X, Search, Minus, Type, Filter,
   ArrowUp, ArrowDown, Radio, Menu, Layout, Settings, ListMusic, Sun, Moon, Archive, Library,
   Share2, CheckSquare, Square, GripVertical, ArrowLeft, Download, Upload, FilePlus, Boxes, Brain, FileText, Check, Plus,
-  Folder as FolderIcon, FolderPlus, Hash, Info, Gamepad, LayoutList, Mic2, Music2, FolderOpen, ChevronDown, Tag, RotateCcw, RotateCw, Smile, PlusCircle, FileUp, Eraser, Eye
+  Folder as FolderIcon, FolderPlus, Hash, Info, Gamepad, LayoutList, Mic2, Music2, FolderOpen, ChevronDown, Tag, Hourglass, RotateCcw, RotateCw, Smile, PlusCircle, FileUp, Eraser, Eye
 } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -212,6 +212,17 @@ export default function App() {
   const [selectedSongIdForAction, setSelectedSongIdForAction] = useState<string | null>(null);
   const [selectedRepIds, setSelectedRepIds] = useState<string[]>([]);
   const [isKeyPickerOpen, setIsKeyPickerOpen] = useState(false);
+  useEffect(() => {
+    if (!isKeyPickerOpen) return;
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && !target.closest('[data-key-picker-root]')) {
+        setIsKeyPickerOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', handleOutsidePointerDown);
+    return () => document.removeEventListener('pointerdown', handleOutsidePointerDown);
+  }, [isKeyPickerOpen]);
   const [isSharePopoverOpen, setIsSharePopoverOpen] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isSidebarActionOpen, setIsSidebarActionOpen] = useState(false);
@@ -2514,6 +2525,34 @@ const handleRepertorioPdfFull = async () => {
   const songKeyOptions = selectedSong?.key?.endsWith('m')
     ? allKeys.map(k => `${k}m`)
     : allKeys;
+
+  // Vocalistas identificados pelo título dos repertórios que contêm esta música
+  // e possuem uma tonalidade específica cadastrada para ela.
+  const vocalistKeyOptions = useMemo(() => {
+    if (!selectedSong?.id) return [];
+    // Somente repertórios vinculados à pasta/seção "VOCALISTAS".
+    // O título do repertório continua sendo o nome exibido do vocalista.
+    const vocalistFolderIds = new Set(
+      folders
+        .filter(folder => (folder.name || '').trim().toLocaleUpperCase('pt-BR') === 'VOCALISTAS')
+        .map(folder => folder.id)
+    );
+    return repertorios
+      .filter(rep =>
+        !!rep.folderId &&
+        vocalistFolderIds.has(rep.folderId) &&
+        Array.isArray(rep.songIds) &&
+        rep.songIds.includes(selectedSong.id) &&
+        typeof rep.songKeys?.[selectedSong.id] === 'string' &&
+        rep.songKeys[selectedSong.id].trim() !== ''
+      )
+      .map(rep => ({
+        id: rep.id || rep.title,
+        name: rep.title || 'Vocalista sem identificação',
+        key: rep.songKeys[selectedSong.id]
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }, [repertorios, folders, selectedSong?.id]);
   
   const handleKeySelect = async (targetKey: string) => {
     if (!selectedSong) return;
@@ -2547,6 +2586,21 @@ const handleRepertorioPdfFull = async () => {
       }
     }
   };
+
+  // A escolha por vocalista é sempre temporária: não altera songKeys nem o Firestore.
+  const handleVocalistKeySelect = (targetKey: string) => {
+    if (!selectedSong) return;
+    setTransposition(getSemitones(selectedSong.key, targetKey));
+    setIsKeyPickerOpen(false);
+  };
+
+  // Qualquer saída da página de execução descarta a transposição temporária.
+  useEffect(() => {
+    if (currentView !== 'details') {
+      setTransposition(0);
+      setIsKeyPickerOpen(false);
+    }
+  }, [currentView]);
 
   const currentKey = useMemo(() => {
     if (!selectedSong) return '';
@@ -3768,8 +3822,8 @@ const handleRepertorioPdfFull = async () => {
 
       <div className="w-full max-w-[1000px] bg-bg border-x border-border h-screen flex flex-col relative overflow-hidden">
         {/* Sticky Header Section */}
-        <div className={`sticky top-0 ${followLeader ? "z-[140]" : "z-[100]"} bg-[#E6ECF5] border-b border-[#D3DDEB] transition-colors`}>
-          <header className="px-5 py-3 flex items-center justify-between bg-[#E6ECF5]">
+        <div className={`sticky top-0 ${followLeader ? "z-[140]" : "z-[100]"} bg-[#174EA6] border-b border-[#0D3F8A] transition-colors`}>
+          <header className="px-5 py-3 flex items-center justify-between bg-[#174EA6]">
           <div className="flex items-center gap-4">
             {followLeader ? (
               <button
@@ -3787,14 +3841,56 @@ const handleRepertorioPdfFull = async () => {
             ) : (
               <button
                 onClick={() => setIsSidebarOpen(true)}
-                className="p-2 -ml-2 hover:bg-surface rounded-full transition-colors text-primary"
+                className="p-2 -ml-2 hover:bg-white/15 rounded-full transition-colors text-white"
                 title="Abrir Menu"
               >
                 <Menu size={24} />
               </button>
             )}
             <AnimatePresence mode="wait">
-              {currentView === 'details' && selectedRepertorio ? (
+              {currentView === 'details' && selectedSong && isDesktop ? (
+                <motion.div
+                  key="desktop-song-zoom"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute left-1/2 -translate-x-1/2 hidden lg:flex items-center bg-white border border-white rounded-full h-[28px] overflow-hidden shadow-sm"
+                  aria-label="Controle de zoom da música"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setChordProScale(prev => Math.max(0.6, prev - 0.1))}
+                    className="w-8 h-full flex items-center justify-center hover:bg-[#E6ECF5] text-[#174EA6] hover:text-[#0D3F8A] transition-colors border-r border-[#D3DDEB]"
+                    title="Diminuir Zoom"
+                  ><Minus size={14} /></button>
+                  <span className="px-2 text-[10px] font-black text-[#174EA6] min-w-[40px] text-center">{Math.round(chordProScale * 100)}%</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      let nextScale = chordProScale + 0.1;
+                      if (songViewRef.current && maxLineChars > 0) {
+                        const viewWidth = songViewRef.current.clientWidth;
+                        let padding = 48;
+                        if (viewWidth >= 1024) padding += 160;
+                        else if (viewWidth >= 768) padding += 96;
+                        const availableWidth = viewWidth - padding - 10;
+                        const charWidthAtScale1 = 8.4;
+                        const maxAllowedScale = availableWidth / (maxLineChars * charWidthAtScale1);
+                        nextScale = Math.min(nextScale, maxAllowedScale);
+                      }
+                      setChordProScale(Math.min(2.5, nextScale));
+                    }}
+                    className="w-8 h-full flex items-center justify-center hover:bg-[#E6ECF5] text-[#174EA6] hover:text-[#0D3F8A] transition-colors border-l border-[#D3DDEB]"
+                    title="Aumentar Zoom"
+                  ><Plus size={14} /></button>
+                  <button
+                    type="button"
+                    onClick={() => setChordProScale(1)}
+                    className="w-8 h-full flex items-center justify-center hover:bg-[#E6ECF5] text-[#174EA6] hover:text-[#0D3F8A] transition-colors border-l border-[#D3DDEB]"
+                    title="Resetar Zoom"
+                  ><RotateCcw size={14} /></button>
+                </motion.div>
+              ) : currentView === 'details' && selectedRepertorio ? (
                 <motion.div 
                   key="next-song-header"
                   initial={{ opacity: 0, x: -10 }}
@@ -3831,10 +3927,10 @@ const handleRepertorioPdfFull = async () => {
 
                     return (
                       <>
-                        <span className="text-[12px] font-black uppercase tracking-[0.25em] text-primary/70 leading-none mb-1">
+                        <span className="text-[12px] font-black uppercase tracking-[0.25em] text-white/75 leading-none mb-1">
                           Próxima:
                         </span>
-                        <span className="font-black text-xl md:text-2xl uppercase tracking-tighter text-primary truncate max-w-[160px] sm:max-w-[220px] md:max-w-[380px] leading-none">
+                        <span className="font-black text-xl md:text-2xl uppercase tracking-tighter text-white truncate max-w-[160px] sm:max-w-[220px] md:max-w-[380px] leading-none">
                           {nextItemTitle} {nextItemKey && <span className="opacity-60 text-lg md:text-xl normal-case">({nextItemKey})</span>}
                         </span>
                       </>
@@ -3847,7 +3943,7 @@ const handleRepertorioPdfFull = async () => {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  className="absolute left-1/2 -translate-x-1/2 text-sm sm:text-base font-black uppercase tracking-wide text-primary whitespace-nowrap"
+                  className="absolute left-1/2 -translate-x-1/2 text-sm sm:text-base font-black uppercase tracking-wide text-white whitespace-nowrap"
                 >
                   Editor de Música
                 </motion.div>
@@ -3857,7 +3953,7 @@ const handleRepertorioPdfFull = async () => {
                   initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 4 }}
-                  className="absolute left-1/2 -translate-x-1/2 text-sm sm:text-base font-black uppercase tracking-wide text-[#174EA6] whitespace-nowrap pointer-events-none"
+                  className="absolute left-1/2 -translate-x-1/2 text-sm sm:text-base font-black uppercase tracking-wide text-white whitespace-nowrap pointer-events-none"
                 >
                   {sidebarTab === 'songs' ? 'Músicas' : sidebarTab === 'repertorios' ? 'Repertórios' : sidebarTab === 'blocks' ? 'Blocos' : 'Ajustes'}
                 </motion.div>
@@ -3867,28 +3963,29 @@ const handleRepertorioPdfFull = async () => {
           
           <div className="flex items-center gap-3">
             {currentView === 'list' && sidebarTab === 'songs' && (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 border border-[#D3DDEB] px-3 py-1 text-[10px] font-black uppercase tracking-wide text-[#174EA6]" title="Quantidade de pastas">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white border border-white px-3 py-1 text-[10px] font-black uppercase tracking-wide text-[#174EA6]" title="Quantidade de pastas">
                 <FolderIcon size={13} /> {folders.filter(f => !f.type || f.type === 'song').length}
               </span>
             )}
             {currentView === 'blocks' && sidebarTab === 'blocks' && (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 border border-[#D3DDEB] px-3 py-1 text-[10px] font-black uppercase tracking-wide text-[#174EA6]" title="Quantidade de blocos">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white border border-white px-3 py-1 text-[10px] font-black uppercase tracking-wide text-[#174EA6]" title="Quantidade de blocos">
                 <LayoutList size={13} /> {songBlocks.length}
               </span>
             )}
             {currentView === 'repertorios' && sidebarTab === 'repertorios' && !selectedRepertorio && (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 border border-[#D3DDEB] px-3 py-1 text-[10px] font-black uppercase tracking-wide text-[#174EA6]" title="Quantidade de repertórios">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white border border-white px-3 py-1 text-[10px] font-black uppercase tracking-wide text-[#174EA6]" title="Quantidade de repertórios">
                 <ListMusic size={13} /> {repertorios.length}
               </span>
             )}
             {currentView === 'details' && selectedRepertorio && selectedSong && !selectedSong.isGroup && (
               <div className="flex items-center justify-end gap-1.5 flex-wrap">
                 <div
+                  data-key-picker-root
                   className="cursor-pointer hover:scale-105 transition-transform relative"
                   onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)}
                 >
-                  <span className="text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full bg-[#0D47A1] text-white border border-[#0D47A1] whitespace-nowrap inline-block">
-                    Tom: {currentKey}
+                  <span className="text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full bg-white text-[#174EA6] border border-white whitespace-nowrap inline-flex items-center gap-1.5">
+                    <Music size={13} /> Tom: {currentKey}
                   </span>
                   <AnimatePresence>
                     {isKeyPickerOpen && (
@@ -3910,18 +4007,37 @@ const handleRepertorioPdfFull = async () => {
                             {k}
                           </button>
                         ))}
+                        {vocalistKeyOptions.length > 0 && (
+                          <div className="col-span-4 mt-1 pt-2 border-t border-border/70">
+                            <div className="flex items-center gap-1.5 px-1 pb-1.5 text-[9px] font-black uppercase tracking-wider text-text-dim">
+                              <Mic2 size={11} /> Tons dos vocalistas
+                            </div>
+                            <div className="max-h-40 overflow-y-auto space-y-1">
+                              {vocalistKeyOptions.map(vocalist => (
+                                <button
+                                  key={vocalist.id}
+                                  type="button"
+                                  onClick={e => { e.stopPropagation(); handleVocalistKeySelect(vocalist.key); }}
+                                  className={`w-full flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${currentKey === vocalist.key ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-bg border-border text-text-dim hover:border-primary/40'}`}
+                                >
+                                  <span className="min-w-0 truncate text-[10px] font-bold">{vocalist.name}</span>
+                                  <span className="shrink-0 rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-black text-primary">{vocalist.key}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </motion.div>
                     )}
                   </AnimatePresence>
                 </div>
                 <span
-                  className="text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full text-white whitespace-nowrap"
-                  style={{ backgroundColor: selectedSong.tempo === 'Lento' ? '#698CC2' : selectedSong.tempo === 'Rápido' ? '#0D47A1' : '#527FFF' }}
+                  className="text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full text-[#174EA6] bg-white border border-white whitespace-nowrap"
                 >
-                  {selectedSong.tempo}
+                  <span className="inline-flex items-center gap-1.5"><Hourglass size={13} />{selectedSong.tempo}</span>
                 </span>
-                <span className="text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full bg-primary/10 text-primary border border-primary/20 whitespace-nowrap">
-                  {selectedSong.category}
+                <span className="text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full bg-white text-[#174EA6] border border-white whitespace-nowrap inline-flex items-center gap-1.5">
+                  <Tag size={13} /> {selectedSong.category}
                 </span>
               </div>
             )}
@@ -3932,7 +4048,7 @@ const handleRepertorioPdfFull = async () => {
                   onClick={() => window.dispatchEvent(new CustomEvent('recifra:save-song-form'))}
                   title="Salvar música"
                   aria-label="Salvar música"
-                  className="w-9 h-9 rounded-full flex items-center justify-center bg-primary text-white hover:bg-[#1565c0] transition-all shadow-md"
+                  className="w-9 h-9 rounded-full flex items-center justify-center bg-white text-[#174EA6] hover:bg-[#E6ECF5] transition-all shadow-md"
                 >
                   <Save size={17} />
                 </button>
@@ -3955,7 +4071,7 @@ const handleRepertorioPdfFull = async () => {
                       setEditingSong(selectedSong);
                       setCurrentView('form');
                     }}
-                    className="p-2 bg-primary text-white border border-primary rounded-full hover:bg-[#1565c0] hover:scale-110 active:scale-95 transition-all shadow-md"
+                    className="p-2 bg-white text-[#174EA6] border border-white rounded-full hover:bg-[#E6ECF5] hover:scale-110 active:scale-95 transition-all shadow-md"
                     title="Editar Música"
                   >
                     <Edit2 size={16} />
@@ -3964,7 +4080,7 @@ const handleRepertorioPdfFull = async () => {
 
                 <button 
                   onClick={() => downloadSongFile(selectedSong)}
-                  className="p-2 bg-primary text-white border border-primary rounded-full hover:bg-[#1565c0] hover:scale-110 active:scale-95 transition-all shadow-md"
+                  className="p-2 bg-white text-[#174EA6] border border-white rounded-full hover:bg-[#E6ECF5] hover:scale-110 active:scale-95 transition-all shadow-md"
                   title="Baixar Música"
                 >
                   <Download size={16} />
@@ -3972,7 +4088,7 @@ const handleRepertorioPdfFull = async () => {
 
                 <button 
                   onClick={() => shareAsPDF([selectedSong], selectedSong.title)}
-                  className="p-2 bg-primary text-white border border-primary rounded-full hover:bg-[#1565c0] hover:scale-110 active:scale-95 transition-all shadow-md"
+                  className="p-2 bg-white text-[#174EA6] border border-white rounded-full hover:bg-[#E6ECF5] hover:scale-110 active:scale-95 transition-all shadow-md"
                   title="Compartilhar"
                 >
                   <Share2 size={16} />
@@ -4115,10 +4231,10 @@ const handleRepertorioPdfFull = async () => {
       {/* Atalhos de cadastro ficam fora do cabeçalho, imediatamente abaixo dele. */}
       {currentView === 'list' && sidebarTab === 'songs' && (
         <div className="px-5 pt-3 pb-2 flex gap-2 bg-bg">
-          <button type="button" disabled={!isMaestro} onClick={() => { setEditingSong(null); setSelectedRepertorio(null); setCurrentView('form'); }} className="flex-1 h-10 rounded-xl bg-[#174EA6] text-white flex items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-wide disabled:opacity-40">
+          <button type="button" disabled={!isMaestro} onClick={() => { setEditingSong(null); setSelectedRepertorio(null); setCurrentView('form'); }} className="flex-1 h-12 rounded-xl bg-[#174EA6] text-white flex items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-wide disabled:opacity-40">
             <Plus size={16} /> Música
           </button>
-          <button type="button" disabled={!isMaestro} onClick={() => setManagingFolderType('song')} className="flex-1 h-10 rounded-xl bg-[#174EA6] text-white flex items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-wide disabled:opacity-40">
+          <button type="button" disabled={!isMaestro} onClick={() => setManagingFolderType('song')} className="flex-1 h-12 rounded-xl bg-[#174EA6] text-white flex items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-wide disabled:opacity-40">
             <FolderPlus size={16} /> Pasta
           </button>
         </div>
@@ -4218,80 +4334,56 @@ const handleRepertorioPdfFull = async () => {
               )}
 
               <div className="flex flex-col sm:flex-row justify-between items-start gap-4 relative z-[60] px-6 pb-4 md:px-[4.5rem] lg:px-[6.5rem]">
-                <div className="space-y-1 flex-1">
+                <div className="space-y-1 flex-1 min-w-0">
                   {!selectedSong.isGroup ? (
                     <>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="text-[18px] font-extrabold tracking-tight leading-tight mr-2 uppercase">{selectedSong.title}</h2>
-                        {sidebarTab === 'songs' && !selectedRepertorio && (
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <div className="relative">
-                              <button type="button" onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)} className="rounded-full px-2.5 py-1 text-[10px] font-black bg-[#174EA6] text-white border border-[#174EA6]">Tom: {currentKey}</button>
-                              <AnimatePresence>
-                                {isKeyPickerOpen && (
-                                  <motion.div initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} exit={{opacity:0,y:6}} className="absolute top-full left-0 mt-2 w-56 bg-white border border-border rounded-xl shadow-2xl z-[200] grid grid-cols-4 p-2 gap-1">
-                                    {songKeyOptions.map(k => <button key={k} type="button" onClick={e => { e.stopPropagation(); handleKeySelect(k); }} className={`p-2 text-[10px] font-bold rounded-lg border ${k === currentKey ? 'bg-primary border-primary text-white' : 'bg-bg border-border text-text-dim'}`}>{k}</button>)}
-                                  </motion.div>
-                                )}
-                              </AnimatePresence>
-                            </div>
-                            {selectedSong.tempo && <span className="rounded-full px-2.5 py-1 text-[10px] font-bold bg-[#4F78E8] text-white">{selectedSong.tempo}</span>}
-                            {selectedSong.category && <span className="rounded-full px-2.5 py-1 text-[10px] font-bold bg-[#EEF1F5] text-[#174EA6] border border-[#DCE3EC]">{selectedSong.category}</span>}
-                          </div>
-                        )}
-                        
-                          <div className="hidden lg:flex items-center bg-surface border border-border rounded-full h-[28px] overflow-hidden ml-2 shadow-sm">
-                            <button 
-                              onClick={() => setChordProScale(prev => Math.max(0.6, prev - 0.1))}
-                              className="w-8 h-full flex items-center justify-center hover:bg-primary/10 text-text-dim hover:text-primary transition-colors border-r border-border"
-                              title="Diminuir Zoom"
-                            >
-                              <Minus size={14} />
-                            </button>
-                            <span className="px-2 text-[10px] font-black text-text-dim min-w-[40px] text-center">
-                              {Math.round(chordProScale * 100)}%
-                            </span>
-                            <button 
-                              onClick={() => {
-                                let nextScale = chordProScale + 0.1;
-                                if (songViewRef.current && maxLineChars > 0) {
-                                  const viewWidth = songViewRef.current.clientWidth;
-                                  let padding = 48;
-                                  if (viewWidth >= 1024) padding += 160;
-                                  else if (viewWidth >= 768) padding += 96;
-                                  const availableWidth = viewWidth - padding - 10;
-                                  const charWidthAtScale1 = 8.4;
-                                  const maxAllowedScale = availableWidth / (maxLineChars * charWidthAtScale1);
-                                  nextScale = Math.min(nextScale, maxAllowedScale);
-                                }
-                                setChordProScale(Math.min(2.5, nextScale));
-                              }}
-                              className="w-8 h-full flex items-center justify-center hover:bg-primary/10 text-text-dim hover:text-primary transition-colors border-l border-border"
-                              title="Aumentar Zoom"
-                            >
-                              <Plus size={14} />
-                            </button>
-                            <button 
-                              onClick={() => setChordProScale(1)}
-                              className="w-8 h-full flex items-center justify-center hover:bg-primary/10 text-text-dim hover:text-primary transition-colors border-l border-border"
-                              title="Resetar Zoom"
-                            >
-                              <RotateCcw size={14} />
-                            </button>
-                          </div>
+                        <h2 className="inline-flex items-center gap-2 text-[18px] font-extrabold tracking-tight leading-tight mr-2 uppercase"><Music2 size={18} className="shrink-0" />{selectedSong.title}</h2>
                       </div>
-                      <p className="text-sm text-text-dim font-light mt-2">
-                        {selectedSong.artist}
-                        {selectedSong.composition && ` (${selectedSong.composition})`}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-dim font-light mt-1">
+                        <span className="inline-flex items-center gap-1.5"><Mic2 size={14} className="shrink-0" />{selectedSong.artist}</span>
+                        {selectedSong.composition && <span className="inline-flex items-center gap-1.5"><Users size={14} className="shrink-0" />{selectedSong.composition}</span>}
+                      </div>
                     </>
-                  ) : (
-                    <div className="h-0" /> 
-                  )}
+                  ) : null}
                 </div>
-                
-                <div className="flex items-center gap-2 self-end sm:self-start flex-wrap justify-end">
-                </div>
+
+                {sidebarTab === 'songs' && !selectedRepertorio && !selectedSong.isGroup && (
+                  <div className="flex flex-wrap items-center gap-1.5 justify-end self-end sm:self-start w-full sm:w-auto">
+                  <div className="relative" data-key-picker-root>
+                    <button type="button" onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)} className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-black bg-[#174EA6] text-white border border-[#174EA6]"><Music size={14} /> Tom: {currentKey}</button>
+                    <AnimatePresence>
+                      {isKeyPickerOpen && (
+                        <motion.div initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} exit={{opacity:0,y:6}} className="absolute top-full right-0 mt-2 w-56 bg-white border border-border rounded-xl shadow-2xl z-[200] grid grid-cols-4 p-2 gap-1">
+                          {songKeyOptions.map(k => <button key={k} type="button" onClick={e => { e.stopPropagation(); handleKeySelect(k); }} className={`p-2 text-[10px] font-bold rounded-lg border ${k === currentKey ? 'bg-primary border-primary text-white' : 'bg-bg border-border text-text-dim'}`}>{k}</button>)}
+                          {vocalistKeyOptions.length > 0 && (
+                            <div className="col-span-4 mt-1 pt-2 border-t border-border/70">
+                              <div className="flex items-center gap-1.5 px-1 pb-1.5 text-[9px] font-black uppercase tracking-wider text-text-dim">
+                                <Mic2 size={11} /> Tons dos vocalistas
+                              </div>
+                              <div className="max-h-40 overflow-y-auto space-y-1">
+                                {vocalistKeyOptions.map(vocalist => (
+                                  <button
+                                    key={vocalist.id}
+                                    type="button"
+                                    onClick={e => { e.stopPropagation(); handleVocalistKeySelect(vocalist.key); }}
+                                    className={`w-full flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${currentKey === vocalist.key ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-bg border-border text-text-dim hover:border-primary/40'}`}
+                                  >
+                                    <span className="min-w-0 truncate text-[10px] font-bold">{vocalist.name}</span>
+                                    <span className="shrink-0 rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-black text-primary">{vocalist.key}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                  {selectedSong.tempo && <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-bold bg-[#4F78E8] text-white"><Hourglass size={14} />{selectedSong.tempo}</span>}
+                  {selectedSong.category && <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-bold bg-[#EEF1F5] text-[#174EA6] border border-[#DCE3EC]"><Tag size={14} />{selectedSong.category}</span>}
+                  </div>
+                )}
               </div>
 
               <div 
@@ -7116,9 +7208,9 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
             </div>
 
             {/* Linha 2: tom, pasta, andamento e categoria */}
-            <div className="grid grid-cols-3 md:grid-cols-2 lg:grid-cols-[0.7fr_1.2fr_1.3fr_1.4fr] gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-[0.7fr_1.2fr_1.3fr_1.4fr] gap-3">
               {/* Artista: posição mobile */}
-              <div className="md:hidden space-y-1">
+              <div className="md:hidden col-span-2 space-y-1">
                 <label className="text-[10px] font-black text-text-dim uppercase tracking-widest flex items-center gap-1.5 ml-1">Artista / Intérprete</label>
                 <div className="relative group">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-dim group-focus-within:text-primary transition-colors">
@@ -7231,7 +7323,8 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                 </div>
               </div>
 
-              <div className="space-y-1 col-span-3 md:col-span-1">
+              <div className="col-span-2 lg:col-span-2 grid grid-cols-2 gap-3 min-w-0">
+              <div className="space-y-1 min-w-0">
                 <label className="text-[10px] font-black text-text-dim uppercase tracking-widest flex items-center gap-1.5 ml-1">
                   Andamento <span className="text-red-500">*</span>
                 </label>
@@ -7249,7 +7342,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                 </div>
               </div>
 
-              <div className="space-y-1 col-span-3 md:col-span-1">
+              <div className="space-y-1 min-w-0">
                 <div className="flex items-center justify-between ml-1">
                   <label className="text-[10px] font-black text-text-dim uppercase tracking-widest">
                     Categoria <span className="text-red-500">*</span>
@@ -7280,6 +7373,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                     <ChevronDown size={16} />
                   </div>
                 </div>
+              </div>
               </div>
             </div>
           </div>
@@ -7328,7 +7422,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
 
                 {isEditorExpanded && (
                   <>
-                    <div className="relative flex-none lg:flex-1 min-h-[280px] lg:min-h-0 bg-white shadow-inner overflow-hidden" style={{ height: window.matchMedia('(max-width: 1023px)').matches ? Math.max(280, formData.chordPro.split('\\n').reduce((total, line) => total + Math.max(1, Math.ceil(line.length / 58)), 0) * 18 + 64) : undefined }}>
+                    <div className="relative flex-none lg:flex-1 min-h-[280px] lg:min-h-0 bg-white shadow-inner overflow-hidden" style={{ height: window.matchMedia('(max-width: 1023px)').matches ? Math.max(280, formData.chordPro.split(/\r?\n/).reduce((total, line) => { const usableWidth = Math.max(120, window.innerWidth - 64); const charsPerVisualLine = Math.max(18, Math.floor(usableWidth / 6.6)); return total + Math.max(1, Math.ceil(line.length / charsPerVisualLine)); }, 0) * 18 + 64) : undefined }}>
                       <div aria-hidden="true" className="absolute z-20 inset-0 w-full h-full py-6 px-4 sm:px-8 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-words overflow-hidden pointer-events-none">
                         {formData.chordPro.split(/(\\[[^\\]\\n]+\\])/g).map((part, index) =>
                           /^\\[[^\\]\\n]+\\]$/.test(part)
