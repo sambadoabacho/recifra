@@ -3984,7 +3984,7 @@ const handleRepertorioPdfFull = async () => {
                   className="cursor-pointer hover:scale-105 transition-transform relative"
                   onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)}
                 >
-                  <span className="text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full bg-white text-[#174EA6] border border-white whitespace-nowrap inline-flex items-center gap-1.5">
+                  <span className="hidden sm:inline-flex text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full bg-white text-[#174EA6] border border-white whitespace-nowrap items-center gap-1.5">
                     <Music size={13} /> Tom: {currentKey}
                   </span>
                   <AnimatePresence>
@@ -4032,7 +4032,7 @@ const handleRepertorioPdfFull = async () => {
                   </AnimatePresence>
                 </div>
                 <span
-                  className="text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full text-[#174EA6] bg-white border border-white whitespace-nowrap"
+                  className="hidden sm:inline-flex text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full text-[#174EA6] bg-white border border-white whitespace-nowrap"
                 >
                   <span className="inline-flex items-center gap-1.5"><Hourglass size={13} />{selectedSong.tempo}</span>
                 </span>
@@ -4380,8 +4380,8 @@ const handleRepertorioPdfFull = async () => {
                       )}
                     </AnimatePresence>
                   </div>
-                  {selectedSong.tempo && <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-bold bg-[#4F78E8] text-white"><Hourglass size={14} />{selectedSong.tempo}</span>}
-                  {selectedSong.category && <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-bold bg-[#EEF1F5] text-[#174EA6] border border-[#DCE3EC]"><Tag size={14} />{selectedSong.category}</span>}
+                  {selectedSong.tempo && <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-bold bg-[#4F78E8] text-white"><Hourglass size={14} />{selectedSong.tempo}</span>}
+                  {selectedSong.category && <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-bold bg-[#EEF1F5] text-[#174EA6] border border-[#DCE3EC]"><Tag size={14} />{selectedSong.category}</span>}
                   </div>
                 )}
               </div>
