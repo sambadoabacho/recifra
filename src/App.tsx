@@ -213,6 +213,16 @@ export default function App() {
   const [selectedRepIds, setSelectedRepIds] = useState<string[]>([]);
   const [isKeyPickerOpen, setIsKeyPickerOpen] = useState(false);
   const [isMobileSongActionsOpen, setIsMobileSongActionsOpen] = useState(false);
+  const [openArchiveMenu, setOpenArchiveMenu] = useState<string | null>(null);
+  useEffect(() => {
+    if (!openArchiveMenu) return;
+    const handleArchiveMenuOutside = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && !target.closest('[data-archive-menu-root]')) setOpenArchiveMenu(null);
+    };
+    document.addEventListener('pointerdown', handleArchiveMenuOutside);
+    return () => document.removeEventListener('pointerdown', handleArchiveMenuOutside);
+  }, [openArchiveMenu]);
   useEffect(() => {
     if (!isMobileSongActionsOpen) return;
     const handleOutsidePointerDown = (event: PointerEvent) => {
@@ -953,8 +963,9 @@ export default function App() {
 
   const autoSaveSong = async (songData: Partial<Song>, draftId?: string | null): Promise<string | null> => {
     if (!user) return null;
+    if (!songData.folderId && !editingSong?.folderId) { alert('Selecione uma pasta para salvar esta música.'); return null; }
     try {
-      const payload = { ...songData, updatedAt: new Date().toISOString() };
+      const payload = { ...songData, folderId: songData.folderId || editingSong?.folderId, updatedAt: new Date().toISOString() };
       if (editingSong?.id) {
         await updateDoc(doc(db, 'songs', editingSong.id), payload);
         return editingSong.id;
@@ -993,6 +1004,7 @@ export default function App() {
 
   const saveSong = async (songData: Partial<Song>, draftId?: string | null) => {
     if (!user) return;
+    if (!songData.folderId && !editingSong?.folderId) { alert('Não é possível salvar uma música na raiz. Selecione uma pasta.'); throw new Error('Pasta obrigatória para salvar música.'); }
     try {
       if (editingSong?.id) {
         // 1. Salvar na música original
@@ -1023,6 +1035,145 @@ export default function App() {
     } catch (error) {
       console.error('Error saving song:', error);
       throw error;
+    }
+  };
+
+  const safeDownloadName = (value: string | undefined, fallback: string) => {
+    const cleaned = (value || '').normalize('NFC').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, '_').replace(/^_+|_+$/g, '');
+    return cleaned || fallback;
+  };
+
+  // Mesmo conteúdo e metadados do botão "Baixar música" do cabeçalho.
+  const buildSongDownloadContent = (song: Song) => {
+    const folderName = folders.find(f => f.id === song.folderId)?.name || '';
+    const header = [
+      `{title: ${song.title || ''}}`,
+      `{artist: ${song.artist || ''}}`,
+      `{composition: ${song.composition || ''}}`,
+      `{key: ${song.key || ''}}`,
+      `{tempo: ${song.tempo || ''}}`,
+      `{category: ${song.category || ''}}`,
+      folderName ? `{folder: ${folderName}}` : '',
+      '',
+      ''
+    ].filter(Boolean).join('\n');
+    return header + (song.chordPro || '');
+  };
+
+  const exportSingleSong = async (song: Song) => {
+    const blob = new Blob([buildSongDownloadContent(song)], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${safeDownloadName(song.title, 'musica')}.cho`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const exportSongPdf = (song: Song) => {
+    // Reutiliza o mesmo renderizador ChordOver empregado no Visor do Editor.
+    const pdf = generatePDF([song], song.title || 'Música', true) as jsPDF;
+    pdf.save(`${safeDownloadName(song.title, 'musica')}.pdf`);
+  };
+
+  const shareSong = async (song: Song) => {
+    const text = `${song.title} — ${song.artist || ''} | Tom: ${song.key || ''}`;
+    if (navigator.share) { try { await navigator.share({ title: song.title, text }); } catch {} }
+    else if (navigator.clipboard) { await navigator.clipboard.writeText(text); alert('Informações copiadas para compartilhar.'); }
+  };
+
+  const renameArchiveFolder = async (folder: Folder) => {
+    const name = window.prompt('Novo nome da pasta:', folder.name);
+    if (!name?.trim()) return;
+    await updateDoc(doc(db, 'folders', folder.id!), { name: name.trim() });
+  };
+
+  const exportAllSongsArchive = async () => {
+    const list = filteredSongs;
+    if (!list.length) { alert('Não há músicas para exportar.'); return; }
+    const zip = new JSZip();
+    const root = zip.folder('Todas as músicas');
+    list.forEach(song => {
+      const header = [`{title: ${song.title}}`, `{artist: ${song.artist || ''}}`, `{key: ${song.key || ''}}`, ''].join('\\n');
+      const filename = `${(song.title || 'musica').replace(/[^\\w-]+/g, '_')}.cho`;
+      root?.file(filename, header + (song.chordPro || ''));
+    });
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'Todas_as_musicas.zip'; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportAllSongsList = () => {
+    const pdf = new jsPDF();
+    pdf.setFontSize(16); pdf.text('Lista de músicas — Todas', 15, 20); pdf.setFontSize(10);
+    let y = 30;
+    filteredSongs.forEach(song => {
+      if (y > 280) { pdf.addPage(); y = 20; }
+      pdf.text(`${song.title || ''} | ${song.artist || ''} | Tom: ${song.key || ''}`, 15, y); y += 7;
+    });
+    pdf.save('Todas_as_musicas.pdf');
+  };
+
+  const exportArchiveFolder = async (folder: Folder) => {
+    const list = songs.filter(song => song.folderId === folder.id);
+    if (!list.length) { alert('Esta pasta não contém músicas.'); return; }
+    const zip = new JSZip();
+    const dir = zip.folder(safeDownloadName(folder.name, 'Pasta'));
+    const usedNames = new Set<string>();
+    list.forEach(song => {
+      const base = safeDownloadName(song.title, 'musica');
+      let filename = `${base}.cho`;
+      let suffix = 2;
+      while (usedNames.has(filename.toLocaleLowerCase())) filename = `${base}_${suffix++}.cho`;
+      usedNames.add(filename.toLocaleLowerCase());
+      dir?.file(filename, buildSongDownloadContent(song));
+    });
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${safeDownloadName(folder.name, 'Pasta')}.zip`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const exportArchiveFolderList = (folder: Folder) => {
+    const list = songs.filter(song => song.folderId === folder.id);
+    const pdf = new jsPDF(); pdf.setFontSize(16); pdf.text(`Músicas — ${folder.name}`, 15, 20); pdf.setFontSize(10);
+    let y = 30; list.forEach(song => { if (y > 280) { pdf.addPage(); y = 20; } pdf.text(`${song.title || ''} | ${song.artist || ''} | Tom: ${song.key || ''}`, 15, y); y += 7; });
+    pdf.save(`${(folder.name || 'pasta').replace(/[^\\w-]+/g, '_')}.pdf`);
+  };
+
+  const deleteArchiveFolderWithSongs = async (folder: Folder) => {
+    const list = songs.filter(song => song.folderId === folder.id);
+    if (!list.length) { if (window.confirm(`Excluir a pasta “${folder.name}”?`)) await deleteDoc(doc(db, 'folders', folder.id!)); return; }
+    const choice = window.confirm(`A pasta “${folder.name}” contém ${list.length} música(s).\n\nOK = excluir a pasta E todas as músicas.\nCancelar = escolher outra pasta para mover as músicas.`);
+    if (choice) {
+      if (!window.confirm('Confirma a exclusão definitiva da pasta e de todas as músicas dentro dela?')) return;
+      for (const song of list) await deleteDoc(doc(db, 'songs', song.id!));
+      await deleteDoc(doc(db, 'folders', folder.id!));
+      return;
+    }
+    const targets = folders.filter(f => f.id !== folder.id && (!f.type || f.type === 'song'));
+    if (!targets.length) { alert('Crie outra pasta antes de mover as músicas.'); return; }
+    const options = targets.map((f, i) => `${i + 1}. ${f.name}`).join('\\n');
+    const answer = window.prompt(`Escolha a pasta de destino digitando o número:\n${options}`);
+    const target = targets[Number(answer) - 1]; if (!target) return;
+    for (const song of list) await updateDoc(doc(db, 'songs', song.id!), { folderId: target.id });
+    await deleteDoc(doc(db, 'folders', folder.id!));
+  };
+
+  const handleSongContextAction = async (song: Song, action: string) => {
+    if (action === 'export') { await exportSingleSong(song); return; }
+    if (action === 'pdf') { exportSongPdf(song); return; }
+    if (action === 'share') { await shareSong(song); return; }
+    if (action === 'move') {
+      const targets = folders.filter(f => (!f.type || f.type === 'song') && f.id !== song.folderId);
+      if (!targets.length) { alert('Não há outra pasta disponível.'); return; }
+      const choice = window.prompt(`Mover “${song.title}” para qual pasta?\\n${targets.map((f,i)=>`${i+1}. ${f.name}`).join('\\n')}\\n\\nDigite o número da pasta:`);
+      const target = targets[Number(choice)-1]; if (!target) return;
+      await updateDoc(doc(db, 'songs', song.id!), { folderId: target.id });
     }
   };
 
@@ -1750,7 +1901,7 @@ export default function App() {
           const url = URL.createObjectURL(blob);
           const link = document.createElement('a');
           link.href = url;
-          link.download = `${song.title.replace(/\s+/g, '_')}.cho`;
+          link.download = `${safeDownloadName(song.title, 'musica')}.cho`;
           link.click();
           URL.revokeObjectURL(url);
         }
@@ -2455,23 +2606,11 @@ const handleRepertorioPdfFull = async () => {
       });
       pdf.save(`${song.title} - ${song.artist}.pdf`);
     } else {
-      const folderName = folders.find(f => f.id === song.folderId)?.name || '';
-      const header = [
-        `{title: ${song.title}}`,
-        `{artist: ${song.artist}}`,
-        `{composition: ${song.composition || ''}}`,
-        `{key: ${song.key}}`,
-        `{tempo: ${song.tempo}}`,
-        `{category: ${song.category}}`,
-        folderName ? `{folder: ${folderName}}` : '',
-        '',
-        ''
-      ].filter(Boolean).join('\n');
-      const blob = new Blob([header + song.chordPro], { type: 'text/plain' });
+      const blob = new Blob([buildSongDownloadContent(song)], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${song.title.replace(/\s+/g, '_')}.cho`;
+      link.download = `${safeDownloadName(song.title, 'musica')}.cho`;
       link.click();
       URL.revokeObjectURL(url);
     }
@@ -2989,14 +3128,13 @@ const handleRepertorioPdfFull = async () => {
                   </div>
 
                   {/* TODAS Folder */}
-                  <div className="mx-2 mt-2 mb-2 border border-[#ECEDEF] rounded-[14px] overflow-hidden bg-[#EEF1F5]">
-                    <button 
+                  <div className={`relative mx-2 mt-2 mb-2 border border-[#ECEDEF] rounded-[14px] overflow-visible bg-[#EEF1F5] ${openArchiveMenu === "all" ? "z-[1000]" : ""}`}>
+                    <div className="w-full min-h-[48px] flex items-center justify-between gap-3 px-3.5 py-2.5 bg-[#EEF1F5] transition-colors">
+                    <button type="button"
                       onClick={() => {
-                        setExpandedFolders(prev => 
-                          prev.includes('all') ? [] : ['all']
-                        );
+                        setExpandedFolders(prev => prev.includes('all') ? [] : ['all']);
                       }}
-                      className="w-full min-h-[48px] flex items-center justify-between gap-3 px-3.5 py-2.5 bg-[#EEF1F5] transition-colors"
+                      className="flex-1 min-w-0 flex items-center justify-between gap-3 text-left"
                     >
                       <div className="flex w-full min-w-0 items-center gap-3">
                         {!isDesktop && isSelectionMode ? (
@@ -3018,8 +3156,18 @@ const handleRepertorioPdfFull = async () => {
                         <span className="min-w-0 flex-1 text-left text-[13px] font-bold uppercase tracking-[0.08em] text-[#174EA6]">TODAS</span>
                         <span className="ml-auto text-[10px] min-w-[18px] h-[18px] px-1 bg-[#174EA6] rounded-[4px] text-white font-bold flex items-center justify-center tabular-nums">{filteredSongs.length}</span>
                       </div>
-                      <ChevronRight size={16} className={`text-[#174EA6] transition-transform duration-300 ${expandedFolders.includes('all') ? 'rotate-90' : ''}`} />
                     </button>
+                    <div data-archive-menu-root className="relative shrink-0" onClick={e => e.stopPropagation()}>
+                      <button type="button" aria-label="Ações de todas as músicas" onClick={() => setOpenArchiveMenu(openArchiveMenu === 'all' ? null : 'all')} className="p-1.5 text-[#174EA6] hover:bg-white rounded-md transition-colors"><MoreVertical size={18}/></button>
+                      {openArchiveMenu === 'all' && <div onClick={e => e.stopPropagation()} className="absolute right-0 top-9 z-[5000] min-w-48 bg-white border border-[#B8D0F0] rounded-xl shadow-2xl p-1.5 text-left text-[#174EA6]">
+                        <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); exportAllSongsArchive(); }}><Download size={14}/>Exportar ZIP (.cho)</button>
+                        <div className="border-t border-[#D6E4F7]"/>
+                        <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); exportAllSongsList(); }}><FileText size={14}/>Listar Músicas</button>
+                        <div className="border-t border-[#D6E4F7]"/>
+                        <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); if (navigator.share) navigator.share({title:'Todas as músicas',text:`Acervo com ${filteredSongs.length} músicas`}).catch(()=>{}); else { navigator.clipboard?.writeText(`Acervo com ${filteredSongs.length} músicas`); alert('Informações copiadas.'); } }}><Share2 size={14}/>Compartilhar</button>
+                      </div>}
+                    </div>
+                    </div>
                     <AnimatePresence>
                       {expandedFolders.includes('all') && (
                         <motion.div 
@@ -3033,6 +3181,7 @@ const handleRepertorioPdfFull = async () => {
                           ) : (
                             filteredSongs.map(song => (
                               <SongSidebarItem 
+                                onAction={(action: string) => handleSongContextAction(song, action)}
                                 isMobile={!isDesktop}
                                 key={song.id}
                                 song={song}
@@ -3075,15 +3224,17 @@ const handleRepertorioPdfFull = async () => {
                     if (folderSongs.length === 0 && searchTerm) return null;
 
                     return (
-                      <div key={folder.id} className="mx-2 mt-2 border border-[#ECEDEF] rounded-[14px] overflow-hidden bg-[#EEF1F5]">
-                        <button 
-                          onClick={() => {
-                            setExpandedFolders(prev => 
-                              isExpanded ? [] : [folder.id!]
-                            );
-                          }}
-                          className="w-full min-h-[48px] flex items-center justify-between gap-3 px-3.5 py-2.5 bg-[#EEF1F5] transition-colors"
-                        >
+                      <div key={folder.id} className={`relative mx-2 mt-2 border border-[#ECEDEF] rounded-[14px] ${openArchiveMenu === folder.id ? 'z-[1000] overflow-visible' : 'overflow-visible'} bg-[#EEF1F5]`}>
+                        <div className="w-full min-h-[48px] flex items-center justify-between gap-3 px-3.5 py-2.5 bg-[#EEF1F5] transition-colors">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setExpandedFolders(prev =>
+                                isExpanded ? [] : [folder.id!]
+                              );
+                            }}
+                            className="flex flex-1 min-w-0 items-center justify-between gap-3 text-left"
+                          >
                           <div className="flex flex-1 min-w-0 items-center gap-3">
                             {!isDesktop && isSelectionMode ? (
                               <span
@@ -3104,8 +3255,18 @@ const handleRepertorioPdfFull = async () => {
                             <span className="min-w-0 flex-1 text-left text-[13px] font-bold uppercase tracking-[0.08em] truncate max-w-[140px] text-[#174EA6]">{folder.name}</span>
                             <span className="ml-auto text-[10px] min-w-[18px] h-[18px] px-1 bg-[#174EA6] rounded-[4px] text-white font-bold flex items-center justify-center tabular-nums">{folderSongs.length}</span>
                           </div>
-                          <ChevronRight size={16} className={`text-text-dim transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`} />
-                        </button>
+                          </button>
+                          <div data-archive-menu-root className="relative flex items-center gap-1">
+                            <button type="button" aria-label="Ações da pasta" onClick={(e) => { e.stopPropagation(); setOpenArchiveMenu(openArchiveMenu === folder.id ? null : folder.id!); }} className="p-1.5 text-[#174EA6] hover:bg-white rounded-md"><MoreVertical size={18} /></button>
+                            {openArchiveMenu === folder.id && <div onClick={e => e.stopPropagation()} className="absolute right-0 top-9 z-[5000] min-w-48 bg-white border border-[#B8D0F0] rounded-xl shadow-2xl p-1.5 text-left text-[#174EA6]">
+                              <button className="w-full flex items-center gap-2 text-left px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); exportArchiveFolder(folder); }}><Download size={14}/>Download</button>
+                              <div className="border-t border-[#D6E4F7]"/>
+                              <button className="w-full flex items-center gap-2 text-left px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); exportArchiveFolderList(folder); }}><FileText size={14}/>Listar Músicas</button>
+                              <div className="border-t border-[#D6E4F7]"/>
+                              <button className="w-full flex items-center gap-2 text-left px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); if (navigator.share) navigator.share({title: folder.name, text: `Pasta ${folder.name} — ${folderSongs.length} músicas`}).catch(() => {}); else { navigator.clipboard?.writeText(`Pasta ${folder.name} — ${folderSongs.length} músicas`); alert('Informações copiadas.'); } }}><Share2 size={14}/>Compartilhar</button>
+                            </div>}
+                          </div>
+                        </div>
                         
                         <AnimatePresence>
                           {isExpanded && (
@@ -3120,6 +3281,7 @@ const handleRepertorioPdfFull = async () => {
                               ) : (
                                 folderSongs.map(song => (
                                   <SongSidebarItem 
+                                    onAction={(action: string) => handleSongContextAction(song, action)}
                                     isMobile={!isDesktop}
                                     key={song.id}
                                     song={song}
@@ -3157,41 +3319,8 @@ const handleRepertorioPdfFull = async () => {
                     );
                   })}
 
-                  {/* Root Songs (Archive Home) */}
-                  <div className="px-2 mt-4 mb-1">
-                    <span className="text-[9px] font-black uppercase text-text-dim/50 tracking-[0.2em] ml-1">Sem Pasta (Raiz)</span>
-                  </div>
-                  {filteredSongs.filter(s => !s.folderId).map(song => (
-                    <SongSidebarItem 
-                      isMobile={!isDesktop}
-                      key={song.id}
-                      song={song}
-                      isSelectionMode={isSelectionMode}
-                      isSelected={selectedSongIds.includes(song.id!)}
-                      onToggleSelect={() => {
-                        setSelectedSongIds(prev => 
-                          prev.includes(song.id!) ? prev.filter(id => id !== song.id) : [...prev, song.id!]
-                        );
-                      }}
-                      onLongPress={() => {
-                        if (!isMaestro) return;
-                        setIsSelectionMode(true);
-                        setSelectedSongIds([song.id!]);
-                      }}
-                      onClick={() => {
-                        if (isSelectionMode) {
-                          setSelectedSongIds(prev => 
-                            prev.includes(song.id!) ? prev.filter(id => id !== song.id) : [...prev, song.id!]
-                          );
-                        } else {
-                          setSelectedSong(song);
-                          setCurrentView('details');
-                          setIsSidebarOpen(false);
-                          updateLiveSong(song.id!);
-                        }
-                      }}
-                    />
-                  ))}
+                  {/* Músicas sem pasta não são exibidas: novos salvamentos são bloqueados sem pasta. */}
+
                 </div>
               )}
 
@@ -5321,7 +5450,17 @@ const handleRepertorioPdfFull = async () => {
 );
 }
 
-function SongSidebarItem({ song, isSelectionMode, isSelected, onToggleSelect, onClick, onLongPress, isMobile }: any) {
+function SongSidebarItem({ song, isSelectionMode, isSelected, onToggleSelect, onClick, onLongPress, onAction, isMobile }: any) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const songMenuRootRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const closeOnOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !songMenuRootRef.current?.contains(event.target)) setMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutside);
+    return () => document.removeEventListener('pointerdown', closeOnOutside);
+  }, [menuOpen]);
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTriggered = useRef(false);
   const clearPressTimer = () => {
@@ -5340,14 +5479,16 @@ function SongSidebarItem({ song, isSelectionMode, isSelected, onToggleSelect, on
   const handlePressEnd = () => clearPressTimer();
 
   return (
-    <div className="relative border-b border-border last:border-0 overflow-hidden">
-      <motion.button
-        type="button"
+    <div className={`relative border-b border-border last:border-0 overflow-visible ${menuOpen ? 'z-[2000]' : ''}`}>
+      <motion.div
+        role="button"
+        tabIndex={0}
         onPointerDown={handlePressStart}
         onPointerUp={handlePressEnd}
         onPointerLeave={handlePressEnd}
         onPointerCancel={handlePressEnd}
         onContextMenu={(event) => { if (isMobile) event.preventDefault(); }}
+        onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onClick?.(); } }}
         onClick={() => {
           if (longPressTriggered.current) {
             longPressTriggered.current = false;
@@ -5374,8 +5515,19 @@ function SongSidebarItem({ song, isSelectionMode, isSelected, onToggleSelect, on
             <div className="text-[12px] text-primary font-bold shrink-0 text-right">{song.key}</div>
           </div>
         </div>
-        {!isSelectionMode && <ChevronLeft size={18} className="rotate-180 text-border group-hover:text-primary" />}
-      </motion.button>
+        {!isSelectionMode && <span ref={songMenuRootRef} className="relative shrink-0" onClick={e => e.stopPropagation()}>
+          <button type="button" aria-label="Ações da música" onClick={() => setMenuOpen(v => !v)} className="p-1.5 text-[#174EA6] hover:bg-white rounded-md transition-colors duration-150"><MoreVertical size={18} /></button>
+          {menuOpen && <div className="absolute right-0 top-8 z-[5000] min-w-44 bg-white border border-[#B8D0F0] rounded-xl shadow-2xl p-1.5 text-[#174EA6]">
+            <button className="w-full flex items-center gap-2 text-left px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setMenuOpen(false); onAction?.('move'); }}><FolderOpen size={14}/>Mover</button>
+            <div className="border-t border-[#D6E4F7]"/>
+            <button className="w-full flex items-center gap-2 text-left px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setMenuOpen(false); onAction?.('export'); }}><FileText size={14}/>ChordPro</button>
+            <div className="border-t border-[#D6E4F7]"/>
+            <button className="w-full flex items-center gap-2 text-left px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setMenuOpen(false); onAction?.('pdf'); }}><Music size={14}/>Chord Over</button>
+            <div className="border-t border-[#D6E4F7]"/>
+            <button className="w-full flex items-center gap-2 text-left px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setMenuOpen(false); onAction?.('share'); }}><Share2 size={14}/>Compartilhar</button>
+          </div>}
+        </span>}
+      </motion.div>
     </div>
   );
 }
