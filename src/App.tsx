@@ -3984,7 +3984,7 @@ const handleRepertorioPdfFull = async () => {
                   className="cursor-pointer hover:scale-105 transition-transform relative"
                   onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)}
                 >
-                  <span className="hidden sm:inline-flex text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full bg-white text-[#174EA6] border border-white whitespace-nowrap items-center gap-1.5">
+                  <span className="text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full bg-white text-[#174EA6] border border-white whitespace-nowrap inline-flex items-center gap-1.5">
                     <Music size={13} /> Tom: {currentKey}
                   </span>
                   <AnimatePresence>
@@ -4032,7 +4032,7 @@ const handleRepertorioPdfFull = async () => {
                   </AnimatePresence>
                 </div>
                 <span
-                  className="hidden sm:inline-flex text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full text-[#174EA6] bg-white border border-white whitespace-nowrap"
+                  className="text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full text-[#174EA6] bg-white border border-white whitespace-nowrap"
                 >
                   <span className="inline-flex items-center gap-1.5"><Hourglass size={13} />{selectedSong.tempo}</span>
                 </span>
@@ -4338,52 +4338,45 @@ const handleRepertorioPdfFull = async () => {
                   {!selectedSong.isGroup ? (
                     <>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="inline-flex items-center gap-2 text-[18px] font-extrabold tracking-tight leading-tight mr-2 uppercase"><Music2 size={18} className="shrink-0" />{selectedSong.title}</h2>
+                        <h2 className="inline-flex items-center gap-2 text-[18px] font-extrabold tracking-tight leading-tight uppercase"><Music2 size={18} className="shrink-0" />{selectedSong.title}</h2>
+                        {sidebarTab === 'songs' && !selectedRepertorio && (
+                          <div className="inline-flex flex-wrap items-center gap-1.5">
+                            <div className="relative" data-key-picker-root>
+                              <button type="button" onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)} className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-black bg-[#174EA6] text-white border border-[#174EA6]"><Music size={14} /> Tom: {currentKey}</button>
+                              <AnimatePresence>
+                                {isKeyPickerOpen && (
+                                  <motion.div initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} exit={{opacity:0,y:6}} className="absolute top-full left-0 mt-2 w-56 bg-white border border-border rounded-xl shadow-2xl z-[200] grid grid-cols-4 p-2 gap-1">
+                                    {songKeyOptions.map(k => <button key={k} type="button" onClick={e => { e.stopPropagation(); handleKeySelect(k); }} className={`p-2 text-[10px] font-bold rounded-lg border ${k === currentKey ? 'bg-primary border-primary text-white' : 'bg-bg border-border text-text-dim'}`}>{k}</button>)}
+                                    {vocalistKeyOptions.length > 0 && (
+                                      <div className="col-span-4 mt-1 pt-2 border-t border-border/70">
+                                        <div className="flex items-center gap-1.5 px-1 pb-1.5 text-[9px] font-black uppercase tracking-wider text-text-dim"><Mic2 size={11} /> Tons dos vocalistas</div>
+                                        <div className="max-h-40 overflow-y-auto space-y-1">
+                                          {vocalistKeyOptions.map(vocalist => (
+                                            <button key={vocalist.id} type="button" onClick={e => { e.stopPropagation(); handleVocalistKeySelect(vocalist.key); }} className={`w-full flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${currentKey === vocalist.key ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-bg border-border text-text-dim hover:border-primary/40'}`}>
+                                              <span className="min-w-0 truncate text-[10px] font-bold">{vocalist.name}</span>
+                                              <span className="shrink-0 rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-black text-primary">{vocalist.key}</span>
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                            {selectedSong.tempo && <span className="hidden lg:inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-bold bg-[#4F78E8] text-white"><Hourglass size={14} />{selectedSong.tempo}</span>}
+                            {selectedSong.category && <span className="hidden lg:inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-bold bg-[#EEF1F5] text-[#174EA6] border border-[#DCE3EC]"><Tag size={14} />{selectedSong.category}</span>}
+                          </div>
+                        )}
                       </div>
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-dim font-light mt-1">
-                        <span className="inline-flex items-center gap-1.5"><Mic2 size={14} className="shrink-0" />{selectedSong.artist}</span>
-                        {selectedSong.composition && <span className="inline-flex items-center gap-1.5"><Users size={14} className="shrink-0" />{selectedSong.composition}</span>}
+                      <div className="flex flex-nowrap items-center gap-x-4 gap-y-1 text-sm text-text-dim font-light mt-1 min-w-0">
+                        <span className="inline-flex items-center gap-1.5 min-w-0 flex-1 truncate"><Mic2 size={14} className="shrink-0" /><span className="truncate">{selectedSong.artist}</span></span>
+                        {selectedSong.composition && <span className="inline-flex items-center gap-1.5 min-w-0 flex-1 truncate"><Users size={14} className="shrink-0" /><span className="truncate">{selectedSong.composition}</span></span>}
                       </div>
                     </>
                   ) : null}
                 </div>
 
-                {sidebarTab === 'songs' && !selectedRepertorio && !selectedSong.isGroup && (
-                  <div className="flex flex-wrap items-center gap-1.5 justify-end self-end sm:self-start w-full sm:w-auto">
-                  <div className="relative" data-key-picker-root>
-                    <button type="button" onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)} className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-black bg-[#174EA6] text-white border border-[#174EA6]"><Music size={14} /> Tom: {currentKey}</button>
-                    <AnimatePresence>
-                      {isKeyPickerOpen && (
-                        <motion.div initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} exit={{opacity:0,y:6}} className="absolute top-full right-0 mt-2 w-56 bg-white border border-border rounded-xl shadow-2xl z-[200] grid grid-cols-4 p-2 gap-1">
-                          {songKeyOptions.map(k => <button key={k} type="button" onClick={e => { e.stopPropagation(); handleKeySelect(k); }} className={`p-2 text-[10px] font-bold rounded-lg border ${k === currentKey ? 'bg-primary border-primary text-white' : 'bg-bg border-border text-text-dim'}`}>{k}</button>)}
-                          {vocalistKeyOptions.length > 0 && (
-                            <div className="col-span-4 mt-1 pt-2 border-t border-border/70">
-                              <div className="flex items-center gap-1.5 px-1 pb-1.5 text-[9px] font-black uppercase tracking-wider text-text-dim">
-                                <Mic2 size={11} /> Tons dos vocalistas
-                              </div>
-                              <div className="max-h-40 overflow-y-auto space-y-1">
-                                {vocalistKeyOptions.map(vocalist => (
-                                  <button
-                                    key={vocalist.id}
-                                    type="button"
-                                    onClick={e => { e.stopPropagation(); handleVocalistKeySelect(vocalist.key); }}
-                                    className={`w-full flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${currentKey === vocalist.key ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-bg border-border text-text-dim hover:border-primary/40'}`}
-                                  >
-                                    <span className="min-w-0 truncate text-[10px] font-bold">{vocalist.name}</span>
-                                    <span className="shrink-0 rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-black text-primary">{vocalist.key}</span>
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                  {selectedSong.tempo && <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-bold bg-[#4F78E8] text-white"><Hourglass size={14} />{selectedSong.tempo}</span>}
-                  {selectedSong.category && <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-bold bg-[#EEF1F5] text-[#174EA6] border border-[#DCE3EC]"><Tag size={14} />{selectedSong.category}</span>}
-                  </div>
-                )}
               </div>
 
               <div 
