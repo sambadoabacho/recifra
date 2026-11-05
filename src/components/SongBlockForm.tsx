@@ -7,6 +7,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 interface SongBlockFormProps {
   songs: Song[];
   user: any;
+  folderId?: string;
   onSave: (block: SongBlock) => void;
   onCancel: () => void;
 }
@@ -21,7 +22,7 @@ const FILTROS = [
   { id: 'neighborKeys', label: 'Tons Vizinhos' }
 ];
 
-export function SongBlockForm({ songs, user, onSave, onCancel }: SongBlockFormProps) {
+export function SongBlockForm({ songs, user, folderId, onSave, onCancel }: SongBlockFormProps) {
   const [mode, setMode] = useState<'manual' | 'ia'>('manual');
   const [title, setTitle] = useState('');
   const [manualSearch, setManualSearch] = useState('');
@@ -49,6 +50,7 @@ export function SongBlockForm({ songs, user, onSave, onCancel }: SongBlockFormPr
     if (selectedSongIds.length === 0) return alert('Selecione ao menos uma música para o bloco.');
     onSave({
       title: title.trim(),
+      folderId,
       totalSongs: selectedSongIds.length,
       profile: 'Manual',
       maxPerBlock: selectedSongIds.length,
@@ -98,7 +100,7 @@ export function SongBlockForm({ songs, user, onSave, onCancel }: SongBlockFormPr
       });
       const result = JSON.parse(response.text || '{}');
       if (Array.isArray(result.suggestions) && result.suggestions.length) {
-        onSave({ title: title.trim(), totalSongs, profile, maxPerBlock, filters: selectedFilters, suggestions: result.suggestions, createdBy: user?.uid || '', createdAt: new Date().toISOString() } as SongBlock);
+        onSave({ title: title.trim(), folderId, totalSongs, maxPerBlock, filters: selectedFilters, suggestions: result.suggestions, createdBy: user?.uid || '', createdAt: new Date().toISOString() } as SongBlock);
       } else alert('A IA não retornou blocos. Ajuste os parâmetros e tente novamente.');
     } catch (error) {
       console.error('Erro ao gerar blocos:', error);

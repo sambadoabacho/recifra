@@ -19,7 +19,7 @@ export function SongBlockList({ blocks, songs, onSelect, onDelete, isMaestro = t
           <Brain size={40} className="text-zinc-700" />
         </div>
         <div className="space-y-1">
-          <h3 className="text-xl font-bold text-zinc-300 tracking-tight">Nenhum conjunto de blocos</h3>
+          <h3 className="text-xl font-bold text-zinc-300 tracking-tight">Nenhum conjunto</h3>
           <p className="text-sm">Clique em <span className="text-primary font-bold">+ NOVO BLOCO</span> para criar sequências inteligentes manualmente ou com auxílio da IA.</p>
         </div>
       </div>
@@ -91,12 +91,13 @@ export function SongBlockDetails({ blockSet, songs, repertorios = [], onAddToRep
     const [targetBySuggestion, setTargetBySuggestion] = useState<Record<number, string>>({});
     const [addingIndex, setAddingIndex] = useState<number | null>(null);
     const [editingTitle, setEditingTitle] = useState<number | null>(null);
-    const [editingSetTitle, setEditingSetTitle] = useState(false);
-    const [setNameDraft, setSetNameDraft] = useState(blockSet.title || '');
     const [titleDraft, setTitleDraft] = useState('');
     const [dragSong, setDragSong] = useState<{songId:string; from:number} | null>(null);
     const [dragBlock, setDragBlock] = useState<number | null>(null);
     const [saving, setSaving] = useState(false);
+    const [addingSongsToBlock, setAddingSongsToBlock] = useState<number | null>(null);
+    const [songSearchByBlock, setSongSearchByBlock] = useState<Record<number, string>>({});
+    const [selectedSongsByBlock, setSelectedSongsByBlock] = useState<Record<number, string[]>>({});
     const suggestions = Array.isArray(blockSet.suggestions) ? blockSet.suggestions : [];
 
     const persist = async (nextSuggestions: any[]) => {
@@ -108,27 +109,28 @@ export function SongBlockDetails({ blockSet, songs, repertorios = [], onAddToRep
     };
 
     const renameGroup = (idx:number) => {
-        const next = suggestions.map((g:any,i:number) => i === idx ? {...g, name:titleDraft.trim() || g.name} : g);
-        void persist(next); setEditingTitle(null);
-    };
-
-    const renameSet = async () => {
-        const title = setNameDraft.trim();
-        if (!title || title === blockSet.title) { setEditingSetTitle(false); return; }
-        setSaving(true);
-        try { await onUpdate?.({ ...blockSet, title }); }
-        finally { setSaving(false); setEditingSetTitle(false); }
-    };
-
-    const addNewGroup = () => {
-        const next = [...suggestions, {
-            id: `manual-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
-            name: `Novo Bloco ${suggestions.length + 1}`,
-            songIds: [],
-            reason: 'Bloco criado manualmente pelo usuário.'
-        }];
+        const name = titleDraft.trim();
+        if (!name) return;
+        const next = suggestions.map((g:any,i:number) => i === idx ? {...g, name} : g);
         void persist(next);
+        setEditingTitle(null);
+        setTitleDraft('');
     };
+
+
+    const addSongsToGroup = (idx:number) => {
+        const selected = selectedSongsByBlock[idx] || [];
+        if (!selected.length) return;
+        const next = suggestions.map((g:any,i:number) => i === idx
+            ? {...g, songIds: [...(g.songIds || []), ...selected.filter((id:string) => !(g.songIds || []).includes(id))]}
+            : g
+        );
+        void persist(next);
+        setSelectedSongsByBlock(prev => ({...prev, [idx]:[]}));
+        setSongSearchByBlock(prev => ({...prev, [idx]:''}));
+        setAddingSongsToBlock(null);
+    };
+
 
     const removeSong = (idx:number, sid:string) => {
         const next = suggestions.map((g:any,i:number) => i === idx ? {...g, songIds:(g.songIds || []).filter((id:string)=>id!==sid)} : g);
@@ -146,6 +148,13 @@ export function SongBlockDetails({ blockSet, songs, repertorios = [], onAddToRep
         setDragSong(null);
     };
 
+    const deleteGroup = (idx:number) => {
+        const groupName = suggestions[idx]?.name || `Bloco ${idx + 1}`;
+        if (!window.confirm(`Deseja excluir o bloco "${groupName}" deste conjunto?`)) return;
+        const next = suggestions.filter((_:any, i:number) => i !== idx);
+        void persist(next);
+    };
+
     const moveGroup = (from:number,to:number) => {
         if (from === to || from < 0 || to < 0 || to >= suggestions.length) return;
         const next = [...suggestions];
@@ -157,56 +166,22 @@ export function SongBlockDetails({ blockSet, songs, repertorios = [], onAddToRep
 
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="flex items-start justify-between gap-4">
-                <div className="space-y-1 min-w-0">
-                    {editingSetTitle ? (
-                        <div className="flex items-center gap-2">
-                            <input autoFocus value={setNameDraft} onChange={e=>setSetNameDraft(e.target.value)}
-                                onKeyDown={e=>{if(e.key==='Enter')void renameSet();if(e.key==='Escape')setEditingSetTitle(false);}}
-                                className="min-w-0 max-w-sm px-2 py-1 rounded border border-[#174EA6]/40 text-xl font-extrabold text-[#174EA6]"/>
-                            <button onClick={()=>void renameSet()} className="text-[#174EA6]" title="Salvar nome do conjunto"><Check size={18}/></button>
-                            <button onClick={()=>setEditingSetTitle(false)} className="text-gray-500" title="Cancelar"><X size={18}/></button>
-                        </div>
-                    ) : (
-                        <div className="flex items-center gap-2">
-                            <h2 className="text-2xl font-extrabold tracking-tight text-[#174EA6]">{blockSet.title}</h2>
-                            <button onClick={()=>{setSetNameDraft(blockSet.title || '');setEditingSetTitle(true);}}
-                                className="p-1.5 rounded text-[#174EA6] hover:bg-[#174EA6]/10" title="Renomear conjunto de blocos"><Pencil size={15}/></button>
-                        </div>
-                    )}
-                    <p className="text-text-dim text-xs italic">Criado em {new Date(blockSet.createdAt).toLocaleDateString('pt-BR')}</p>
-                </div>
-                <div className="hidden md:flex gap-2">
-                    {[['Músicas', blockSet.totalSongs ?? suggestions.reduce((n:any,g:any)=>n+(g.songIds||[]).length,0)],['Blocos', suggestions.length]].map(([label,value]:any)=>(
-                        <div key={label} className="px-3 py-2 bg-white border border-[#174EA6]/20 rounded-lg text-center">
-                            <div className="text-[9px] font-bold text-[#174EA6] uppercase">{label}</div>
-                            <div className="text-sm font-black text-[#174EA6]">{value}</div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
             {saving && <div className="text-xs text-[#174EA6] font-semibold">Salvando alterações...</div>}
 
-            <div className="flex justify-end">
-                <button onClick={addNewGroup} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-[#174EA6] text-white text-xs font-bold hover:bg-[#123d83]">
-                    <Plus size={15}/> Adicionar bloco
-                </button>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pb-12">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 pb-12">
                 {suggestions.map((suggestion:any, idx:number) => (
                     <div key={suggestion.id || `${idx}-${suggestion.name}`} draggable
                         onDragStart={() => setDragBlock(idx)}
                         onDragOver={e => e.preventDefault()}
                         onDrop={e => { e.preventDefault(); if (dragBlock !== null) moveGroup(dragBlock,idx); }}
-                        className="bg-white border border-[#174EA6]/20 rounded-xl overflow-hidden flex flex-col shadow-sm">
-                        <div className="px-4 py-3 bg-[#174EA6]/5 border-b border-[#174EA6]/20 flex items-center gap-2">
+                        className="bg-white border border-[#174EA6]/20 rounded-xl overflow-hidden flex flex-col shadow-sm min-w-0">
+                        <div className="px-3 py-2.5 bg-[#174EA6]/5 border-b border-[#174EA6]/20 flex items-center gap-1.5">
                             <button className="text-[#174EA6] cursor-grab" title="Arrastar bloco"><GripVertical size={17}/></button>
                             <div className="flex-1 min-w-0">
                                 {editingTitle === idx ? (
                                     <div className="flex gap-1">
                                         <input autoFocus value={titleDraft} onChange={e=>setTitleDraft(e.target.value)}
+                                            onKeyDown={e=>{if(e.key==='Enter')renameGroup(idx);if(e.key==='Escape')setEditingTitle(null);}}
                                             className="min-w-0 flex-1 px-2 py-1 rounded border border-[#174EA6]/40 text-sm text-[#174EA6]"/>
                                         <button onClick={()=>renameGroup(idx)} className="text-[#174EA6]" title="Salvar nome"><Check size={17}/></button>
                                         <button onClick={()=>setEditingTitle(null)} className="text-gray-500" title="Cancelar"><X size={17}/></button>
@@ -214,9 +189,61 @@ export function SongBlockDetails({ blockSet, songs, repertorios = [], onAddToRep
                                 ) : <h4 className="text-base font-bold text-[#174EA6] truncate">{suggestion.name || `Bloco ${idx+1}`}</h4>}
                             </div>
                             <button onClick={()=>{setEditingTitle(idx);setTitleDraft(suggestion.name || '')}} className="p-1.5 text-[#174EA6] hover:bg-[#174EA6]/10 rounded" title="Renomear bloco"><Pencil size={15}/></button>
+                            <button
+                                type="button"
+                                onClick={() => setAddingSongsToBlock(addingSongsToBlock === idx ? null : idx)}
+                                className={`p-1.5 rounded hover:bg-[#174EA6]/10 ${addingSongsToBlock === idx ? 'bg-[#174EA6]/10 text-[#174EA6]' : 'text-[#174EA6]'}`}
+                                title={addingSongsToBlock === idx ? 'Fechar seleção de músicas' : 'Adicionar músicas'}
+                                aria-label={addingSongsToBlock === idx ? 'Fechar seleção de músicas' : 'Adicionar músicas'}
+                            >
+                                <Plus size={17}/>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => deleteGroup(idx)}
+                                className="p-1.5 rounded text-red-500 hover:bg-red-50"
+                                title="Excluir bloco"
+                                aria-label="Excluir bloco"
+                            >
+                                <Trash2 size={16}/>
+                            </button>
                         </div>
 
-                        <div className="p-4 space-y-2 flex-1 min-h-20"
+                        {addingSongsToBlock === idx && (
+                            <div className="px-4 pt-3">
+                                <div className="rounded-lg border border-[#174EA6]/20 bg-[#174EA6]/[0.03] p-3 space-y-2">
+                                    <input
+                                        value={songSearchByBlock[idx] || ''}
+                                        onChange={e => setSongSearchByBlock(prev => ({...prev, [idx]:e.target.value}))}
+                                        placeholder="Buscar música ou artista..."
+                                        className="w-full h-9 px-3 rounded-lg border border-gray-200 bg-white text-xs outline-none focus:border-[#174EA6]"
+                                    />
+                                    <div className="max-h-40 overflow-y-auto space-y-1">
+                                        {songs.filter(song => !(suggestion.songIds || []).includes(song.id || '') &&
+                                            `${song.title} ${song.artist}`.toLocaleLowerCase('pt-BR').includes((songSearchByBlock[idx] || '').toLocaleLowerCase('pt-BR'))
+                                        ).map(song => (
+                                            <label key={song.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-white text-xs cursor-pointer">
+                                                <input type="checkbox" checked={(selectedSongsByBlock[idx] || []).includes(song.id || '')}
+                                                    onChange={e => setSelectedSongsByBlock(prev => ({...prev,[idx]:e.target.checked
+                                                        ? [...(prev[idx] || []), song.id || '']
+                                                        : (prev[idx] || []).filter(id => id !== song.id)}))}/>
+                                                <span className="min-w-0 flex-1 truncate font-semibold text-gray-800">{song.title}</span>
+                                                <span className="min-w-0 truncate text-gray-500">{song.artist}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <div className="flex justify-end">
+                                        <button type="button" disabled={!(selectedSongsByBlock[idx] || []).length}
+                                            onClick={() => addSongsToGroup(idx)}
+                                            className="inline-flex items-center gap-1 rounded-lg bg-[#174EA6] px-3 py-2 text-[10px] font-bold text-white disabled:opacity-40">
+                                            <Plus size={12}/> Adicionar selecionadas ({(selectedSongsByBlock[idx] || []).length})
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="p-3 pt-2.5 space-y-2 flex-1 min-h-20"
                             onDragOver={e=>e.preventDefault()}
                             onDrop={e=>{e.preventDefault(); if(dragSong) moveSong(dragSong.songId,dragSong.from,idx);}}>
                             {(suggestion.songIds || []).map((sid:string, songIndex:number) => {

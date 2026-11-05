@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 
 interface ChordProRendererProps {
   text: string;
@@ -17,32 +17,12 @@ type ChordTextChunk = {
 
 export const ChordProRenderer: React.FC<ChordProRendererProps & { lineRange?: [number, number] }> = ({
   text,
-  chordSize,
-  lyricSize,
-  chordColor,
-  lyricColor,
+  chordSize = 13,
+  lyricSize = 14,
+  chordColor = '#dc2626',
+  lyricColor = 'inherit',
   lineRange
 }) => {
-  const [displayPrefs, setDisplayPrefs] = useState(() => ({
-    chordSize: Number(localStorage.getItem('recifra_chord_size') || 13),
-    lyricSize: Number(localStorage.getItem('recifra_lyric_size') || 14),
-    chordColor: localStorage.getItem('recifra_chord_color') || '#ff6900',
-    lyricColor: localStorage.getItem('recifra_lyric_color') || '#333333'
-  }));
-  useEffect(() => {
-    const sync = () => setDisplayPrefs({
-      chordSize: Number(localStorage.getItem('recifra_chord_size') || 13),
-      lyricSize: Number(localStorage.getItem('recifra_lyric_size') || 14),
-      chordColor: localStorage.getItem('recifra_chord_color') || '#ff6900',
-      lyricColor: localStorage.getItem('recifra_lyric_color') || '#333333'
-    });
-    window.addEventListener('recifra:display-settings', sync);
-    return () => window.removeEventListener('recifra:display-settings', sync);
-  }, []);
-  const effectiveChordSize = chordSize ?? displayPrefs.chordSize;
-  const effectiveLyricSize = lyricSize ?? displayPrefs.lyricSize;
-  const effectiveChordColor = chordColor ?? displayPrefs.chordColor;
-  const effectiveLyricColor = lyricColor ?? displayPrefs.lyricColor;
   // Não usar trim(): os offsets precisam corresponder exatamente ao texto ChordPro original.
   const lines = text.split('\n');
   const lineOffsets: number[] = [];
@@ -56,7 +36,7 @@ export const ChordProRenderer: React.FC<ChordProRendererProps & { lineRange?: [n
   let textFillColor: string | null = null;
 
   return (
-    <div className="font-mono chordpro-responsive-content w-full max-w-full min-w-0" style={{ fontSize: `${effectiveLyricSize}px`, color: effectiveLyricColor, lineHeight: 1.1 }}>
+    <div className="font-mono chordpro-responsive-content w-full max-w-full min-w-0" style={{ fontSize: `${lyricSize}px`, color: lyricColor, lineHeight: 1.1 }}>
       {lines.map((line, i) => {
         const trimmed = line.trim();
         const lineSourceStart = lineOffsets[i];
@@ -78,7 +58,7 @@ export const ChordProRenderer: React.FC<ChordProRendererProps & { lineRange?: [n
               isChorus = false;
             } else {
               directiveResult = (
-                <div key={i} data-line-index={i} className="italic text-text-dim my-2 border-l-2 border-primary pl-2 music-line" style={{ fontSize: `${effectiveLyricSize * 0.9}px` }}>
+                <div key={i} data-line-index={i} className="italic text-text-dim my-2 border-l-2 border-primary pl-2 music-line" style={{ fontSize: `${lyricSize * 0.9}px` }}>
                   {value}
                 </div>
               );
@@ -152,7 +132,7 @@ export const ChordProRenderer: React.FC<ChordProRendererProps & { lineRange?: [n
             className={`flex flex-nowrap whitespace-pre music-line chordpro-responsive-line ${isChorus ? 'font-black' : ''} ${isLabel ? 'font-bold uppercase tracking-wider' : 'mb-[0.1em]'}`}
             data-has-chords={hasChords}
             data-has-lyrics={hasLyrics}
-            style={isLabel ? { fontSize: `${effectiveLyricSize * 0.9}px`, color: 'var(--color-primary)' } : {}}
+            style={isLabel ? { fontSize: `${lyricSize * 0.9}px`, color: 'var(--color-primary)' } : {}}
           >
             {chunks.map((chunk, j) => {
               const chordLen = chunk.chord ? chunk.chord.length : 0;
@@ -172,7 +152,7 @@ export const ChordProRenderer: React.FC<ChordProRendererProps & { lineRange?: [n
                       data-source-kind="chord"
                       data-source-start={chunk.chord !== null && chunk.chordSourceStart !== undefined ? chunk.chordSourceStart : undefined}
                       data-source-end={chunk.chord !== null && chunk.chordSourceStart !== undefined ? chunk.chordSourceStart + (chunk.chord?.length || 0) + 2 : undefined}
-                      style={{ fontSize: `${effectiveChordSize}px`, color: effectiveChordColor }}
+                      style={{ fontSize: `${chordSize}px`, color: chordColor }}
                     >
                       {chunk.chord || ' '}
                     </span>

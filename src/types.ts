@@ -25,7 +25,7 @@ export interface Folder {
   id?: string;
   name: string;
   createdBy: string;
-  type?: 'song' | 'repertorio';
+  type?: 'song' | 'repertorio' | 'block';
   order?: number;
 }
 
@@ -66,6 +66,7 @@ export interface ChordBank {
 
 export interface SongBlock {
   id?: string;
+  folderId?: string;
   title: string;
   totalSongs: number;
   profile: string;

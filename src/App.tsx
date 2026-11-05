@@ -254,7 +254,9 @@ export default function App() {
   const bottomArchiveRef = useRef<HTMLDivElement>(null);
   const [isExportFolderModalOpen, setIsExportFolderModalOpen] = useState(false);
   const [isPickingFolderForNewRep, setIsPickingFolderForNewRep] = useState(false);
-  const [managingFolderType, setManagingFolderType] = useState<'song' | 'repertorio' | null>(null);
+  const [isPickingFolderForNewBlock, setIsPickingFolderForNewBlock] = useState(false);
+  const [selectedBlockFolderId, setSelectedBlockFolderId] = useState<string | null>(null);
+  const [managingFolderType, setManagingFolderType] = useState<'song' | 'repertorio' | 'block' | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const sidebarActionRef = useRef<HTMLDivElement>(null);
   const sidebarCreateMenuRef = useRef<HTMLDivElement>(null);
@@ -1089,6 +1091,7 @@ export default function App() {
     if (!user) return;
     try {
       await addDoc(collection(db, 'song_blocks'), blockData);
+      setSelectedBlockFolderId(null);
       setCurrentView('blocks');
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'song_blocks');
@@ -1133,13 +1136,85 @@ export default function App() {
     if (!updatedBlock.id) return;
     try {
       const { id, ...data } = updatedBlock as any;
-      await updateDoc(doc(db, 'song_blocks', id), { ...data, updatedAt: new Date().toISOString() });
+      await updateDoc(doc(db, 'song_blocks', id), data);
       setSongBlocks(prev => prev.map(item => item.id === id ? updatedBlock : item));
       setSelectedBlockSet(updatedBlock);
     } catch (error) {
       console.error('Erro ao atualizar bloco:', error);
       handleFirestoreError(error, OperationType.WRITE, 'song_blocks');
     }
+  };
+
+  const openBlockFolder = async (folderId: string, addNewCard = false) => {
+    const folder = folders.find(item => item.id === folderId && (item.type as string) === 'block');
+    if (!folder) return;
+
+    try {
+      const existing = songBlocks.find(item => item.folderId === folderId);
+      let target: SongBlock;
+
+      if (existing?.id) {
+        target = { ...existing, title: folder.name };
+        if (addNewCard) {
+          const current = Array.isArray(existing.suggestions) ? existing.suggestions : [];
+          const nextSuggestions = [...current, {
+            id: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            name: `Novo Bloco ${current.length + 1}`,
+            songIds: [],
+            reason: 'Bloco criado manualmente pelo usuário.'
+          }];
+          target = { ...existing, title: folder.name, suggestions: nextSuggestions };
+          await updateDoc(doc(db, 'song_blocks', existing.id), { suggestions: nextSuggestions });
+          setSongBlocks(prev => prev.map(item => item.id === existing.id ? target : item));
+        }
+      } else {
+        const initialSuggestions = addNewCard ? [{
+          id: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          name: 'Novo Bloco 1',
+          songIds: [],
+          reason: 'Bloco criado manualmente pelo usuário.'
+        }] : [];
+        const newData = {
+          title: folder.name,
+          folderId,
+          totalSongs: 0,
+          profile: 'Manual',
+          maxPerBlock: 3,
+          filters: [],
+          suggestions: initialSuggestions,
+          createdBy: user?.uid || '',
+          createdAt: new Date().toISOString()
+        } as SongBlock;
+        const created = await addDoc(collection(db, 'song_blocks'), newData);
+        target = { ...newData, id: created.id };
+        setSongBlocks(prev => [...prev, target]);
+      }
+
+      setSelectedBlockFolderId(folderId);
+      setSelectedBlockSet(target);
+      setCurrentView('block-details');
+      setSidebarTab('blocks');
+      setSidebarView('tabs');
+      setIsSidebarOpen(false);
+    } catch (error) {
+      console.error('Erro ao abrir conjunto de blocos:', error);
+      handleFirestoreError(error, OperationType.WRITE, 'song_blocks');
+    }
+  };
+
+  const addBlockToSelectedSet = () => {
+    if (!selectedBlockSet) return;
+    const current = Array.isArray(selectedBlockSet.suggestions) ? selectedBlockSet.suggestions : [];
+    const next = {
+      ...selectedBlockSet,
+      suggestions: [...current, {
+        id: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name: `Novo Bloco ${current.length + 1}`,
+        songIds: [],
+        reason: 'Bloco criado manualmente pelo usuário.'
+      }]
+    } as SongBlock;
+    void updateSongBlock(next);
   };
 
   const deleteSongBlock = async (id: string) => {
@@ -2010,21 +2085,56 @@ export default function App() {
     input.click();
   };
 
-  const handleRepertorioPdfList = () => {
-    if (!selectedRepertorio) return;
+  const handleRepertorioSonglist = (repertorioToExport: any) => {
+    if (!repertorioToExport) return;
+    // Mantém a sequência do repertório e ignora os marcadores de blocos.
+    const repertorioSongs = (repertorioToExport.songIds || [])
+      .filter((id: string) => !String(id).startsWith('group:'))
+      .map((id: string) => {
+        const song = songs.find(item => item.id === id);
+        if (!song) return null;
+        // Aplica a tonalidade escolhida no set à cifra, não apenas ao cabeçalho do PDF.
+        const selectedKey = repertorioToExport.songKeys?.[song.id] || song.key;
+        const originalKey = song.key || detectKey(song.chordPro || '');
+        const semitones = selectedKey && originalKey
+          ? getSemitones(originalKey, selectedKey)
+          : 0;
+        const transposedChordPro = semitones !== 0
+          ? transposeChordPro(song.chordPro || '', semitones)
+          : (song.chordPro || '');
+        return { ...song, key: selectedKey, chordPro: transposedChordPro };
+      })
+      .filter(Boolean) as Song[];
+
+    if (repertorioSongs.length === 0) return;
+    const pdf = generatePDF(repertorioSongs, repertorioToExport.title || 'Songlist', true) as jsPDF;
+    pdf.save(`SONGLIST_${getExportFileName(repertorioToExport.title || 'Repertorio')}.pdf`);
+  };
+
+  const handleRepertorioPdfList = (repertorioToExport: any = selectedRepertorio) => {
+    if (!repertorioToExport) return;
     const doc = new jsPDF();
     let y = 20;
-    const songIds = selectedRepertorio.songIds || [];
-    const songGroups = selectedRepertorio.songGroups || [];
+    const songIds = repertorioToExport.songIds || [];
+    const songGroups = repertorioToExport.songGroups || [];
+    // Vocalistas são repertórios cadastrados dentro da pasta "VOCALISTAS".
+    const vocalistFolderIds = new Set(
+      folders
+        .filter((folder: any) => (folder.name || '').trim().toLocaleUpperCase('pt-BR') === 'VOCALISTAS')
+        .map((folder: any) => folder.id)
+    );
+    const vocalistRepertorios = repertorios.filter((rep: any) =>
+      !!rep.folderId && vocalistFolderIds.has(rep.folderId)
+    );
     
     doc.setFontSize(16);
     doc.setFont('helvetica', 'bold');
-    doc.text(selectedRepertorio.title.toUpperCase(), 20, y);
+    doc.text(repertorioToExport.title.toUpperCase(), 20, y);
     
-    if (selectedRepertorio.date) {
+    if (repertorioToExport.date) {
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
-      const dateDisplay = new Date(selectedRepertorio.date + 'T12:00:00').toLocaleDateString('pt-BR');
+      const dateDisplay = new Date(repertorioToExport.date + 'T12:00:00').toLocaleDateString('pt-BR');
       doc.text(dateDisplay, 190, y, { align: 'right' });
     }
     
@@ -2035,8 +2145,9 @@ export default function App() {
     doc.text('#', 20, y);
     doc.text('Título / Artista', 30, y);
     doc.text('Tom', 120, y);
-    doc.text('Categoria', 145, y);
-    doc.text('Andamento', 175, y);
+    doc.text('Vocalista(s)', 145, y);
+    doc.text('Pasta', 172, y);
+    
     y += 5;
     doc.setDrawColor(200, 200, 200);
     doc.line(20, y - 3, 190, y - 3);
@@ -2055,8 +2166,9 @@ export default function App() {
         doc.text('#', 20, y);
         doc.text('Título / Artista', 30, y);
         doc.text('Tom', 120, y);
-        doc.text('Categoria', 145, y);
-        doc.text('Andamento', 175, y);
+        doc.text('Vocalista(s)', 145, y);
+        doc.text('Pasta', 172, y);
+        
         y += 5;
         doc.line(20, y - 3, 190, y - 3);
         doc.setFont('helvetica', 'normal');
@@ -2091,15 +2203,32 @@ export default function App() {
           
           doc.text(song.title.toUpperCase().substring(0, 50), 30, y);
           
+          const selectedSongKey = repertorioToExport.songKeys?.[song.id] || song.key || '-';
           doc.setTextColor(13, 71, 161);
-          doc.text(song.key || '-', 120, y);
+          doc.text(selectedSongKey, 120, y);
           doc.setTextColor(0, 0, 0);
-          
+
           doc.setFontSize(8);
           doc.setFont('helvetica', 'normal');
-          doc.text((song.category || '').substring(0, 18), 145, y);
-          doc.text(song.tempo || '-', 175, y);
-          
+          const songVocalistRepertorios = vocalistRepertorios.filter((rep: any) =>
+            Array.isArray(rep.songIds) && rep.songIds.includes(song.id)
+          );
+          // O tom escolhido no setlist identifica o vocalista quando coincide
+          // com a tonalidade cadastrada no repertório daquele vocalista.
+          const matchingVocalists = songVocalistRepertorios.filter((rep: any) =>
+            typeof rep.songKeys?.[song.id] === 'string' &&
+            rep.songKeys[song.id].trim() === selectedSongKey
+          );
+          const identifiedVocalists = matchingVocalists.length > 0
+            ? matchingVocalists
+            : songVocalistRepertorios;
+          const vocalistNames = [...new Set(
+            identifiedVocalists.map((rep: any) => (rep.title || '').trim()).filter(Boolean)
+          )];
+          const vocalistLabel = vocalistNames.length > 0 ? vocalistNames.join(', ') : '-';
+          doc.text(vocalistLabel.substring(0, 35), 145, y);
+          const sourceFolderName = folders.find((folder: any) => folder.id === song.folderId)?.name || '-';
+          doc.text(sourceFolderName.substring(0, 18), 172, y);          
           y += 4;
           doc.setFontSize(7);
           doc.setTextColor(100, 100, 100);
@@ -2113,7 +2242,7 @@ export default function App() {
       }
     });
 
-    doc.save(`Lista_${selectedRepertorio.title.replace(/\s+/g, '_')}.pdf`);
+    doc.save(`SETLIST_${getExportFileName(repertorioToExport.title || 'Repertorio')}.pdf`);
   };
 
 const primaryRed = [220, 38, 38]; // #dc2626
@@ -2873,7 +3002,7 @@ const handleRepertorioPdfFull = async () => {
           />
         </nav>
 
-        <div className={`px-4 pb-2 ${sidebarTab === 'songs' ? 'pt-2 space-y-2' : 'pt-4 space-y-4'}`}>
+        <div className={`px-4 pb-2 ${sidebarTab === 'songs' ? 'pt-4 space-y-2' : 'pt-4 space-y-4'}`}>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#0D47A1]" size={16} />
             <input 
@@ -2973,12 +3102,12 @@ const handleRepertorioPdfFull = async () => {
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto px-2 pb-20">
+        <div className="flex-1 overflow-y-auto px-2 pb-20 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {sidebarView === 'tabs' ? (
             <>
           {sidebarTab === 'songs' && (
                 <div className="space-y-0">
-                  <div className="sticky top-0 z-30 bg-bg pt-2">
+                  <div className="sticky top-0 z-30 bg-bg pt-0">
                     {isSelectionMode && isDesktop && (
                       <button 
                         onClick={() => {
@@ -3057,7 +3186,9 @@ const handleRepertorioPdfFull = async () => {
                       {openArchiveMenu === 'all' && <div className="absolute right-0 top-9 z-[10000] min-w-48 bg-white border border-[#B8D0F0] rounded-xl shadow-2xl p-1.5 text-left text-[#174EA6]">
                         <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); exportArchiveZip(filteredSongs, 'Todas_as_musicas.zip'); }}><Download size={14}/>Download</button>
                         <div className="border-t border-[#D6E4F7]"/>
-                        <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); exportArchivePdf(filteredSongs, 'Lista de músicas — Todas', 'Todas_as_musicas.pdf'); }}><FileText size={14}/>Listar Músicas</button>
+                        <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); exportArchivePdf(filteredSongs, 'Setlist — Todas as músicas', 'Todas_as_musicas.pdf'); }}><FileText size={14}/>Setlist (PDF)</button>
+                        <div className="border-t border-[#D6E4F7]"/>
+                        <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); const pdf = generatePDF(filteredSongs, "Songlist — Todas as músicas", true) as jsPDF; pdf.save("SONGLIST_TODAS_AS_MUSICAS.pdf"); }}><Music size={14}/>Songlist (PDF)</button>
                       </div>}
                     </div>
                     </div>
@@ -3126,7 +3257,7 @@ const handleRepertorioPdfFull = async () => {
                           onClick={() => setExpandedFolders(prev => isExpanded ? [] : [folder.id!])}
                           className="flex flex-1 min-w-0 items-center justify-between gap-3 text-left"
                         >
-                          <div className="flex flex-1 min-w-0 items-center gap-3">
+                          <div className="flex w-full min-w-0 items-center gap-3">
                             {!isDesktop && isSelectionMode ? (
                               <span
                                 role="checkbox"
@@ -3152,7 +3283,9 @@ const handleRepertorioPdfFull = async () => {
                           {openArchiveMenu === folder.id && <div className="absolute right-0 top-9 z-[10000] min-w-48 bg-white border border-[#B8D0F0] rounded-xl shadow-2xl p-1.5 text-left text-[#174EA6]">
                             <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); exportArchiveZip(folderSongs, `${(folder.name || 'Pasta').replace(/[^\w-]+/g, '_')}.zip`); }}><Download size={14}/>Download</button>
                             <div className="border-t border-[#D6E4F7]"/>
-                            <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); exportArchivePdf(folderSongs, `Músicas — ${folder.name}`, `${(folder.name || 'pasta').replace(/[^\w-]+/g, '_')}.pdf`); }}><FileText size={14}/>Listar Músicas</button>
+                            <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); exportArchivePdf(folderSongs, `Músicas — ${folder.name}`, `${(folder.name || 'pasta').replace(/[^\w-]+/g, '_')}.pdf`); }}><FileText size={14}/>Setlist (PDF)</button>
+                            <div className="border-t border-[#D6E4F7]"/>
+                            <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); const pdf = generatePDF(folderSongs, `Songlist — ${folder.name}`, true) as jsPDF; pdf.save(`SONGLIST_${getExportFileName(folder.name || 'Pasta')}.pdf`); }}><Music size={14}/>Songlist (PDF)</button>
                             <div className="border-t border-[#D6E4F7]"/>
                             <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); shareAsPDF(folderSongs, `Músicas — ${folder.name}`); }}><Share2 size={14}/>Compartilhar</button>
                           </div>}
@@ -3319,6 +3452,15 @@ const handleRepertorioPdfFull = async () => {
                                     }}
                                     onDelete={() => deleteRepertorio(repertorio.id)}
                                     onEdit={() => { setEditingRepertorio(repertorio); setIsSidebarOpen(false); setCurrentView('repertorio-form'); }}
+                                    onDownload={() => {
+                                      const repertorioSongs = (repertorio.songIds || [])
+                                        .filter((id: string) => !String(id).startsWith('group:'))
+                                        .map((id: string) => songs.find(song => song.id === id))
+                                        .filter(Boolean) as Song[];
+                                      exportArchiveZip(repertorioSongs, `${getExportFileName(repertorio.title || 'Repertorio')}.zip`);
+                                    }}
+                                    onSetlist={() => handleRepertorioPdfList(repertorio)}
+                                    onSonglist={() => handleRepertorioSonglist(repertorio)}
                                     onShare={() => {
                                       const repertorioSongs = songs.filter(s => repertorio.songIds.includes(s.id!));
                                       if (navigator.share) {
@@ -3368,6 +3510,8 @@ const handleRepertorioPdfFull = async () => {
                       }}
                       onDelete={() => deleteRepertorio(repertorio.id)}
                       onEdit={() => { setEditingRepertorio(repertorio); setCurrentView('repertorio-form'); }}
+                      onSetlist={() => handleRepertorioPdfList(repertorio)}
+                      onSonglist={() => handleRepertorioSonglist(repertorio)}
                       onShare={() => {
                         const repertorioSongs = songs.filter(s => repertorio.songIds.includes(s.id!));
                         if (navigator.share) {
@@ -3386,27 +3530,30 @@ const handleRepertorioPdfFull = async () => {
               )}
 
               {sidebarTab === 'blocks' && (
-                <div className="space-y-2 p-2">
-                  {songBlocks.map(block => (
-                    <button
-                      key={block.id}
-                      onClick={() => {
-                        setSelectedBlockSet(block);
-                        setCurrentView('block-details');
-                        setIsSidebarOpen(false);
-                      }}
-                      className="w-full min-h-[48px] text-left px-3.5 py-2.5 rounded-[14px] transition-colors group flex items-center gap-3 border border-[#ECEDEF] bg-[#EEF1F5] hover:bg-[#EEF1F5]" 
-                    >
-                      <FolderIcon size={16} strokeWidth={1.8} className="shrink-0 text-[#174EA6]" />
-                      <span className="min-w-0 flex-1 text-left font-bold text-[13px] truncate uppercase tracking-[0.08em] text-[#174EA6]">
-                        {block.title}
-                      </span>
-                      <span className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-[4px] bg-[#174EA6] text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
-                        {(block.suggestions || []).length}
-                      </span>
-                      <ChevronRight size={16} strokeWidth={1.8} className="shrink-0 text-[#666666] transition-transform group-hover:translate-x-0.5" />
-                    </button>
-                  ))}
+                <div className="space-y-0 text-primary">
+                  {folders.filter(folder => (folder.type as string) === 'block').map(folder => {
+                    const folderBlocks = songBlocks.filter(block => block.folderId === folder.id);
+                    const cardCount = folderBlocks.reduce((total, block) => total + (block.suggestions || []).length, 0);
+                    return (
+                      <div key={folder.id} className="relative mx-2 mt-2 mb-2 border border-[#ECEDEF] rounded-[14px] overflow-visible bg-[#EEF1F5]">
+                        <button
+                          type="button"
+                          onClick={() => { void openBlockFolder(folder.id!); }}
+                          className="w-full min-h-[48px] flex items-center justify-between gap-3 px-3.5 py-2.5 bg-[#EEF1F5] transition-colors rounded-[13px]"
+                        >
+                          <div className="flex w-full min-w-0 items-center gap-3">
+                            <FolderIcon size={16} className="text-[#174EA6]" />
+                            <span className="min-w-0 flex-1 text-left text-[13px] font-bold uppercase tracking-[0.08em] truncate max-w-[140px] text-[#174EA6]">{folder.name}</span>
+                            <span className="ml-auto text-[10px] min-w-[18px] h-[18px] px-1 bg-[#174EA6] rounded-[4px] text-white font-bold flex items-center justify-center tabular-nums">{cardCount}</span>
+                          </div>
+                          <ChevronRight size={16} className="text-text-dim" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {folders.filter(folder => (folder.type as string) === 'block').length === 0 && (
+                    <p className="p-3 text-center text-[11px] text-text-dim">Crie um conjunto para organizar seus blocos.</p>
+                  )}
                 </div>
               )}
 
@@ -3782,8 +3929,8 @@ const handleRepertorioPdfFull = async () => {
               />
               <SidebarNavItem
                 icon={<Hash size={18} />}
-                label="Bloco"
-                tooltip="Adicionar um marcador de bloco ao repertório aberto."
+                label="Marcador"
+                tooltip="Adicionar novo marcador ao setlist."
                 active={true}
                 variant="light"
                 onClick={handleCreateBlock}
@@ -3880,7 +4027,19 @@ const handleRepertorioPdfFull = async () => {
             </>
           ) : sidebarTab === 'blocks' ? (
             <>
-              <SidebarNavItem icon={<Plus size={18} />} label="Novo Bloco" tooltip="Criar um bloco manualmente ou com ajuda da IA." active={true} variant="light" onClick={() => { setCurrentView('block-form'); setIsSidebarOpen(false); }} />
+              <div className="flex items-center gap-1 w-full">
+                <div className="flex-1 min-w-0">
+                  <SidebarNavItem icon={<Plus size={18} />} label="BLOCO" tooltip="Criar um novo bloco." active={true} variant="light" onClick={() => {
+                    const blockFolders = folders.filter(folder => (folder.type as string) === 'block');
+                    if (blockFolders.length === 0) { alert('Crie um conjunto de blocos primeiro usando o botão “Conjuntos”.'); return; }
+                    setIsPickingFolderForNewBlock(true);
+                    setIsSidebarOpen(false);
+                  }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <SidebarNavItem icon={<FolderIcon size={18} />} label="Conjuntos" tooltip="Criar ou organizar conjuntos de blocos." active={true} variant="light" onClick={() => { setManagingFolderType('block'); setIsSidebarOpen(false); }} />
+                </div>
+              </div>
               <div className="flex-1" />
               <SidebarNavItem icon={<Settings size={18} />} label="Ajustes" tooltip="Configure as preferências e ferramentas do aplicativo." active={sidebarTab === 'settings'} variant="light" onClick={() => { setSidebarTab('settings'); setSidebarView('tabs'); }} />
             </>
@@ -4052,7 +4211,7 @@ const handleRepertorioPdfFull = async () => {
                   exit={{ opacity: 0, y: 4 }}
                   className="absolute left-1/2 -translate-x-1/2 text-sm sm:text-base font-black uppercase tracking-wide text-white whitespace-nowrap pointer-events-none"
                 >
-                  {sidebarTab === 'songs' ? 'Músicas' : sidebarTab === 'repertorios' ? 'Repertórios' : sidebarTab === 'blocks' ? 'Blocos' : 'Ajustes'}
+                  {currentView === 'block-details' && selectedBlockSet ? (folders.find(folder => folder.id === selectedBlockFolderId)?.name || selectedBlockSet.title) : sidebarTab === 'songs' ? 'Músicas' : sidebarTab === 'repertorios' ? 'Repertórios' : sidebarTab === 'blocks' ? 'Conjuntos' : 'Ajustes'}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -4065,9 +4224,21 @@ const handleRepertorioPdfFull = async () => {
               </span>
             )}
             {currentView === 'blocks' && sidebarTab === 'blocks' && (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white border border-white px-3 py-1 text-[10px] font-black uppercase tracking-wide text-[#174EA6]" title="Quantidade de blocos">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white border border-white px-3 py-1 text-[10px] font-black uppercase tracking-wide text-[#174EA6]" title="Quantidade de conjuntos">
                 <LayoutList size={13} /> {songBlocks.length}
               </span>
+            )}
+            {currentView === 'block-details' && selectedBlockSet && (
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={addBlockToSelectedSet}
+                  className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-[#174EA6] hover:bg-white/90"
+                  title="Adicionar bloco ao conjunto">
+                  <Plus size={13} /> Bloco
+                </button>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white border border-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-[#174EA6]" title="Quantidade de blocos no conjunto">
+                  <LayoutList size={13} /> {(selectedBlockSet.suggestions || []).length}
+                </span>
+              </div>
             )}
             {currentView === 'repertorios' && sidebarTab === 'repertorios' && !selectedRepertorio && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white border border-white px-3 py-1 text-[10px] font-black uppercase tracking-wide text-[#174EA6]" title="Quantidade de repertórios">
@@ -5030,20 +5201,42 @@ const handleRepertorioPdfFull = async () => {
             <SongBlockForm 
                 songs={songs} 
                 user={user} 
+                folderId={selectedBlockFolderId || undefined}
                 onSave={saveSongBlock}
-                onCancel={() => setCurrentView('blocks')}
+                onCancel={() => { setSelectedBlockFolderId(null); setCurrentView('blocks'); }}
             />
           )}
 
           {currentView === 'block-details' && selectedBlockSet && (
-            <SongBlockDetails 
-                blockSet={selectedBlockSet}
-                songs={songs}
-                repertorios={repertorios}
-                onAddToRepertorio={addBlockSuggestionToRepertorio}
-                onUpdate={updateSongBlock}
-                onBack={() => setCurrentView('blocks')}
-            />
+            (selectedBlockSet.suggestions || []).length === 0 ? (
+              <div className="flex min-h-[60vh] w-full items-center justify-center px-4">
+                <div className="flex max-w-md flex-col items-center gap-4 text-center">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#EEF1F5] text-[#174EA6]">
+                    <FolderIcon size={30} />
+                  </div>
+                  <div className="space-y-2">
+                    <h2 className="text-base font-black uppercase tracking-wide text-[#174EA6]">Este conjunto ainda está vazio</h2>
+                    <p className="text-sm text-text-dim">Crie um novo bloco para começar a organizar as músicas deste conjunto.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addBlockToSelectedSet}
+                    className="inline-flex items-center gap-2 rounded-xl bg-[#174EA6] px-5 py-3 text-xs font-black uppercase tracking-wider text-white shadow-sm transition-colors hover:bg-[#123D87]"
+                  >
+                    <Plus size={16} /> Bloco
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <SongBlockDetails 
+                  blockSet={selectedBlockSet}
+                  songs={songs}
+                  repertorios={repertorios}
+                  onAddToRepertorio={addBlockSuggestionToRepertorio}
+                  onUpdate={updateSongBlock}
+                  onBack={() => setCurrentView('blocks')}
+              />
+            )
           )}
 
           {currentView === 'repertorio-form' && (
@@ -5114,6 +5307,17 @@ const handleRepertorioPdfFull = async () => {
               type="song"
               onSelect={handleMoveSingleSong}
               onClose={() => { setIsMovingSingleSong(false); setSelectedSongIdForAction(null); }}
+            />
+          )}
+          {isPickingFolderForNewBlock && (
+            <FolderSelectionModal
+              folders={folders}
+              type="block"
+              onSelect={(folderId) => {
+                setIsPickingFolderForNewBlock(false);
+                void openBlockFolder(folderId, true);
+              }}
+              onClose={() => { setIsPickingFolderForNewBlock(false); setIsSidebarOpen(true); }}
             />
           )}
           {isPickingFolderForNewRep && (
@@ -5355,17 +5559,19 @@ const handleRepertorioPdfFull = async () => {
                   <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
                     <button 
                       onClick={() => processBulkImport(null)}
-                      className="w-full text-left p-4 bg-surface border border-border rounded-xl hover:border-primary transition-all font-bold text-sm uppercase tracking-tighter"
+                      className="w-full flex items-center gap-3 text-left p-4 bg-surface border border-border rounded-xl hover:border-primary transition-all font-bold text-sm uppercase tracking-tighter"
                     >
-                      📁 Sem Pasta (Raiz)
+                      <FolderIcon size={18} className="shrink-0 text-primary" />
+                      <span className="text-primary">Sem Pasta (Raiz)</span>
                     </button>
                     {folders.filter(folder => !folder.type || folder.type === 'song').map(folder => (
                       <button 
                         key={folder.id}
                         onClick={() => processBulkImport(folder.id!)}
-                        className="w-full text-left p-4 bg-surface border border-border rounded-xl hover:border-primary transition-all font-bold text-sm uppercase tracking-tighter"
+                        className="w-full flex items-center gap-3 text-left p-4 bg-surface border border-border rounded-xl hover:border-primary transition-all font-bold text-sm uppercase tracking-tighter"
                       >
-                        📁 {folder.name}
+                        <FolderIcon size={18} className="shrink-0 text-primary" />
+                        <span className="text-primary">{folder.name}</span>
                       </button>
                     ))}
                   </div>
@@ -5448,6 +5654,7 @@ function SongSidebarItem({ song, isSelectionMode, isSelected, onToggleSelect, on
           <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setMenuOpen(false); onMove?.(); }}><FolderIcon size={14}/>Mover</button>
           <div className="border-t border-[#D6E4F7]"/>
           <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setMenuOpen(false); onDownload?.(); }}><FileText size={14}/>ChordPro</button>
+          <div className="border-t border-[#D6E4F7]"/>
           <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setMenuOpen(false); onListPDF?.(); }}><Music size={14}/>Chord Over</button>
           <div className="border-t border-[#D6E4F7]"/>
           <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setMenuOpen(false); onShare?.(); }}><Share2 size={14}/>Compartilhar</button>
@@ -5458,80 +5665,70 @@ function SongSidebarItem({ song, isSelectionMode, isSelected, onToggleSelect, on
 }
 
 function RepertorioSidebarItem({ 
-  repertorio, onClick, onDelete, onEdit, onShare, isMaestro, 
+  repertorio, onClick, onDelete, onEdit, onShare, onDownload, onSetlist, onSonglist, isMaestro, 
   isSelectionMode, isSelected, onToggleSelect 
 }: any) {
-  const x = useMotionValue(0);
-  const opacity = useTransform(x, [0, 100], [0, 1]);
-  
-  const dragLimit = isMaestro ? 120 : 60;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const closeOnOutside = (event: MouseEvent) => {
+      if (menuRootRef.current && !menuRootRef.current.contains(event.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutside);
+    return () => document.removeEventListener('mousedown', closeOnOutside);
+  }, [menuOpen]);
+
+  const songCount = (repertorio.songIds || []).filter((id: string) => !String(id).startsWith('group:')).length;
+  const dateLabel = repertorio.date
+    ? new Date(repertorio.date + 'T12:00:00').toLocaleDateString('pt-BR')
+    : 'Sem data';
 
   return (
-    <div className="relative overflow-hidden border-b border-border last:border-0">
-      <div className="absolute inset-y-0 left-0 flex items-center pl-4 gap-4 bg-primary/10 w-full">
-        {isMaestro && (
-          <motion.button 
-            style={{ opacity }}
-            onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            className="p-2 bg-red-500 text-white rounded-lg"
-          >
-            <Trash2 size={16} />
-          </motion.button>
-        )}
-        <motion.button 
-          style={{ opacity: isMaestro ? opacity : 1 }}
-          onClick={(e) => { e.stopPropagation(); onShare(); }}
-          className="p-2 bg-primary text-white rounded-lg translate-x-0"
-          animate={{ x: !isMaestro ? 0 : 0 }}
-        >
-          <Share2 size={16} />
-        </motion.button>
-      </div>
-      
-      <motion.div 
-        drag={isSelectionMode ? false : "x"}
-        dragConstraints={{ left: 0, right: dragLimit }}
-        dragElastic={0.1}
-        dragDirectionLock
-        style={{ x }}
-        className="relative bg-bg"
+    <div className={`relative flex items-center gap-3 border-b border-[#174EA6]/25 last:border-0 bg-white px-3 py-3 transition-colors hover:bg-[#F4F8FE] ${menuOpen ? 'z-[999]' : 'z-0'} ${isSelected ? 'bg-primary/5' : ''}`}>
+      {isSelectionMode && (
+        <button type="button" onClick={onToggleSelect} className="shrink-0 text-primary" aria-label="Selecionar repertório">
+          {isSelected ? <CheckSquare size={20} /> : <Square size={20} className="text-border" />}
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={isSelectionMode ? onToggleSelect : onClick}
+        className="min-w-0 flex-1 text-left flex items-center gap-3"
       >
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={isSelectionMode ? onToggleSelect : onClick}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (isSelectionMode ? onToggleSelect : onClick)?.(); } }}
-          className="w-full text-left p-3.5 hover:bg-surface transition-colors group flex items-center gap-3"
-        >
-          {isSelectionMode && (
-            <div className={`flex-shrink-0 w-5 h-5 border-2 rounded flex items-center justify-center transition-all ${isSelected ? 'bg-primary border-primary' : 'border-border'}`}>
-              {isSelected && <CheckSquare size={12} className="text-white" />}
-            </div>
-          )}
-          <div className="flex-1 min-w-0 flex flex-col gap-1">
-            {repertorio.date && (
-              <span className="text-[10px] text-primary font-bold uppercase tracking-widest">
-                {new Date(repertorio.date + 'T12:00:00').toLocaleDateString('pt-BR')}
-              </span>
-            )}
-            <div className="flex items-baseline gap-2 min-w-0">
-              <span className="font-bold text-sm truncate tracking-normal uppercase leading-none text-[#174EA6]">{repertorio.title}</span>
-              <span className="text-[10px] bg-[#174EA6] text-white px-1.5 py-0.5 rounded font-bold tracking-widest shrink-0">{(repertorio.songIds || []).filter((id: string) => !String(id).startsWith('group:')).length}</span>
-            </div>
-          </div>
-          {!isSelectionMode && isMaestro && (
-            <div className="flex items-center gap-1 shrink-0">
-              <button onClick={(e) => { e.stopPropagation(); onEdit?.(); }} className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors" title="Editar repertório">
-                <Edit2 size={16} />
-              </button>
-              <button onClick={(e) => { e.stopPropagation(); onDelete?.(); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Excluir repertório">
-                <Trash2 size={16} />
-              </button>
-            </div>
-          )}
-          {!isSelectionMode && !isMaestro && <ChevronLeft size={18} className="rotate-180 text-border group-hover:text-primary" />}
+        <div className="w-9 h-9 rounded-xl bg-[#EAF1FC] text-[#174EA6] flex items-center justify-center shrink-0">
+          <ListMusic size={19} strokeWidth={1.9} />
         </div>
-      </motion.div>
+        <div className="min-w-0 flex-1 flex flex-col gap-1">
+          <span className="font-bold text-sm truncate tracking-normal uppercase leading-tight text-[#174EA6]">{repertorio.title}</span>
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-[#6D91C7]">{dateLabel}</span>
+        </div>
+      </button>
+      <span className="shrink-0 min-w-[25px] h-[22px] px-1.5 rounded-md bg-[#174EA6] text-white text-[10px] font-bold flex items-center justify-center tabular-nums" title={`${songCount} músicas`}>
+        {songCount}
+      </span>
+      {!isSelectionMode && isMaestro && (
+        <div ref={menuRootRef} data-archive-menu-root className="relative z-[70] shrink-0" onClick={event => event.stopPropagation()}>
+          <button type="button" aria-label={`Ações do repertório ${repertorio.title}`} onClick={() => setMenuOpen(value => !value)} className="p-1.5 text-[#174EA6] rounded-md transition-colors hover:bg-[#EAF1FC]">
+            <MoreVertical size={19} />
+          </button>
+          {menuOpen && (
+            <div className="absolute right-0 top-8 z-[10000] min-w-48 bg-white border border-[#B8D0F0] rounded-xl shadow-2xl p-1.5 text-left text-[#174EA6]">
+              <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold hover:bg-[#EEF5FF] rounded" onClick={() => { setMenuOpen(false); onEdit?.(); }}><Edit2 size={14}/>Editar</button>
+              <div className="border-t border-[#D6E4F7]" />
+              <button disabled={songCount === 0} className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold rounded ${songCount === 0 ? 'text-gray-300 cursor-not-allowed' : 'hover:bg-[#EEF5FF]'}`} onClick={() => { setMenuOpen(false); onDownload?.(); }}><Download size={14}/>Download</button>
+              <div className="border-t border-[#D6E4F7]" />
+              <button disabled={songCount === 0} className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold rounded ${songCount === 0 ? 'text-gray-300 cursor-not-allowed' : 'hover:bg-[#EEF5FF]'}`} onClick={() => { setMenuOpen(false); onSetlist?.(); }}><FileText size={14}/>Setlist (PDF)</button>
+              <div className="border-t border-[#D6E4F7]" />
+              <button disabled={songCount === 0} className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold rounded ${songCount === 0 ? 'text-gray-300 cursor-not-allowed' : 'hover:bg-[#EEF5FF]'}`} onClick={() => { setMenuOpen(false); onSonglist?.(); }}><Music size={14}/>Songlist (PDF)</button>
+              <div className="border-t border-[#D6E4F7]" />
+              <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50 rounded" onClick={() => { setMenuOpen(false); onDelete?.(); }}><Trash2 size={14}/>Excluir</button>
+            </div>
+          )}
+        </div>
+      )}
+      {!isSelectionMode && !isMaestro && <ChevronRight size={18} className="shrink-0 text-[#6D91C7]" />}
     </div>
   );
 }
@@ -6408,10 +6605,10 @@ function LabelManager({ labels, onClose, isMaestro, coroColor, onCoroColorChange
   );
 }
 
-function FolderSelectionModal({ folders, type, onSelect, onClose }: { folders: Folder[], type: 'song' | 'repertorio', onSelect: (folderId: string) => void, onClose: () => void }) {
-  const relevantFolders = folders.filter(f => type === 'song' ? (!f.type || f.type === 'song') : f.type === 'repertorio');
-  const title = type === 'song' ? 'Selecionar Pasta' : 'Selecionar Marcador';
-  const subtitle = type === 'song' ? 'Mover música para arquivo' : 'Classificar este repertório';
+function FolderSelectionModal({ folders, type, onSelect, onClose }: { folders: Folder[], type: 'song' | 'repertorio' | 'block', onSelect: (folderId: string) => void, onClose: () => void }) {
+  const relevantFolders = folders.filter(f => type === 'song' ? (!f.type || f.type === 'song') : type === 'repertorio' ? f.type === 'repertorio' : (f.type as string) === 'block');
+  const title = type === 'song' ? 'Selecionar Pasta' : type === 'repertorio' ? 'Selecionar Pasta' : 'Selecionar Conjunto';
+  const subtitle = type === 'song' ? 'Mover música para arquivo' : type === 'repertorio' ? 'Escolha a pasta deste repertório' : 'Escolha onde criar o novo bloco';
 
   return (
     <motion.div 
@@ -6521,13 +6718,13 @@ function SortableFolderItem({ folder, editingId, setEditingId, editName, setEdit
   );
 }
 
-function FolderManager({ folders, type, onClose }: { folders: Folder[], type: 'song' | 'repertorio', onClose: () => void }) {
+function FolderManager({ folders, type, onClose }: { folders: Folder[], type: 'song' | 'repertorio' | 'block', onClose: () => void }) {
   const [newName, setNewName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
 
-  const title = type === 'song' ? 'Gerenciar Pastas de Músicas' : 'Gerenciar Marcadores de Repertório';
-  const placeholder = type === 'song' ? 'Ex: Adoração, Celebração...' : 'Ex: Casamentos, Eventos...';
+  const title = type === 'song' ? 'Gerenciar Pastas de Músicas' : type === 'repertorio' ? 'Gerenciar Pastas de Repertórios' : 'Gerenciar Conjuntos de Blocos';
+  const placeholder = type === 'song' ? 'Ex: Adoração, Celebração...' : type === 'repertorio' ? 'Ex: Casamentos, Eventos...' : 'Ex: Aberturas, Medleys...';
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -6560,7 +6757,7 @@ function FolderManager({ folders, type, onClose }: { folders: Folder[], type: 's
   };
 
   const deleteFolder = async (id: string) => {
-    const itemType = type === 'song' ? 'músicas' : 'repertórios';
+    const itemType = type === 'song' ? 'músicas' : type === 'repertorio' ? 'repertórios' : 'conjuntos';
     if (!window.confirm(`Excluir esta pasta? (Os ${itemType} dentro dela não serão apagados)`)) return;
     try {
       await deleteDoc(doc(db, 'folders', id));
@@ -6570,7 +6767,7 @@ function FolderManager({ folders, type, onClose }: { folders: Folder[], type: 's
   };
 
   const relevantFolders = folders.filter(f => 
-    type === 'song' ? (!f.type || f.type === 'song') : f.type === 'repertorio'
+    type === 'song' ? (!f.type || f.type === 'song') : type === 'repertorio' ? f.type === 'repertorio' : (f.type as string) === 'block'
   );
 
   const handleDragEnd = async (event: DragEndEvent) => {
