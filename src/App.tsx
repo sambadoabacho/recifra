@@ -205,6 +205,7 @@ export default function App() {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('songs');
   const [sidebarView, setSidebarView] = useState<'tabs' | 'repertorio-songs'>('tabs');
   const [expandedFolders, setExpandedFolders] = useState<string[]>([]);
+  const [activeSongFolderId, setActiveSongFolderId] = useState<string | null>(null);
   const [expandedRepFolders, setExpandedRepFolders] = useState<string[]>([]);
   const [customApiKey, setCustomApiKey] = useState(() => localStorage.getItem('GEMINI_API_KEY') || '');
   const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -253,6 +254,7 @@ export default function App() {
   const [isSidebarArchiveOpen, setIsSidebarArchiveOpen] = useState(false);
   const bottomArchiveRef = useRef<HTMLDivElement>(null);
   const [isExportFolderModalOpen, setIsExportFolderModalOpen] = useState(false);
+  const [isRepertorioJsonExportModalOpen, setIsRepertorioJsonExportModalOpen] = useState(false);
   const [isPickingFolderForNewRep, setIsPickingFolderForNewRep] = useState(false);
   const [isPickingFolderForNewBlock, setIsPickingFolderForNewBlock] = useState(false);
   const [selectedBlockFolderId, setSelectedBlockFolderId] = useState<string | null>(null);
@@ -548,7 +550,7 @@ export default function App() {
     setSelectedSongIds([]);
     setSelectedRepIds([]);
     setIsMovingSongs(false);
-  }, [sidebarTab, sidebarView, expandedFolders]);
+  }, [sidebarTab, sidebarView, expandedFolders, activeSongFolderId]);
   const [activeMobileSongId, setActiveMobileSongId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'title' | 'composition' | 'artist' | 'updatedAt'>('title');
   const [filterKey, setFilterKey] = useState<string>('');
@@ -1970,116 +1972,168 @@ export default function App() {
     setImportProgress(null);
   };
 
-  const handleRstExport = async () => {
-    const repsToExport = repertorios.filter(r => selectedRepIds.includes(r.id!));
+  const buildRepertorioJson = (repertorio: any) => {
+    const songReferences = (repertorio.songIds || [])
+      .filter((id: string) => !String(id).startsWith('group:'))
+      .map((id: string) => {
+        const song = songs.find(item => item.id === id);
+        return song ? { id: song.id, title: song.title, artist: song.artist } : { id, title: '', artist: '' };
+      });
 
-    if (repsToExport.length === 0) {
-      alert("Selecione ao menos um repertório para exportar (use o modo de seleção na lista).");
+    return {
+      id: repertorio.id,
+      title: repertorio.title,
+      date: repertorio.date || null,
+      songIds: repertorio.songIds || [],
+      songReferences,
+      songKeys: repertorio.songKeys || {},
+      songGroups: repertorio.songGroups || []
+    };
+  };
+
+  const downloadRepertorioJson = (data: any, filename: string) => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${filename.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '_') || 'Repertorio'}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleRepertorioJsonExport = (selection: { type: 'folder' | 'setlist'; id: string }) => {
+    if (selection.type === 'folder') {
+      const folder = folders.find(item => item.id === selection.id && item.type === 'repertorio');
+      if (!folder) return;
+      const folderSetlists = repertorios.filter(item => item.folderId === folder.id);
+      const data = {
+        format: 'recifra-repertory',
+        version: 1,
+        exportType: 'folder',
+        folder: { name: folder.name },
+        setlists: folderSetlists.map(buildRepertorioJson)
+      };
+      downloadRepertorioJson(data, folder.name);
+      setIsRepertorioJsonExportModalOpen(false);
       return;
     }
 
-    if (repsToExport.length === 1) {
-      const rep = repsToExport[0];
-      const rstData = {
-        type: 'repertorio_instruction',
-        title: rep.title,
-        songs: rep.songIds.map((id: string) => {
-          const song = songs.find(s => s.id === id);
-          if (!song) return null;
-          return {
-            title: song.title,
-            artist: song.artist,
-            key: song.key,
-            category: song.category,
-            tempo: song.tempo,
-            composition: song.composition || ''
-          };
-        }).filter(Boolean)
-      };
-
-      const blob = new Blob([JSON.stringify(rstData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${rep.title.replace(/\s+/g, '_')}.rst`;
-      link.click();
-      URL.revokeObjectURL(url);
-    } else {
-      const zip = new JSZip();
-      repsToExport.forEach(rep => {
-        const rstData = {
-          type: 'repertorio_instruction',
-          title: rep.title,
-          songs: rep.songIds.map((id: string) => {
-            const song = songs.find(s => s.id === id);
-            if (!song) return null;
-            return {
-              title: song.title,
-              artist: song.artist,
-              key: song.key,
-              category: song.category,
-              tempo: song.tempo,
-              composition: song.composition || ''
-            };
-          }).filter(Boolean)
-        };
-        zip.file(`${rep.title.replace(/\s+/g, '_')}.rst`, JSON.stringify(rstData, null, 2));
-      });
-      
-      const blob = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Exportacao_Repertorios.zip`;
-      link.click();
-      URL.revokeObjectURL(url);
-    }
+    const repertorio = repertorios.find(item => item.id === selection.id);
+    if (!repertorio) return;
+    const data = {
+      format: 'recifra-repertory',
+      version: 1,
+      exportType: 'setlist',
+      setlist: buildRepertorioJson(repertorio)
+    };
+    downloadRepertorioJson(data, repertorio.title);
+    setIsRepertorioJsonExportModalOpen(false);
   };
 
-  const handleRstImport = () => {
+  const handleRepertorioJsonImport = () => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.rst';
-    input.onchange = async (e: any) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const text = await file.text();
+    input.accept = '.json,application/json';
+    input.onchange = async (event: any) => {
+      const file = event.target.files?.[0];
+      if (!file || !user) return;
+
       try {
-        const data = JSON.parse(text);
-        if (data.type !== 'repertorio_instruction') throw new Error('Formato inválido');
-        
-        const foundSongIds: string[] = [];
-        const missingSongs: string[] = [];
-
-        data.songs.forEach((sInfo: any) => {
-          const song = songs.find(s => 
-            s.title.toLowerCase().trim() === sInfo.title.toLowerCase().trim() && 
-            s.artist.toLowerCase().trim() === sInfo.artist.toLowerCase().trim()
-          );
-          if (song) {
-            foundSongIds.push(song.id!);
-          } else {
-            missingSongs.push(`${sInfo.title} (${sInfo.artist})`);
-          }
-        });
-
-        if (missingSongs.length > 0) {
-          alert(`Importação concluída com avisos. As seguintes músicas não foram encontradas no banco e foram ignoradas:\n\n${missingSongs.join('\n')}`);
+        const data = JSON.parse(await file.text());
+        if (data.format !== 'recifra-repertory' || data.version !== 1 || !['folder', 'setlist'].includes(data.exportType)) {
+          throw new Error('Formato JSON do ReCifra inválido ou não suportado.');
         }
 
-        const newRepertorio = {
-          title: data.title,
-          songIds: foundSongIds,
-          createdBy: user?.uid || 'unknown',
-          updatedAt: new Date().toISOString()
+        const resolveSongIds = (source: any) => {
+          const refs = Array.isArray(source.songReferences) ? source.songReferences : [];
+          const idMap = new Map<string, string>();
+          refs.forEach((ref: any) => {
+            const match = songs.find(song => song.id === ref.id) || songs.find(song =>
+              (song.title || '').trim().toLocaleLowerCase('pt-BR') === (ref.title || '').trim().toLocaleLowerCase('pt-BR') &&
+              (song.artist || '').trim().toLocaleLowerCase('pt-BR') === (ref.artist || '').trim().toLocaleLowerCase('pt-BR')
+            );
+            if (match?.id && ref.id) idMap.set(ref.id, match.id);
+          });
+
+          const missing: string[] = [];
+          const mappedSongIds = (source.songIds || []).map((entry: string) => {
+            if (String(entry).startsWith('group:')) return entry;
+            const ref = refs.find((item: any) => item.id === entry);
+            const mapped = idMap.get(entry) || (songs.some(song => song.id === entry) ? entry : undefined);
+            if (mapped) return mapped;
+            if (ref?.title) missing.push(`${ref.title}${ref.artist ? ` (${ref.artist})` : ''}`);
+            return null;
+          }).filter(Boolean);
+
+          const mappedKeys: Record<string, string> = {};
+          Object.entries(source.songKeys || {}).forEach(([sourceId, key]) => {
+            const mappedId = idMap.get(sourceId) || (songs.some(song => song.id === sourceId) ? sourceId : undefined);
+            if (mappedId) mappedKeys[mappedId] = String(key);
+          });
+
+          const mappedGroups = (source.songGroups || []).map((group: any) => ({
+            ...group,
+            songIds: (group.songIds || []).map((songId: string) =>
+              idMap.get(songId) || (songs.some(song => song.id === songId) ? songId : null)
+            ).filter(Boolean)
+          }));
+
+          return { songIds: mappedSongIds, songKeys: mappedKeys, songGroups: mappedGroups, missing };
         };
 
-        const docRef = await addDoc(collection(db, 'setlists'), newRepertorio);
-        alert('Repertório importado com sucesso!');
-        setSelectedRepertorio({ id: docRef.id, ...newRepertorio });
+        let importedCount = 0;
+        let missingSongs: string[] = [];
+        if (data.exportType === 'folder') {
+          if (!data.folder?.name || !Array.isArray(data.setlists)) throw new Error('Estrutura de pasta inválida.');
+          const folderRef = await addDoc(collection(db, 'folders'), {
+            name: data.folder.name,
+            type: 'repertorio',
+            createdBy: user.uid,
+            order: folders.filter(folder => folder.type === 'repertorio').length
+          });
+          for (const source of data.setlists) {
+            const mapped = resolveSongIds(source);
+            missingSongs = missingSongs.concat(mapped.missing);
+            await addDoc(collection(db, 'setlists'), {
+              title: source.title || 'Setlist importado',
+              date: source.date || null,
+              songIds: mapped.songIds,
+              songKeys: mapped.songKeys,
+              songGroups: mapped.songGroups,
+              folderId: folderRef.id,
+              createdBy: user.uid,
+              updatedAt: new Date().toISOString()
+            });
+            importedCount++;
+          }
+        } else {
+          if (!data.setlist?.title || !Array.isArray(data.setlist.songIds)) throw new Error('Estrutura de setlist inválida.');
+          const source = data.setlist;
+          const mapped = resolveSongIds(source);
+          missingSongs = missingSongs.concat(mapped.missing);
+          const newSetlist = {
+            title: source.title,
+            date: source.date || null,
+            songIds: mapped.songIds,
+            songKeys: mapped.songKeys,
+            songGroups: mapped.songGroups,
+            createdBy: user.uid,
+            updatedAt: new Date().toISOString()
+          };
+          const docRef = await addDoc(collection(db, 'setlists'), newSetlist);
+          setSelectedRepertorio({ id: docRef.id, ...newSetlist });
+          importedCount = 1;
+        }
+
+        const missingMessage = missingSongs.length
+          ? `\n\nMúsicas não localizadas e ignoradas: ${[...new Set(missingSongs)].join(', ')}`
+          : '';
+        alert(`${data.exportType === 'folder' ? `Pasta importada com ${importedCount} setlist(s)` : 'Setlist importado'} com sucesso.${missingMessage}`);
         setCurrentView('repertorios');
-      } catch (err) {
-        alert('Erro ao importar arquivo .rst. Verifique se o formato está correto.');
+        setSidebarTab('repertorios');
+      } catch (error) {
+        console.error('Erro ao importar repertório JSON:', error);
+        alert('Não foi possível importar o arquivo. Verifique se ele é um JSON válido exportado pelo ReCifra.');
       }
     };
     input.click();
@@ -2650,13 +2704,21 @@ const handleRepertorioPdfFull = async () => {
   const filteredSongs = useMemo(() => {
     const normalizedTerm = normalizeSearchText(searchTerm.trim());
     let result = songs.filter(s => {
+      if (activeSongFolderId && s.folderId !== activeSongFolderId) return false;
       if (!normalizedTerm) return true;
       return (
         normalizeSearchText(s.title).includes(normalizedTerm) ||
         normalizeSearchText(s.artist).includes(normalizedTerm) ||
         normalizeSearchText(s.composition).includes(normalizedTerm) ||
         normalizeSearchText(s.category).includes(normalizedTerm) ||
-        normalizeSearchText(s.chordPro).includes(normalizedTerm)
+        // Pesquisa no texto musical como ele aparece no ChordOver:
+        // remove cifras entre colchetes e diretivas ChordPro antes de comparar.
+        normalizeSearchText(
+          (s.chordPro || '')
+            .replace(/\[[^\]]*\]/g, ' ')
+            .replace(/\{[^}]*\}/g, ' ')
+            .replace(/\s+/g, ' ')
+        ).includes(normalizedTerm)
       );
     });
 
@@ -2680,16 +2742,16 @@ const handleRepertorioPdfFull = async () => {
     });
 
     return result;
-  }, [songs, searchTerm, sortBy, filterKey, filterTempo, filterCategory]);
+  }, [songs, searchTerm, sortBy, filterKey, filterTempo, filterCategory, activeSongFolderId]);
 
   const songsInActiveContext = useMemo(() => {
-    if (searchTerm) return filteredSongs;
+    if (activeSongFolderId || searchTerm) return filteredSongs;
     if (expandedFolders.length > 0) {
       if (expandedFolders.includes('all')) return filteredSongs;
       return filteredSongs.filter(s => s.folderId && expandedFolders.includes(s.folderId));
     }
     return filteredSongs.filter(s => !s.folderId);
-  }, [searchTerm, filteredSongs, expandedFolders]);
+  }, [searchTerm, filteredSongs, expandedFolders, activeSongFolderId]);
 
   const filteredRepertorios = useMemo(() => {
     return repertorios.filter(s => 
@@ -3003,13 +3065,41 @@ const handleRepertorioPdfFull = async () => {
         </nav>
 
         <div className={`px-4 pb-2 ${sidebarTab === 'songs' ? 'pt-4 space-y-2' : 'pt-4 space-y-4'}`}>
+          {sidebarTab === 'songs' && activeSongFolderId && (() => {
+            const activeFolder = folders.find(folder => folder.id === activeSongFolderId);
+            if (!activeFolder) return null;
+            return (
+              <div className="flex items-center gap-3 min-h-[48px] px-3 py-2 rounded-xl bg-[#EEF1F5] border border-[#DCE3EC]">
+                <button
+                  type="button"
+                  onClick={() => { setActiveSongFolderId(null); setSearchTerm(''); setExpandedFolders([]); }}
+                  className="shrink-0 p-1 text-[#174EA6] hover:bg-white rounded-lg transition-colors"
+                  aria-label="Voltar para todas as pastas"
+                  title="Voltar para todas as pastas"
+                >
+                  <ArrowLeft size={19} />
+                </button>
+                <FolderOpen size={20} className="shrink-0 text-[#174EA6]" />
+                <span className="min-w-0 flex-1 truncate text-[13px] font-black uppercase tracking-[0.06em] text-[#174EA6]">{activeFolder.name}</span>
+                <span className="shrink-0 text-[10px] min-w-[22px] h-[20px] px-1.5 bg-[#174EA6] rounded-md text-white font-bold flex items-center justify-center tabular-nums">{songs.filter(song => song.folderId === activeSongFolderId).length}</span>
+              </div>
+            );
+          })()}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#0D47A1]" size={16} />
             <input 
               type="text"
               placeholder="Buscar..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setSearchTerm(value);
+                // Ao pesquisar no acervo geral, abre automaticamente a pasta TODAS
+                // para exibir os resultados logo abaixo dela.
+                if (!activeSongFolderId) {
+                  setExpandedFolders(value.trim() ? ['all'] : []);
+                }
+              }}
               className="w-full bg-white border border-[#0D47A1] rounded-lg py-2 pl-9 pr-10 text-sm focus:ring-1 focus:ring-[#0D47A1] outline-none text-[#0D47A1] placeholder:text-[#0D47A1]/50"
             />
             {searchTerm && (
@@ -3022,7 +3112,7 @@ const handleRepertorioPdfFull = async () => {
             )}
           </div>
 
-          {(sidebarTab === 'songs' && (expandedFolders.length > 0 || searchTerm)) && (
+          {(sidebarTab === 'songs' && (activeSongFolderId || expandedFolders.length > 0 || searchTerm)) && (
             <div className="flex flex-col gap-2 p-2 bg-surface/50 border border-border rounded-xl">
               <div className="flex items-center justify-between">
                 <div className="flex flex-1 items-center gap-2 pr-10">
@@ -3153,8 +3243,40 @@ const handleRepertorioPdfFull = async () => {
                     )}
                   </div>
 
-                  {/* TODAS Folder */}
-                  <div className={`relative mx-2 mt-2 mb-2 border border-[#ECEDEF] rounded-[14px] overflow-visible bg-[#EEF1F5] ${openArchiveMenu === 'all' ? 'z-[999]' : 'z-0'}`}>
+                  {activeSongFolderId && (
+                    <div className="space-y-1 px-1 pt-1">
+                      {filteredSongs.length === 0 ? (
+                        <div className="px-3 py-5 text-center text-[10px] font-bold uppercase tracking-widest text-text-dim">Nenhuma música encontrada nesta pasta</div>
+                      ) : filteredSongs.map(song => (
+                        <SongSidebarItem
+                          isMobile={!isDesktop}
+                          key={song.id}
+                          song={song}
+                          isSelectionMode={isSelectionMode}
+                          isSelected={selectedSongIds.includes(song.id!)}
+                          onToggleSelect={() => setSelectedSongIds(prev => prev.includes(song.id!) ? prev.filter(id => id !== song.id) : [...prev, song.id!])}
+                          onLongPress={() => { if (!isMaestro) return; setIsSelectionMode(true); setSelectedSongIds([song.id!]); }}
+                          onDownload={() => downloadSongFile(song)}
+                          onListPDF={() => generatePDF([song], song.title || 'Música')}
+                          onShare={() => shareAsPDF([song], song.title || 'Música')}
+                          onMove={() => { setSelectedSongIdForAction(song.id!); setIsMovingSingleSong(true); }}
+                          onClick={() => {
+                            if (isSelectionMode) {
+                              setSelectedSongIds(prev => prev.includes(song.id!) ? prev.filter(id => id !== song.id) : [...prev, song.id!]);
+                            } else {
+                              setSelectedSong(song);
+                              setCurrentView('details');
+                              setIsSidebarOpen(false);
+                              updateLiveSong(song.id!);
+                            }
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* TODAS Folder — shown only in the archive root */}
+                  {!activeSongFolderId && <div className={`relative mx-2 mt-2 mb-2 border border-[#ECEDEF] rounded-[14px] overflow-visible bg-[#EEF1F5] ${openArchiveMenu === 'all' ? 'z-[999]' : 'z-0'}`}>
                     <div className={`w-full min-h-[48px] flex items-center justify-between gap-3 px-3.5 py-2.5 bg-[#EEF1F5] transition-colors ${expandedFolders.includes('all') ? 'rounded-t-[13px]' : 'rounded-[13px]'}`}>
                     <button type="button"
                       onClick={() => setExpandedFolders(prev => prev.includes('all') ? [] : ['all'])}
@@ -3242,40 +3364,45 @@ const handleRepertorioPdfFull = async () => {
                         </motion.div>
                       )}
                     </AnimatePresence>
-                  </div>
+                  </div>}
 
                   {/* Archive Folders */}
-                  {folders.filter(f => !f.type || f.type === 'song').map(folder => {
-                    const isExpanded = expandedFolders.includes(folder.id!);
-                    const folderSongs = filteredSongs.filter(s => s.folderId === folder.id);
-                    if (folderSongs.length === 0 && searchTerm) return null;
+                  {folders.filter(f => (!f.type || f.type === 'song') && f.id !== activeSongFolderId).map(folder => {
+                    const isExpanded = false;
+                    const folderSongs = songs.filter(s => s.folderId === folder.id);
+                    // Durante uma busca no acervo geral, exibe somente pastas
+                    // que contenham músicas correspondentes, sem expandi-las.
+                    const matchingFolderSongs = searchTerm.trim() && !activeSongFolderId
+                      ? filteredSongs.filter(song => song.folderId === folder.id)
+                      : folderSongs;
+                    if (searchTerm.trim() && !activeSongFolderId && matchingFolderSongs.length === 0) return null;
 
                     return (
                       <div key={folder.id} className={`relative mx-2 mt-2 mb-2 border border-[#ECEDEF] rounded-[14px] overflow-visible bg-[#EEF1F5] ${openArchiveMenu === folder.id ? 'z-[999]' : 'z-0'}`}>
                         <div className={`w-full min-h-[48px] flex items-center justify-between gap-3 px-3.5 py-2.5 bg-[#EEF1F5] transition-colors ${isExpanded ? 'rounded-t-[13px]' : 'rounded-[13px]'}`}>
                         <button type="button"
-                          onClick={() => setExpandedFolders(prev => isExpanded ? [] : [folder.id!])}
+                          onClick={() => { setActiveSongFolderId(folder.id!); setSearchTerm(''); setExpandedFolders([]); }}
                           className="flex flex-1 min-w-0 items-center justify-between gap-3 text-left"
                         >
                           <div className="flex w-full min-w-0 items-center gap-3">
                             {!isDesktop && isSelectionMode ? (
                               <span
                                 role="checkbox"
-                                aria-checked={folderSongs.length > 0 && folderSongs.every(song => selectedSongIds.includes(song.id!))}
+                                aria-checked={matchingFolderSongs.length > 0 && matchingFolderSongs.every(song => selectedSongIds.includes(song.id!))}
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  const ids = folderSongs.map(song => song.id!);
+                                  const ids = matchingFolderSongs.map(song => song.id!);
                                   const allSelected = ids.length > 0 && ids.every(id => selectedSongIds.includes(id));
                                   setSelectedSongIds(prev => allSelected ? prev.filter(id => !ids.includes(id)) : Array.from(new Set([...prev, ...ids])));
                                 }}
                                 className="flex h-6 w-6 shrink-0 items-center justify-center text-[#174EA6]"
                                 title="Selecionar ou desmarcar músicas desta pasta"
                               >
-                                {folderSongs.length > 0 && folderSongs.every(song => selectedSongIds.includes(song.id!)) ? <CheckSquare size={21} /> : <Square size={21} />}
+                                {matchingFolderSongs.length > 0 && matchingFolderSongs.every(song => selectedSongIds.includes(song.id!)) ? <CheckSquare size={21} /> : <Square size={21} />}
                               </span>
                             ) : <FolderIcon size={16} className="text-[#174EA6]" />}
                             <span className="min-w-0 flex-1 text-left text-[13px] font-bold uppercase tracking-[0.08em] truncate max-w-[140px] text-[#174EA6]">{folder.name}</span>
-                            <span className="ml-auto text-[10px] min-w-[18px] h-[18px] px-1 bg-[#174EA6] rounded-[4px] text-white font-bold flex items-center justify-center tabular-nums">{folderSongs.length}</span>
+                            <span className="ml-auto text-[10px] min-w-[18px] h-[18px] px-1 bg-[#174EA6] rounded-[4px] text-white font-bold flex items-center justify-center tabular-nums">{searchTerm.trim() && !activeSongFolderId ? matchingFolderSongs.length : folderSongs.length}</span>
                           </div>
                         </button>
                         <div data-archive-menu-root className="relative shrink-0" onClick={e => e.stopPropagation()}>
@@ -3347,10 +3474,10 @@ const handleRepertorioPdfFull = async () => {
                   })}
 
                   {/* Root Songs (Archive Home) */}
-                  <div className="px-2 mt-4 mb-1">
+                  {!activeSongFolderId && <div className="px-2 mt-4 mb-1">
                     <span className="text-[9px] font-black uppercase text-text-dim/50 tracking-[0.2em] ml-1">Sem Pasta (Raiz)</span>
-                  </div>
-                  {filteredSongs.filter(s => !s.folderId).map(song => (
+                  </div>}
+                  {!activeSongFolderId && filteredSongs.filter(s => !s.folderId).map(song => (
                     <SongSidebarItem 
                       isMobile={!isDesktop}
                       key={song.id}
@@ -4016,10 +4143,8 @@ const handleRepertorioPdfFull = async () => {
                 <AnimatePresence>
                   {isSidebarArchiveOpen && sidebarTab === 'repertorios' && (
                     <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-60 bg-white border border-[#DDE3EC] rounded-xl shadow-2xl z-[300] overflow-hidden">
-                      <button onClick={() => { handleRstImport(); setIsSidebarArchiveOpen(false); }} className="w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-[#0D47A1] hover:bg-[#E6ECF5] border-b border-[#DDE3EC] flex items-center gap-2"><Download size={14} /> Importar Repertório</button>
-                      <button disabled={selectedRepIds.length === 0} onClick={() => { handleRstExport(); setIsSidebarArchiveOpen(false); }} className={`w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest border-b border-[#DDE3EC] flex items-center gap-2 ${selectedRepIds.length === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-[#0D47A1] hover:bg-[#E6ECF5]'}`}><Upload size={14} /> Exportar Repertório</button>
-                      <button disabled={!selectedRepertorio || !(selectedRepertorio.songIds || []).some((id: string) => !id.startsWith('group:'))} onClick={() => { handleRepertorioPdfList(); setIsSidebarArchiveOpen(false); }} className={`w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest border-b border-[#DDE3EC] flex items-center gap-2 ${!selectedRepertorio || !(selectedRepertorio.songIds || []).some((id: string) => !id.startsWith('group:')) ? 'text-gray-300 cursor-not-allowed' : 'text-[#0D47A1] hover:bg-[#E6ECF5]'}`}><FileText size={14} /> Exportar Setlist</button>
-                      <button disabled={!selectedRepertorio || !(selectedRepertorio.songIds || []).some((id: string) => songs.some(song => song.id === id))} onClick={() => { handleRepertorioPdfFull(); setIsSidebarArchiveOpen(false); }} className={`w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest flex items-center gap-2 ${!selectedRepertorio || !(selectedRepertorio.songIds || []).some((id: string) => songs.some(song => song.id === id)) ? 'text-gray-300 cursor-not-allowed' : 'text-[#0D47A1] hover:bg-[#E6ECF5]'}`}><FileText size={14} /> Exportar Set Musical</button>
+                      <button onClick={() => { handleRepertorioJsonImport(); setIsSidebarArchiveOpen(false); }} className="w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-[#0D47A1] hover:bg-[#E6ECF5] border-b border-[#DDE3EC] flex items-center gap-2"><Download size={14} /> Importar Repertório (.json)</button>
+                      <button onClick={() => { setIsRepertorioJsonExportModalOpen(true); setIsSidebarArchiveOpen(false); }} className="w-full px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-[#0D47A1] hover:bg-[#E6ECF5] flex items-center gap-2"><Upload size={14} /> Exportar Repertório (.json)</button>
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -5383,6 +5508,73 @@ const handleRepertorioPdfFull = async () => {
                 </p>
               </motion.div>
             </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {isRepertorioJsonExportModalOpen && (
+            <div className="fixed inset-0 bg-black/60 z-[650] flex items-center justify-center p-4 backdrop-blur-sm">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 16 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 16 }}
+                className="bg-surface w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border border-border"
+              >
+                <div className="p-4 border-b border-border flex items-center justify-between bg-primary">
+                  <div>
+                    <h3 className="font-bold text-white uppercase tracking-widest text-xs">Exportar Repertório/Setlist</h3>
+                    <p className="text-[10px] text-white/70 mt-1">Selecione uma pasta completa ou um setlist.</p>
+                  </div>
+                  <button onClick={() => setIsRepertorioJsonExportModalOpen(false)} className="text-white/80 hover:text-white"><X size={20} /></button>
+                </div>
+                <div className="p-3 max-h-[65vh] overflow-y-auto space-y-3">
+                  {folders.filter(folder => folder.type === 'repertorio').map(folder => {
+                    const folderSetlists = repertorios.filter(item => item.folderId === folder.id);
+                    return (
+                      <div key={folder.id} className="rounded-xl border border-border overflow-hidden">
+                        <button
+                          onClick={() => handleRepertorioJsonExport({ type: 'folder', id: folder.id! })}
+                          className="w-full flex items-center gap-3 p-3 text-left hover:bg-primary/10 transition-colors"
+                        >
+                          <FolderIcon size={19} className="text-primary shrink-0" />
+                          <span className="font-bold text-sm flex-1">{folder.name}</span>
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-text-dim">Pasta completa</span>
+                        </button>
+                        {folderSetlists.length > 0 && (
+                          <div className="border-t border-border/70 bg-bg/40">
+                            {folderSetlists.map((item: any) => (
+                              <button
+                                key={item.id}
+                                onClick={() => handleRepertorioJsonExport({ type: 'setlist', id: item.id })}
+                                className="w-full flex items-center gap-3 py-2.5 pl-10 pr-3 text-left hover:bg-primary/10 transition-colors border-b last:border-b-0 border-border/40"
+                              >
+                                <ListMusic size={16} className="text-primary/80 shrink-0" />
+                                <span className="text-xs font-semibold flex-1">{item.title}</span>
+                                <span className="text-[9px] uppercase font-bold tracking-wider text-text-dim">Setlist</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {repertorios.filter(item => !item.folderId).map((item: any) => (
+                    <button
+                      key={item.id}
+                      onClick={() => handleRepertorioJsonExport({ type: 'setlist', id: item.id })}
+                      className="w-full flex items-center gap-3 p-3 rounded-xl border border-border text-left hover:bg-primary/10 transition-colors"
+                    >
+                      <ListMusic size={18} className="text-primary shrink-0" />
+                      <span className="text-sm font-semibold flex-1">{item.title}</span>
+                      <span className="text-[9px] uppercase font-bold tracking-wider text-text-dim">Setlist</span>
+                    </button>
+                  ))}
+                  {folders.filter(folder => folder.type === 'repertorio').length === 0 && repertorios.length === 0 && (
+                    <p className="text-center text-xs text-text-dim py-8">Nenhuma pasta ou setlist disponível para exportação.</p>
+                  )}
+                </div>
+              </motion.div>
+            </div>
           )}
         </AnimatePresence>
 
