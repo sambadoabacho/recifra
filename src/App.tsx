@@ -2952,29 +2952,6 @@ const handleRepertorioPdfFull = async () => {
             </div>
           </div>
           <div className="flex items-center gap-1.5" ref={dropdownRef}>
-            <button
-              onClick={togglePalco}
-              disabled={!isMaestro && !liveSession?.leaderId}
-              className={`inline-flex translate-y-1 items-center gap-1.5 rounded-full px-3 py-2 text-xs font-black uppercase tracking-wide transition-all disabled:cursor-not-allowed disabled:opacity-35 ${
-                (isMaestroActive || followLeader)
-                  ? 'bg-[#174EA6] text-white shadow-sm'
-                  : liveSession?.leaderId
-                    ? 'bg-[#ff6900] text-white hover:bg-[#e65f00]'
-                    : 'text-text-dim hover:bg-surface'
-              }`}
-              title={
-                isMaestroActive
-                  ? 'Desativar Modo Palco'
-                  : followLeader
-                    ? 'Desativar Modo Palco'
-                    : liveSession?.leaderId
-                      ? 'Ativar Modo Palco (ao vivo)'
-                      : 'Ativar Modo Palco (ao vivo)'
-              }
-            >
-              <Mic2 size={17} />
-              <span>Palco</span>
-            </button>
 
             <div className="w-px h-4 bg-border mx-1 translate-y-1" />
 
@@ -3048,20 +3025,14 @@ const handleRepertorioPdfFull = async () => {
               setIsSelectionMode(false);
             }} 
           />
-          <SidebarNavItem 
-            icon={<Settings size={18} />} 
-            label="Ajustes" 
-            tooltip="Configure as preferências e ferramentas do aplicativo."
-            active={sidebarTab === 'settings'} 
-            onClick={() => {
-              setSidebarTab('settings');
-              setSidebarView('tabs');
-              setCurrentView('settings');
-              setSelectedRepertorio(null);
-              setTransposition(0);
-              setSelectedSongIds([]);
-              setIsSelectionMode(false);
-            }} 
+          <SidebarNavItem
+            icon={<Mic size={18} />}
+            label="Palco"
+            tooltip={isMaestroActive || followLeader ? "Desativar Modo Palco." : "Ativar ou acompanhar o Modo Palco."}
+            active={isMaestroActive || followLeader}
+            activeColorOverride="text-[#ff6900]"
+            showActiveIndicator={false}
+            onClick={togglePalco}
           />
         </nav>
 
@@ -3771,8 +3742,8 @@ const handleRepertorioPdfFull = async () => {
 
               {sidebarTab === 'settings' && (
                 <div className="flex flex-col h-full bg-white">
-                  <div className="p-6 border-b border-[#174EA6]/30 bg-white">
-                    <h3 className="text-sm font-bold uppercase tracking-widest text-[#174EA6]">Ajustes & Configurações</h3>
+                  <div className="mx-2 mt-2 mb-2 min-h-[48px] flex items-center px-3.5 py-2.5 border border-[#ECEDEF] rounded-[14px] bg-[#EEF1F5]">
+                    <h3 className="text-[13px] font-bold uppercase tracking-[0.08em] text-black">Ajustes & Configurações</h3>
                   </div>
                   <div className="flex-1 py-1 bg-white">
                    {[
@@ -3792,11 +3763,11 @@ const handleRepertorioPdfFull = async () => {
                             setIsSidebarOpen(false);
                           }
                         }}
-                        className={`w-full text-left px-6 py-4 text-sm font-bold uppercase tracking-widest border-l-4 border-b border-b-[#174EA6]/25 transition-all flex items-center gap-3 ${
+                        className={`w-full min-h-[48px] text-left px-3.5 py-2.5 text-[13px] font-bold uppercase tracking-[0.08em] border-b border-b-[#D1D5DB] transition-all flex items-center gap-3 text-black ${
                           currentView === 'settings' && activeSettingsTab === item.id 
-                            ? 'bg-[#E6ECF5] border-l-[#174EA6] text-[#174EA6]' 
-                            : 'bg-white border-l-transparent text-[#174EA6] hover:bg-[#F3F6FB]'
-                        }`}
+                            ? 'bg-[#EEF1F5] border-l-4 border-l-[#174EA6]' 
+                            : 'bg-white border-l-4 border-l-transparent hover:bg-[#F3F6FB]'
+                        } [&_svg]:text-[#174EA6]`}
                       >
                         {item.icon}
                         {item.label}
@@ -3804,7 +3775,7 @@ const handleRepertorioPdfFull = async () => {
                     ))}
                     <button 
                       onClick={() => setIsLogoutDialogOpen(true)}
-                      className="w-full text-left px-6 py-4 text-sm font-bold uppercase tracking-widest border-l-4 border-l-transparent border-b border-b-[#174EA6]/25 bg-white text-[#174EA6] hover:bg-[#F3F6FB] transition-all flex items-center gap-3"
+                      className="w-full min-h-[48px] text-left px-3.5 py-2.5 text-[13px] font-bold uppercase tracking-[0.08em] border-l-4 border-l-transparent border-b border-b-[#D1D5DB] bg-white text-black hover:bg-[#F3F6FB] transition-all flex items-center gap-3"
                     >
                       <LogOut size={18} className="text-[#174EA6]" />
                       Sair
@@ -4083,26 +4054,6 @@ const handleRepertorioPdfFull = async () => {
                   setIsSidebarOpen(false);
                 }}
               />
-              <SidebarNavItem
-                icon={isSelectionMode ? <Check size={20} /> : expandedFolders.length > 0 ? <CheckSquare size={18} /> : <Settings size={18} />}
-                label={isSelectionMode ? 'Concluir' : expandedFolders.length > 0 ? 'Selecionar' : 'Ajustes'}
-                tooltip={isSelectionMode ? 'Concluir seleção.' : expandedFolders.length > 0 ? 'Selecionar músicas para ações em lote.' : 'Abrir ajustes e configurações.'}
-                active={isSelectionMode}
-                variant="light"
-                onClick={() => {
-                  if (isSelectionMode) {
-                    setIsSelectionMode(false);
-                    setSelectedSongIds([]);
-                    setIsMovingSongs(false);
-                  } else if (expandedFolders.length > 0) {
-                    setIsSelectionMode(true);
-                  } else {
-                    setSidebarTab('settings');
-                    setSidebarView('tabs');
-                    setCurrentView('settings');
-                  }
-                }}
-              />
               <div className="relative" ref={bottomArchiveRef}>
                 <SidebarNavItem
                   icon={<Save size={18} />}
@@ -4125,6 +4076,7 @@ const handleRepertorioPdfFull = async () => {
                   )}
                 </AnimatePresence>
               </div>
+              <SidebarNavItem icon={<Settings size={18} />} label="Ajustes" tooltip="Configure as preferências e ferramentas do aplicativo." active={true} variant="light" onClick={() => { setSidebarTab('settings'); setSidebarView('tabs'); setCurrentView('settings'); }} />
             </>
           ) : sidebarTab === 'repertorios' && sidebarView === 'repertorio-songs' && selectedRepertorio ? (
             <>
@@ -4148,15 +4100,6 @@ const handleRepertorioPdfFull = async () => {
                 variant="light"
                 onClick={handleCreateBlock}
               />
-              <SidebarNavItem
-                icon={isSelectionMode ? <Check size={18} /> : <CheckSquare size={18} />}
-                label={isSelectionMode ? 'Concluir' : 'Selecionar'}
-                tooltip="A seleção em lote de repertórios está disponível na lista de repertórios."
-                active={true}
-                variant="light"
-                disabled={true}
-                onClick={() => {}}
-              />
               <div className="relative" ref={bottomArchiveRef}>
                 <SidebarNavItem
                   icon={<Save size={18} />}
@@ -4176,6 +4119,7 @@ const handleRepertorioPdfFull = async () => {
                   )}
                 </AnimatePresence>
               </div>
+              <SidebarNavItem icon={<Settings size={18} />} label="Ajustes" tooltip="Configure as preferências e ferramentas do aplicativo." active={true} variant="light" onClick={() => { setSidebarTab('settings'); setSidebarView('tabs'); setCurrentView('settings'); }} />
             </>
           ) : sidebarTab === 'repertorios' ? (
             <>
@@ -4206,18 +4150,6 @@ const handleRepertorioPdfFull = async () => {
                   setIsSidebarOpen(false);
                 }}
               />
-              <SidebarNavItem
-                icon={isSelectionMode ? <Check size={18} /> : <CheckSquare size={18} />}
-                label={isSelectionMode ? 'Concluir' : 'Selecionar'}
-                tooltip="Selecionar um ou mais repertórios para ações em lote."
-                active={isSelectionMode}
-                variant="light"
-                disabled={filteredRepertorios.length === 0}
-                onClick={() => {
-                  setIsSelectionMode(!isSelectionMode);
-                  if (isSelectionMode) setSelectedRepIds([]);
-                }}
-              />
               <div className="relative" ref={bottomArchiveRef}>
                 <SidebarNavItem
                   icon={<Save size={18} />}
@@ -4237,11 +4169,12 @@ const handleRepertorioPdfFull = async () => {
                   )}
                 </AnimatePresence>
               </div>
+              <SidebarNavItem icon={<Settings size={18} />} label="Ajustes" tooltip="Configure as preferências e ferramentas do aplicativo." active={true} variant="light" onClick={() => { setSidebarTab('settings'); setSidebarView('tabs'); setCurrentView('settings'); }} />
             </>
           ) : sidebarTab === 'blocks' ? (
             <>
-              <div className="flex items-center gap-1 w-full">
-                <div className="flex-1 min-w-0">
+              <div className="contents">
+                <div className="flex-1 min-w-0 flex justify-center">
                   <SidebarNavItem icon={<Plus size={18} />} label="BLOCO" tooltip="Criar um novo bloco." active={true} variant="light" onClick={() => {
                     const blockFolders = folders.filter(folder => (folder.type as string) === 'block');
                     if (blockFolders.length === 0) { alert('Crie um conjunto de blocos primeiro usando o botão “Conjuntos”.'); return; }
@@ -4249,16 +4182,42 @@ const handleRepertorioPdfFull = async () => {
                     setIsSidebarOpen(false);
                   }} />
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 flex justify-center">
                   <SidebarNavItem icon={<FolderIcon size={18} />} label="Conjuntos" tooltip="Criar ou organizar conjuntos de blocos." active={true} variant="light" onClick={() => { setManagingFolderType('block'); setIsSidebarOpen(false); }} />
                 </div>
               </div>
-              <div className="flex-1" />
-              <SidebarNavItem icon={<Settings size={18} />} label="Ajustes" tooltip="Configure as preferências e ferramentas do aplicativo." active={sidebarTab === 'settings'} variant="light" onClick={() => { setSidebarTab('settings'); setSidebarView('tabs'); }} />
+              <div className="relative flex-1 min-w-0 flex justify-center" ref={bottomArchiveRef}>
+                <SidebarNavItem icon={<Save size={18} />} label="Arquivo" tooltip="Acessar as opções gerais de importação e exportação." active={isSidebarArchiveOpen} variant="light" onClick={() => { setIsSidebarArchiveOpen(!isSidebarArchiveOpen); setIsSidebarActionOpen(false); }} />
+                <AnimatePresence>
+                  {isSidebarArchiveOpen && sidebarTab === 'blocks' && (
+                    <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-fit min-w-max max-w-[calc(100vw-24px)] bg-white border border-[#DDE3EC] rounded-xl shadow-2xl z-[300] overflow-hidden [&_svg]:!text-[#174EA6]">
+                      <div className="flex items-center justify-between gap-6 px-4 py-3 border-b border-gray-300 text-black"><div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest whitespace-nowrap"><Save size={15} /> ARQUIVO</div><button type="button" onClick={() => setIsSidebarArchiveOpen(false)} aria-label="Fechar menu" title="Fechar" className="p-1 rounded-md hover:bg-[#E6ECF5] transition-colors"><X size={16} /></button></div>
+                      <button onClick={() => { handleIndividualImport(); setIsSidebarArchiveOpen(false); setIsSidebarOpen(false); }} className="w-full px-4 py-3 text-left whitespace-nowrap text-[11px] font-bold tracking-widest text-black hover:bg-[#E6ECF5] border-b border-gray-300 flex items-center gap-2"><Download size={14} /> Importar Música</button>
+                      <button onClick={() => { handleBulkImport(); setIsSidebarArchiveOpen(false); setIsSidebarOpen(false); }} className="w-full px-4 py-3 text-left whitespace-nowrap text-[11px] font-bold tracking-widest text-black hover:bg-[#E6ECF5] border-b border-gray-300 flex items-center gap-2"><Download size={14} /> Importar Acervo (zip)</button>
+                      <button onClick={() => { handleRepertorioJsonImport(); setIsSidebarArchiveOpen(false); }} className="w-full px-4 py-3 text-left whitespace-nowrap text-[11px] font-bold tracking-widest text-black hover:bg-[#E6ECF5] border-b border-gray-300 flex items-center gap-2"><Download size={14} /> Importar Repertório (json)</button>
+                      <button onClick={() => { setIsRepertorioJsonExportModalOpen(true); setIsSidebarArchiveOpen(false); }} className="w-full px-4 py-3 text-left whitespace-nowrap text-[11px] font-bold tracking-widest text-black hover:bg-[#E6ECF5] flex items-center gap-2"><Upload size={14} /> Exportar Repertório (json)</button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+              <div className="flex-1 min-w-0 flex justify-center">
+                <SidebarNavItem icon={<Settings size={18} />} label="Ajustes" tooltip="Configure as preferências e ferramentas do aplicativo." active={true} variant="light" onClick={() => { setSidebarTab('settings'); setSidebarView('tabs'); setCurrentView('settings'); }} />
+              </div>
             </>
           ) : (
-            <div className="flex justify-around w-full">
-              <SidebarNavItem icon={<Settings size={18} />} label="Ajustes" tooltip="Configure as preferências e ferramentas do aplicativo." active={sidebarTab === 'settings'} variant="light" onClick={() => { setSidebarTab('settings'); setSidebarView('tabs'); }} />
+            <div className="flex w-full items-center justify-around">
+              <div className="flex-1 min-w-0 flex justify-center">
+                <SidebarNavItem icon={<Plus size={18} />} label="Música" tooltip="Cadastrar uma nova música." active={false} variant="light" disabled={true} onClick={() => {}} />
+              </div>
+              <div className="flex-1 min-w-0 flex justify-center">
+                <SidebarNavItem icon={<FolderIcon size={18} />} label="Pastas" tooltip="Criar ou organizar pastas." active={false} variant="light" disabled={true} onClick={() => {}} />
+              </div>
+              <div className="flex-1 min-w-0 flex justify-center">
+                <SidebarNavItem icon={<Save size={18} />} label="Arquivo" tooltip="Acessar as opções gerais de importação e exportação." active={false} variant="light" disabled={true} onClick={() => {}} />
+              </div>
+              <div className="flex-1 min-w-0 flex justify-center">
+                <SidebarNavItem icon={<Settings size={18} />} label="Ajustes" tooltip="Configure as preferências e ferramentas do aplicativo." active={true} variant="light" onClick={() => { setSidebarTab('settings'); setSidebarView('tabs'); }} />
+              </div>
             </div>
           )}
         </nav>
@@ -6274,8 +6233,8 @@ function SortableSongItem({ id, song, index, onClick, onDelete, onShare, isMaest
 }
 
 
-function SidebarNavItem({ icon, label, active, onClick, variant = 'dark', disabled = false, tooltip }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void, variant?: 'dark' | 'light', disabled?: boolean, tooltip?: string }) {
-  const activeColor = variant === 'dark' ? 'text-[#E6ECF5]' : 'text-[#0D47A1]';
+function SidebarNavItem({ icon, label, active, onClick, variant = 'dark', disabled = false, tooltip, activeColorOverride, showActiveIndicator = true }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void, variant?: 'dark' | 'light', disabled?: boolean, tooltip?: string, activeColorOverride?: string, showActiveIndicator?: boolean }) {
+  const activeColor = activeColorOverride || (variant === 'dark' ? 'text-[#E6ECF5]' : 'text-[#0D47A1]');
   const inactiveColor = variant === 'dark' ? 'text-white hover:text-white/80' : 'text-[#0D47A1]/60 hover:text-[#0D47A1]';
 
   return (
@@ -6287,7 +6246,7 @@ function SidebarNavItem({ icon, label, active, onClick, variant = 'dark', disabl
     >
       {icon}
       <span className="text-[9px] uppercase font-bold tracking-widest">{label}</span>
-      {variant === 'dark' && active && (
+      {variant === 'dark' && active && showActiveIndicator && (
         <span className="absolute bottom-0 left-2 right-2 h-[3px] rounded-full bg-[#E6ECF5]" aria-hidden="true" />
       )}
     </button>
