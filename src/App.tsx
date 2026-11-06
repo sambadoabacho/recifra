@@ -32,7 +32,7 @@ import {
   ChevronLeft, ChevronRight, ChevronUp, Play, Users, Save, X, Search, Minus, Type, Filter,
   ArrowUp, ArrowDown, Radio, Menu, MoreVertical, PanelLeft, Layout, Settings, ListMusic, Sun, Moon, Archive, Library,
   Share2, CheckSquare, Square, GripVertical, ArrowLeft, Download, Upload, FilePlus, Boxes, Brain, FileText, Check, Plus,
-  Folder as FolderIcon, FolderPlus, Hash, Info, Gamepad, LayoutList, Mic2, Music2, FolderOpen, ChevronDown, Tag, Hourglass, RotateCcw, RotateCw, Smile, PlusCircle, FileUp, Eraser, Eye
+  Folder as FolderIcon, FolderPlus, Hash, Info, Gamepad, LayoutList, Mic2, Music2, FolderOpen, ChevronDown, ArrowUpDown, Tag, Hourglass, RotateCcw, RotateCw, Smile, PlusCircle, FileUp, Eraser, Eye
 } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -553,6 +553,7 @@ export default function App() {
   }, [sidebarTab, sidebarView, expandedFolders, activeSongFolderId]);
   const [activeMobileSongId, setActiveMobileSongId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'title' | 'composition' | 'artist' | 'updatedAt'>('title');
+  const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const [filterKey, setFilterKey] = useState<string>('');
   const [filterTempo, setFilterTempo] = useState<string>('');
   const [filterCategory, setFilterCategory] = useState<string>('');
@@ -2715,7 +2716,7 @@ const handleRepertorioPdfFull = async () => {
         // remove cifras entre colchetes e diretivas ChordPro antes de comparar.
         normalizeSearchText(
           (s.chordPro || '')
-            .replace(/\[[^\]]*\]/g, ' ')
+            .replace(/\[[^\]]*\]/g, '')
             .replace(/\{[^}]*\}/g, ' ')
             .replace(/\s+/g, ' ')
         ).includes(normalizedTerm)
@@ -2954,7 +2955,7 @@ const handleRepertorioPdfFull = async () => {
             <button
               onClick={togglePalco}
               disabled={!isMaestro && !liveSession?.leaderId}
-              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-black uppercase tracking-wide transition-all disabled:cursor-not-allowed disabled:opacity-35 ${
+              className={`inline-flex translate-y-1 items-center gap-1.5 rounded-full px-3 py-2 text-xs font-black uppercase tracking-wide transition-all disabled:cursor-not-allowed disabled:opacity-35 ${
                 (isMaestroActive || followLeader)
                   ? 'bg-[#174EA6] text-white shadow-sm'
                   : liveSession?.leaderId
@@ -2975,7 +2976,7 @@ const handleRepertorioPdfFull = async () => {
               <span>Palco</span>
             </button>
 
-            <div className="w-px h-4 bg-border mx-1" />
+            <div className="w-px h-4 bg-border mx-1 translate-y-1" />
 
             {isSelectionMode ? (
               <button 
@@ -2992,7 +2993,7 @@ const handleRepertorioPdfFull = async () => {
             ) : (
               <button 
                 onClick={() => setIsSidebarOpen(false)} 
-                className="p-2 hover:bg-surface rounded-full text-text-dim"
+                className="p-2 hover:bg-surface rounded-full text-text-dim translate-y-1"
                 title="Fechar"
               >
                 <X size={20} />
@@ -3069,127 +3070,179 @@ const handleRepertorioPdfFull = async () => {
             const activeFolder = folders.find(folder => folder.id === activeSongFolderId);
             if (!activeFolder) return null;
             return (
-              <div className="flex items-center gap-3 min-h-[48px] px-3 py-2 rounded-xl bg-[#EEF1F5] border border-[#DCE3EC]">
-                <button
-                  type="button"
-                  onClick={() => { setActiveSongFolderId(null); setSearchTerm(''); setExpandedFolders([]); }}
-                  className="shrink-0 p-1 text-[#174EA6] hover:bg-white rounded-lg transition-colors"
-                  aria-label="Voltar para todas as pastas"
-                  title="Voltar para todas as pastas"
-                >
-                  <ArrowLeft size={19} />
-                </button>
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => { setActiveSongFolderId(null); setSearchTerm(''); setExpandedFolders([]); }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setActiveSongFolderId(null);
+                    setSearchTerm('');
+                    setExpandedFolders([]);
+                  }
+                }}
+                aria-label="Voltar para todas as pastas"
+                title="Voltar para todas as pastas"
+                className="flex items-center gap-3 min-h-[48px] px-3 py-2 rounded-xl bg-[#EEF1F5] border border-[#DCE3EC] cursor-pointer hover:bg-[#E7ECF3] active:scale-[0.99] transition-all outline-none focus-visible:ring-2 focus-visible:ring-[#174EA6]"
+              >
+                <span className="shrink-0 p-1 text-[#174EA6] rounded-lg" aria-hidden="true"><ArrowLeft size={19} /></span>
                 <FolderOpen size={20} className="shrink-0 text-[#174EA6]" />
-                <span className="min-w-0 flex-1 truncate text-[13px] font-black uppercase tracking-[0.06em] text-[#174EA6]">{activeFolder.name}</span>
+                <span className="min-w-0 flex-1 truncate text-[13px] font-black uppercase tracking-[0.06em] text-black">{activeFolder.name}</span>
                 <span className="shrink-0 text-[10px] min-w-[22px] h-[20px] px-1.5 bg-[#174EA6] rounded-md text-white font-bold flex items-center justify-center tabular-nums">{songs.filter(song => song.folderId === activeSongFolderId).length}</span>
               </div>
             );
           })()}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#0D47A1]" size={16} />
-            <input 
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" size={16} />
+            <input
               type="text"
               placeholder="Buscar..."
               value={searchTerm}
               onChange={(e) => {
                 const value = e.target.value;
                 setSearchTerm(value);
-                // Ao pesquisar no acervo geral, abre automaticamente a pasta TODAS
-                // para exibir os resultados logo abaixo dela.
-                if (!activeSongFolderId) {
-                  setExpandedFolders(value.trim() ? ['all'] : []);
-                }
+                if (!activeSongFolderId) setExpandedFolders(value.trim() ? ['all'] : []);
               }}
-              className="w-full bg-white border border-[#0D47A1] rounded-lg py-2 pl-9 pr-10 text-sm focus:ring-1 focus:ring-[#0D47A1] outline-none text-[#0D47A1] placeholder:text-[#0D47A1]/50"
+              className={`w-full bg-white border border-[#D1D5DB] rounded-lg py-2 pl-9 ${sidebarTab === 'songs' && (activeSongFolderId || expandedFolders.length > 0 || searchTerm) ? 'pr-[82px]' : 'pr-10'} text-sm focus:ring-1 focus:ring-[#D1D5DB] outline-none text-[#666666] placeholder:text-[#B8BEC8]`}
             />
+            {sidebarTab === 'songs' && (activeSongFolderId || expandedFolders.length > 0 || searchTerm) && (
+              <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => { setIsFilterActive(false); setIsSortMenuOpen(prev => !prev); }}
+                  aria-label="Ordenar músicas"
+                  aria-haspopup="menu"
+                  aria-expanded={isSortMenuOpen}
+                  title={`Ordenar por: ${{ title: 'Título', composition: 'Composição', artist: 'Artista', updatedAt: 'Modificação' }[sortBy]}`}
+                  className={`h-8 w-8 flex items-center justify-center rounded-md transition-colors ${isSortMenuOpen ? 'bg-[#EEF4FF] text-[#174EA6]' : 'text-[#9CA3AF] hover:bg-[#F3F4F6] hover:text-[#666666]'}`}
+                >
+                  <ArrowUpDown size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setIsSortMenuOpen(false); setIsFilterActive(prev => !prev); }}
+                  aria-label="Filtrar músicas"
+                  aria-haspopup="dialog"
+                  aria-expanded={isFilterActive}
+                  title="Filtros"
+                  className={`h-8 w-8 flex items-center justify-center rounded-md transition-colors ${isFilterActive ? 'bg-[#EEF4FF] text-[#174EA6]' : 'text-[#9CA3AF] hover:bg-[#F3F4F6] hover:text-[#666666]'}`}
+                >
+                  <Filter size={16} />
+                </button>
+              </div>
+            )}
             {searchTerm && (
-              <button 
+              <button
                 onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#0D47A1] hover:text-[#0D47A1]/80 transition-colors"
+                aria-label="Limpar busca"
+                className={`absolute top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#666666] transition-colors ${sidebarTab === 'songs' && (activeSongFolderId || expandedFolders.length > 0 || searchTerm) ? 'right-[86px]' : 'right-3'}`}
               >
                 <X size={16} />
               </button>
             )}
-          </div>
 
-          {(sidebarTab === 'songs' && (activeSongFolderId || expandedFolders.length > 0 || searchTerm)) && (
-            <div className="flex flex-col gap-2 p-2 bg-surface/50 border border-border rounded-xl">
-              <div className="flex items-center justify-between">
-                <div className="flex flex-1 items-center gap-2 pr-10">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-text-dim whitespace-nowrap">Ordenar por:</span>
-                  <select 
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as any)}
-                    className="flex-1 bg-transparent border-none text-[10px] font-bold uppercase tracking-wider text-primary outline-none cursor-pointer"
-                  >
-                    <option value="title">Título</option>
-                    <option value="composition">Composição</option>
-                    <option value="artist">Artista</option>
-                    <option value="updatedAt">Modificação</option>
-                  </select>
-                </div>
-                <button 
-                  onClick={() => setIsFilterActive(!isFilterActive)}
-                  className={`p-1.5 rounded-lg transition-colors ${isFilterActive ? 'bg-primary text-white' : 'text-text-dim hover:bg-surface'}`}
-                  title="Filtros"
+            <AnimatePresence>
+              {isSortMenuOpen && sidebarTab === 'songs' && (activeSongFolderId || expandedFolders.length > 0 || searchTerm) && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                  transition={{ duration: 0.12 }}
+                  role="menu"
+                  className="absolute right-10 top-full mt-1.5 z-[90] min-w-[190px] overflow-hidden rounded-xl border border-[#D1D5DB] bg-white shadow-xl shadow-black/10"
                 >
-                  <Filter size={14} />
-                </button>
-              </div>
-
-              <AnimatePresence>
-                {isFilterActive && (
-                  <motion.div 
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="pt-2 border-t border-border/50 space-y-2 overflow-hidden"
-                  >
-                    <div className="grid grid-cols-1 gap-2">
-                      <select 
-                        value={filterKey}
-                        onChange={(e) => setFilterKey(e.target.value)}
-                        className="w-full bg-bg border border-border rounded-lg p-2 text-[10px] font-medium outline-none"
+                  <div className="flex items-center gap-2.5 border-b border-[#E5E7EB] px-3 py-3">
+                    <ArrowUpDown size={15} className="text-[#666666]" />
+                    <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#111827]">ORDENAR POR</span>
+                  </div>
+                  <div className="py-1">
+                  {([
+                    { value: 'title', label: 'Título', Icon: Type },
+                    { value: 'composition', label: 'Composição', Icon: FileText },
+                    { value: 'artist', label: 'Artista', Icon: UserIcon },
+                    { value: 'updatedAt', label: 'Modificação', Icon: RotateCw },
+                  ] as const).map((item, index) => (
+                    <React.Fragment key={item.value}>
+                      {index > 0 && <div className="mx-2 border-t border-[#E5E7EB]" />}
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={sortBy === item.value}
+                        onClick={() => { setSortBy(item.value); setIsSortMenuOpen(false); }}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide transition-colors ${sortBy === item.value ? 'bg-[#EEF4FF] text-[#174EA6]' : 'text-[#111827] hover:bg-[#F3F4F6]'}`}
                       >
-                        <option value="">Todas as Tonalidades</option>
-                        {allKeys.map(k => <option key={k} value={k}>{k}</option>)}
-                      </select>
-                      <select 
-                        value={filterTempo}
-                        onChange={(e) => setFilterTempo(e.target.value)}
-                        className="w-full bg-bg border border-border rounded-lg p-2 text-[10px] font-medium outline-none"
-                      >
-                        <option value="">Todos os Andamentos</option>
-                        <option value="Lento">Lento</option>
-                        <option value="Moderado">Moderado</option>
-                        <option value="Rápido">Rápido</option>
-                      </select>
-                      <select 
-                        value={filterCategory}
-                        onChange={(e) => setFilterCategory(e.target.value)}
-                        className="w-full bg-bg border border-border rounded-lg p-2 text-[10px] font-medium outline-none"
-                      >
-                        <option value="">Todas as Categorias</option>
-                        {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                      </select>
-                    </div>
-                    {(filterKey || filterTempo || filterCategory) && (
-                      <button 
-                        onClick={() => {
-                          setFilterKey('');
-                          setFilterTempo('');
-                          setFilterCategory('');
-                        }}
-                        className="w-full py-1.5 text-[9px] font-bold uppercase tracking-widest text-red-500 bg-red-500/5 rounded-lg hover:bg-red-500/10"
-                      >
-                        Limpar Filtros
+                        <item.Icon size={14} className={sortBy === item.value ? 'text-[#174EA6]' : 'text-[#9CA3AF]'} />
+                        <span className="flex-1">{item.label}</span>
+                        {sortBy === item.value && <Check size={13} className="text-[#174EA6]" />}
                       </button>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          )}
+                    </React.Fragment>
+                  ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {isFilterActive && sidebarTab === 'songs' && (activeSongFolderId || expandedFolders.length > 0 || searchTerm) && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                  transition={{ duration: 0.12 }}
+                  role="dialog"
+                  aria-label="Filtros de músicas"
+                  className="absolute right-0 top-full mt-1.5 z-[90] w-[min(250px,calc(100vw-48px))] overflow-hidden rounded-xl border border-[#D1D5DB] bg-white p-2 shadow-xl shadow-black/10"
+                >
+                  <div className="flex items-center gap-2 px-2 pb-2 text-[10px] font-bold uppercase tracking-widest text-[#666666]">
+                    <Filter size={14} className="text-[#9CA3AF]" /> Filtros
+                  </div>
+                  <div className="border-t border-[#E5E7EB]" />
+                  <label className="flex items-center gap-2 px-2 pt-2 text-[10px] font-semibold uppercase tracking-wide text-[#666666]"><Hash size={13} className="text-[#9CA3AF]" /> Tonalidade</label>
+                  <select
+                    value={filterKey}
+                    onChange={(e) => setFilterKey(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-[#D1D5DB] bg-white px-2.5 py-2 text-xs text-[#111827] outline-none focus:border-[#9CA3AF]"
+                  >
+                    <option value="">Todas as tonalidades</option>
+                    {allKeys.map(k => <option key={k} value={k}>{k}</option>)}
+                  </select>
+                  <div className="mx-1 my-2 border-t border-[#E5E7EB]" />
+                  <label className="flex items-center gap-2 px-2 text-[10px] font-semibold uppercase tracking-wide text-[#666666]"><Hourglass size={13} className="text-[#9CA3AF]" /> Andamento</label>
+                  <select
+                    value={filterTempo}
+                    onChange={(e) => setFilterTempo(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-[#D1D5DB] bg-white px-2.5 py-2 text-xs text-[#111827] outline-none focus:border-[#9CA3AF]"
+                  >
+                    <option value="">Todos os andamentos</option>
+                    <option value="Lento">Lento</option>
+                    <option value="Moderado">Moderado</option>
+                    <option value="Rápido">Rápido</option>
+                  </select>
+                  <div className="mx-1 my-2 border-t border-[#E5E7EB]" />
+                  <label className="flex items-center gap-2 px-2 text-[10px] font-semibold uppercase tracking-wide text-[#666666]"><Tag size={13} className="text-[#9CA3AF]" /> Categoria</label>
+                  <select
+                    value={filterCategory}
+                    onChange={(e) => setFilterCategory(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-[#D1D5DB] bg-white px-2.5 py-2 text-xs text-[#111827] outline-none focus:border-[#9CA3AF]"
+                  >
+                    <option value="">Todas as categorias</option>
+                    {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
+                  {(filterKey || filterTempo || filterCategory) && (
+                    <>
+                      <div className="mx-1 my-2 border-t border-[#E5E7EB]" />
+                      <button
+                        type="button"
+                        onClick={() => { setFilterKey(''); setFilterTempo(''); setFilterCategory(''); }}
+                        className="w-full rounded-lg px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wide text-[#666666] hover:bg-[#F3F4F6]"
+                      >Limpar filtros</button>
+                    </>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-2 pb-20 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -3301,18 +3354,18 @@ const handleRepertorioPdfFull = async () => {
                             {filteredSongs.length > 0 && filteredSongs.every(song => selectedSongIds.includes(song.id!)) ? <CheckSquare size={21} /> : <Square size={21} />}
                           </span>
                         ) : <FolderIcon size={16} fill="currentColor" className="text-[#174EA6]" />}
-                        <span className="min-w-0 flex-1 text-left text-[13px] font-bold uppercase tracking-[0.08em] text-[#174EA6]">TODAS</span>
+                        <span className="min-w-0 flex-1 text-left text-[13px] font-bold uppercase tracking-[0.08em] text-black">TODAS</span>
                         <span className="ml-auto text-[10px] min-w-[18px] h-[18px] px-1 bg-[#174EA6] rounded-[4px] text-white font-bold flex items-center justify-center tabular-nums">{filteredSongs.length}</span>
                       </div>
                     </button>
                     <div data-archive-menu-root className="relative shrink-0" onClick={e => e.stopPropagation()}>
-                      <button type="button" aria-label="Ações de todas as músicas" onClick={() => setOpenArchiveMenu(openArchiveMenu === 'all' ? null : 'all')} className="p-1.5 text-[#174EA6] hover:bg-white rounded-md transition-colors"><MoreVertical size={18}/></button>
-                      {openArchiveMenu === 'all' && <div className="absolute right-0 top-9 z-[10000] w-max min-w-0 max-w-[240px] bg-white border border-[#B8D0F0] rounded-xl shadow-2xl p-1.5 text-left text-[#174EA6]">
-                        <div className="flex items-center justify-between gap-3 px-2 py-1.5 mb-1 border-b border-[#D6E4F7]"><div className="flex items-center gap-2 text-xs font-bold text-[#174EA6]"><Music size={15}/>MÚSICAS</div><button type="button" aria-label="Fechar menu" title="Fechar" onClick={() => setOpenArchiveMenu(null)} className="p-1 rounded-md text-[#174EA6] hover:bg-[#EEF5FF]"><X size={15}/></button></div>
+                      <button type="button" aria-label="Ações de todas as músicas" onClick={() => setOpenArchiveMenu(openArchiveMenu === 'all' ? null : 'all')} className="p-1.5 text-[#666666] hover:bg-white rounded-md transition-colors"><MoreVertical size={18}/></button>
+                      {openArchiveMenu === 'all' && <div className="absolute right-0 top-9 z-[10000] w-max min-w-0 max-w-[240px] bg-white border border-[#D1D5DB] rounded-xl shadow-2xl p-1.5 text-left text-black">
+                        <div className="flex items-center justify-between gap-3 px-2 py-1.5 mb-1 border-b border-[#D1D5DB]"><div className="flex items-center gap-2 text-xs font-bold text-black"><Music size={15}/>MÚSICAS</div><button type="button" aria-label="Fechar menu" title="Fechar" onClick={() => setOpenArchiveMenu(null)} className="p-1 rounded-md text-[#666666] hover:bg-[#EEF1F5]"><X size={15}/></button></div>
                         <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold whitespace-nowrap hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); exportArchiveZip(filteredSongs, 'Todas_as_musicas.zip'); }}><Download size={14}/>Download (zip)</button>
-                        <div className="border-t border-[#D6E4F7]"/>
+                        <div className="border-t border-[#D1D5DB]"/>
                         <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold whitespace-nowrap hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); exportArchivePdf(filteredSongs, 'Setlist — Todas as músicas', 'Todas_as_musicas.pdf'); }}><FileText size={14}/>Setlist (pdf)</button>
-                        <div className="border-t border-[#D6E4F7]"/>
+                        <div className="border-t border-[#D1D5DB]"/>
                         <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold whitespace-nowrap hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); const pdf = generatePDF(filteredSongs, "Songlist — Todas as músicas", true) as jsPDF; pdf.save("SONGLIST_TODAS_AS_MUSICAS.pdf"); }}><Music size={14}/>Songlist (pdf)</button>
                       </div>}
                     </div>
@@ -3406,20 +3459,20 @@ const handleRepertorioPdfFull = async () => {
                                 {matchingFolderSongs.length > 0 && matchingFolderSongs.every(song => selectedSongIds.includes(song.id!)) ? <CheckSquare size={21} /> : <Square size={21} />}
                               </span>
                             ) : <FolderIcon size={16} className="text-[#174EA6]" />}
-                            <span className="min-w-0 flex-1 text-left text-[13px] font-bold uppercase tracking-[0.08em] truncate max-w-[140px] text-[#174EA6]">{folder.name}</span>
+                            <span className="min-w-0 flex-1 text-left text-[13px] font-bold uppercase tracking-[0.08em] truncate max-w-[140px] text-black">{folder.name}</span>
                             <span className="ml-auto text-[10px] min-w-[18px] h-[18px] px-1 bg-[#174EA6] rounded-[4px] text-white font-bold flex items-center justify-center tabular-nums">{searchTerm.trim() && !activeSongFolderId ? matchingFolderSongs.length : folderSongs.length}</span>
                           </div>
                         </button>
                         <div data-archive-menu-root className="relative shrink-0" onClick={e => e.stopPropagation()}>
-                          <button type="button" aria-label={`Ações da pasta ${folder.name}`} onClick={() => setOpenArchiveMenu(openArchiveMenu === folder.id ? null : folder.id!)} className="p-1.5 text-[#174EA6] hover:bg-white rounded-md transition-colors"><MoreVertical size={18}/></button>
-                          {openArchiveMenu === folder.id && <div className="absolute right-0 top-9 z-[10000] w-max min-w-0 max-w-[240px] bg-white border border-[#B8D0F0] rounded-xl shadow-2xl p-1.5 text-left text-[#174EA6]">
-                            <div className="flex items-center justify-between gap-3 px-2 py-1.5 mb-1 border-b border-[#D6E4F7]"><div className="flex items-center gap-2 text-xs font-bold text-[#174EA6]"><Music size={15}/>MÚSICAS</div><button type="button" aria-label="Fechar menu" title="Fechar" onClick={() => setOpenArchiveMenu(null)} className="p-1 rounded-md text-[#174EA6] hover:bg-[#EEF5FF]"><X size={15}/></button></div>
+                          <button type="button" aria-label={`Ações da pasta ${folder.name}`} onClick={() => setOpenArchiveMenu(openArchiveMenu === folder.id ? null : folder.id!)} className="p-1.5 text-[#666666] hover:bg-white rounded-md transition-colors"><MoreVertical size={18}/></button>
+                          {openArchiveMenu === folder.id && <div className="absolute right-0 top-9 z-[10000] w-max min-w-0 max-w-[240px] bg-white border border-[#D1D5DB] rounded-xl shadow-2xl p-1.5 text-left text-black">
+                            <div className="flex items-center justify-between gap-3 px-2 py-1.5 mb-1 border-b border-[#D1D5DB]"><div className="flex items-center gap-2 text-xs font-bold text-black"><Music size={15}/>MÚSICAS</div><button type="button" aria-label="Fechar menu" title="Fechar" onClick={() => setOpenArchiveMenu(null)} className="p-1 rounded-md text-[#666666] hover:bg-[#EEF1F5]"><X size={15}/></button></div>
                             <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold whitespace-nowrap hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); exportArchiveZip(folderSongs, `${(folder.name || 'Pasta').replace(/[^\w-]+/g, '_')}.zip`); }}><Download size={14}/>Download</button>
-                            <div className="border-t border-[#D6E4F7]"/>
+                            <div className="border-t border-[#D1D5DB]"/>
                             <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold whitespace-nowrap hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); exportArchivePdf(folderSongs, `Músicas — ${folder.name}`, `${(folder.name || 'pasta').replace(/[^\w-]+/g, '_')}.pdf`); }}><FileText size={14}/>Setlist (pdf)</button>
-                            <div className="border-t border-[#D6E4F7]"/>
+                            <div className="border-t border-[#D1D5DB]"/>
                             <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold whitespace-nowrap hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); const pdf = generatePDF(folderSongs, `Songlist — ${folder.name}`, true) as jsPDF; pdf.save(`SONGLIST_${getExportFileName(folder.name || 'Pasta')}.pdf`); }}><Music size={14}/>Songlist (pdf)</button>
-                            <div className="border-t border-[#D6E4F7]"/>
+                            <div className="border-t border-[#D1D5DB]"/>
                             <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold whitespace-nowrap hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); shareAsPDF(folderSongs, `Músicas — ${folder.name}`); }}><Share2 size={14}/>Compartilhar</button>
                           </div>}
                         </div>
@@ -3545,7 +3598,7 @@ const handleRepertorioPdfFull = async () => {
                         >
                           <div className="flex w-full min-w-0 items-center gap-3">
                             <FolderIcon size={16} className="text-[#174EA6]" />
-                            <span className="min-w-0 flex-1 text-left text-[13px] font-bold uppercase tracking-[0.08em] truncate max-w-[140px] text-[#174EA6]">{folder.name}</span>
+                            <span className="min-w-0 flex-1 text-left text-[13px] font-bold uppercase tracking-[0.08em] truncate max-w-[140px] text-black">{folder.name}</span>
                             <span className="ml-auto text-[10px] min-w-[18px] h-[18px] px-1 bg-[#174EA6] rounded-[4px] text-white font-bold flex items-center justify-center tabular-nums">{folderReps.length}</span>
                           </div>
                           <ChevronRight size={16} className={`text-text-dim transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`} />
@@ -3680,7 +3733,7 @@ const handleRepertorioPdfFull = async () => {
                         >
                           <div className="flex w-full min-w-0 items-center gap-3">
                             <FolderIcon size={16} className="text-[#174EA6]" />
-                            <span className="min-w-0 flex-1 text-left text-[13px] font-bold uppercase tracking-[0.08em] truncate max-w-[140px] text-[#174EA6]">{folder.name}</span>
+                            <span className="min-w-0 flex-1 text-left text-[13px] font-bold uppercase tracking-[0.08em] truncate max-w-[140px] text-black">{folder.name}</span>
                             <span className="ml-auto text-[10px] min-w-[18px] h-[18px] px-1 bg-[#174EA6] rounded-[4px] text-white font-bold flex items-center justify-center tabular-nums">{cardCount}</span>
                           </div>
                           <ChevronRight size={16} className="text-text-dim" />
@@ -3743,7 +3796,7 @@ const handleRepertorioPdfFull = async () => {
               <div className="px-4 pt-1 pb-2 border-b border-border/60 mb-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-lg truncate uppercase tracking-tight text-[#0D47A1] leading-none mb-1">
+                    <h3 className="font-bold text-lg truncate uppercase tracking-tight text-black leading-none mb-1">
                       {selectedRepertorio?.title} {selectedRepertorio?.songIds?.filter((id: string) => !id.startsWith('group:')).length || 0}
                     </h3>
                     {selectedRepertorio?.date ? (
@@ -3899,14 +3952,14 @@ const handleRepertorioPdfFull = async () => {
                               #
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="font-bold text-sm truncate tracking-normal uppercase leading-none mb-1 text-[#174EA6]">
+                              <div className="font-bold text-sm truncate tracking-normal uppercase leading-none mb-1 text-black">
                                 {song.title?.length > 22 ? song.title.substring(0, 22) + '...' : song.title}
                               </div>
                               <div className="flex items-center justify-between gap-3">
-                                <div className="text-[10px] text-[#174EA6]/75 font-medium uppercase tracking-widest truncate leading-tight flex-1">
+                                <div className="text-[10px] text-[#666666] font-medium uppercase tracking-widest truncate leading-tight flex-1">
                                   {song.artist?.length > 22 ? song.artist.substring(0, 22) + '...' : song.artist}
                                 </div>
-                                <div className="text-[12px] text-primary font-bold tracking-tight shrink-0 text-right">
+                                <div className="text-[12px] text-[#666666] font-bold tracking-tight shrink-0 text-right">
                                   {(selectedRepertorio?.songKeys && song.id && selectedRepertorio.songKeys[song.id]) || song.key}
                                 </div>
                               </div>
@@ -4530,7 +4583,7 @@ const handleRepertorioPdfFull = async () => {
                 </button>
                 <AnimatePresence>
                   {isMobileSongActionsOpen && (
-                    <motion.div initial={{opacity:0,y:-5}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-5}} className="absolute right-0 top-full mt-2 w-48 rounded-xl border border-[#DCE3EC] bg-white py-1 shadow-xl z-[220] text-[#174EA6]">
+                    <motion.div initial={{opacity:0,y:-5}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-5}} className="absolute right-0 top-full mt-2 w-48 rounded-xl border border-[#D1D5DB] bg-white py-1 shadow-xl z-[220] text-black">
                       {isMaestro && <button type="button" onClick={() => { setEditingSong(selectedSong); setCurrentView('form'); setIsMobileSongActionsOpen(false); }} className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-bold hover:bg-[#EEF1F5]"><Edit2 size={16} /> Editar</button>}
                       <button type="button" onClick={() => { downloadSongFile(selectedSong); setIsMobileSongActionsOpen(false); }} className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-bold hover:bg-[#EEF1F5]"><Download size={16} /> Baixar</button>
                       <button type="button" onClick={() => { shareAsPDF([selectedSong], selectedSong.title); setIsMobileSongActionsOpen(false); }} className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-bold hover:bg-[#EEF1F5]"><Share2 size={16} /> Compartilhar</button>
@@ -4549,13 +4602,13 @@ const handleRepertorioPdfFull = async () => {
           <div className="px-5 pb-4 space-y-4">
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#0D47A1]" size={18} />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" size={18} />
                 <input 
                   type="text"
                   placeholder="Buscar música, artista ou trecho da letra..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full bg-white border border-[#0D47A1] rounded-xl py-3 pl-10 pr-10 focus:ring-1 focus:ring-[#0D47A1] transition-all outline-none text-[#0D47A1] placeholder:text-[#0D47A1]/50"
+                  className="w-full bg-white border border-[#D1D5DB] rounded-xl py-3 pl-10 pr-10 focus:ring-1 focus:ring-[#D1D5DB] transition-all outline-none text-[#666666] placeholder:text-[#B8BEC8]"
                 />
                 {searchTerm && (
                   <button 
@@ -4691,7 +4744,7 @@ const handleRepertorioPdfFull = async () => {
                       className="flex items-center gap-3 rounded-2xl border border-[#DCE3EC] bg-[#EEF1F5] p-4 text-left transition-colors hover:bg-[#E6ECF5]"
                     >
                       <FolderOpen size={20} className="shrink-0 text-[#174EA6]" />
-                      <span className="min-w-0 flex-1 text-sm font-bold uppercase text-[#174EA6]">TODOS</span>
+                      <span className="min-w-0 flex-1 text-sm font-bold uppercase text-black">TODOS</span>
                       <span className="rounded-md bg-[#174EA6] px-2 py-1 text-[10px] font-bold text-white">{songs.length}</span>
                       <ChevronRight size={16} className="text-[#174EA6]" />
                     </button>
@@ -4713,7 +4766,7 @@ const handleRepertorioPdfFull = async () => {
                             className="flex items-center gap-3 rounded-2xl border border-[#DCE3EC] bg-[#EEF1F5] p-4 text-left transition-colors hover:bg-[#E6ECF5]"
                           >
                             <FolderIcon size={20} className="shrink-0 text-[#174EA6]" />
-                            <span className="min-w-0 flex-1 truncate text-sm font-bold uppercase text-[#174EA6]">{folder.name}</span>
+                            <span className="min-w-0 flex-1 truncate text-sm font-bold uppercase text-black">{folder.name}</span>
                             <span className="rounded-md bg-[#174EA6] px-2 py-1 text-[10px] font-bold text-white">{folderCount}</span>
                             <ChevronRight size={16} className="text-[#174EA6]" />
                           </button>
@@ -4994,7 +5047,7 @@ const handleRepertorioPdfFull = async () => {
                       className="flex items-center gap-3 rounded-2xl border border-[#DCE3EC] bg-[#EEF1F5] p-4 text-left transition-colors hover:bg-[#E6ECF5]"
                     >
                       <ListMusic size={20} className="shrink-0 text-[#174EA6]" />
-                      <span className="min-w-0 flex-1 truncate text-sm font-bold uppercase text-[#174EA6]">{repertorio.title}</span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-bold uppercase text-black">{repertorio.title}</span>
                       <span className="rounded-md bg-[#174EA6] px-2 py-1 text-[10px] font-bold text-white">{repertorio.songIds?.length || 0}</span>
                       <ChevronRight size={16} className="text-[#174EA6]" />
                     </button>
@@ -5829,7 +5882,7 @@ function SongSidebarItem({ song, isSelectionMode, isSelected, onToggleSelect, on
   const handlePressEnd = () => clearPressTimer();
 
   return (
-    <div className={`relative flex items-center border-b border-[#174EA6]/50 last:border-0 overflow-visible ${menuOpen ? 'z-[999]' : 'z-0'} bg-white transition-colors hover:bg-[#F4F8FE] ${isSelected ? 'bg-primary/5' : ''}`}>
+    <div className={`relative flex items-center border-b border-[#DCE3EC] last:border-0 overflow-visible ${menuOpen ? 'z-[999]' : 'z-0'} bg-white transition-colors hover:bg-[#F4F8FE] ${isSelected ? 'bg-primary/5' : ''}`}>
       <motion.button
         type="button"
         onPointerDown={handlePressStart}
@@ -5846,26 +5899,24 @@ function SongSidebarItem({ song, isSelectionMode, isSelected, onToggleSelect, on
       >
         {isSelectionMode && <div className="text-primary">{isSelected ? <CheckSquare size={22} /> : <Square size={22} className="text-border" />}</div>}
         <div className="flex-1 min-w-0">
-          <div className="font-bold text-sm truncate tracking-normal uppercase leading-none mb-1 text-[#174EA6]">{song.title?.length > 22 ? song.title.substring(0, 22) + '...' : song.title}</div>
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-[10px] text-[#174EA6]/75 uppercase font-bold tracking-widest truncate leading-tight flex-1">{song.artist?.length > 22 ? song.artist.substring(0, 22) + '...' : song.artist}</div>
-            <div className="text-[12px] text-primary font-bold shrink-0 text-right">{song.key}</div>
-          </div>
+          <div className="font-bold text-sm truncate tracking-normal uppercase leading-none mb-1 text-black">{song.title?.length > 22 ? song.title.substring(0, 22) + '...' : song.title}</div>
+          <div className="text-[10px] text-[#666666] uppercase font-bold tracking-widest truncate leading-tight">{song.artist?.length > 22 ? song.artist.substring(0, 22) + '...' : song.artist}</div>
         </div>
+        <div className="self-center min-w-[30px] h-[22px] px-1.5 rounded-md bg-[#174EA6] text-white text-[11px] font-bold shrink-0 flex items-center justify-center text-center tabular-nums">{song.key}</div>
       </motion.button>
       {!isSelectionMode && <div ref={menuRootRef} data-archive-menu-root className="relative z-[70] shrink-0 mr-2" onClick={e => e.stopPropagation()}>
-        <button type="button" aria-label={`Ações da música ${song.title}`} onClick={() => setMenuOpen(v => !v)} className="p-1.5 text-[#174EA6] rounded-md transition-colors"><MoreVertical size={18}/></button>
-        {menuOpen && <div className="absolute right-0 top-8 z-[10000] w-max min-w-0 max-w-[240px] bg-white border border-[#B8D0F0] rounded-xl shadow-2xl p-1.5 text-left text-[#174EA6]">
-          <div className="flex items-center justify-between gap-3 px-2 py-1.5 mb-1 border-b border-[#D6E4F7]"><div className="flex items-center gap-2 text-xs font-bold text-[#174EA6]"><Music size={15}/>MÚSICAS</div><button type="button" aria-label="Fechar menu" title="Fechar" onClick={() => setMenuOpen(false)} className="p-1 rounded-md text-[#174EA6] hover:bg-[#EEF5FF]"><X size={15}/></button></div>
+        <button type="button" aria-label={`Ações da música ${song.title}`} onClick={() => setMenuOpen(v => !v)} className="p-1.5 text-[#666666] rounded-md transition-colors"><MoreVertical size={18}/></button>
+        {menuOpen && <div className="absolute right-0 top-8 z-[10000] w-max min-w-0 max-w-[240px] bg-white border border-[#D1D5DB] rounded-xl shadow-2xl p-1.5 text-left text-black">
+          <div className="flex items-center justify-between gap-3 px-2 py-1.5 mb-1 border-b border-[#D1D5DB]"><div className="flex items-center gap-2 text-xs font-bold text-black"><Music size={15}/>MÚSICAS</div><button type="button" aria-label="Fechar menu" title="Fechar" onClick={() => setMenuOpen(false)} className="p-1 rounded-md text-[#666666] hover:bg-[#EEF1F5]"><X size={15}/></button></div>
           <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold whitespace-nowrap hover:bg-[#EEF5FF] rounded" onClick={() => { setMenuOpen(false); onMove?.(); }}><FolderIcon size={14}/>Mover</button>
-          <div className="border-t border-[#D6E4F7]"/>
+          <div className="border-t border-[#D1D5DB]"/>
           <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold whitespace-nowrap hover:bg-[#EEF5FF] rounded" onClick={() => { setMenuOpen(false); onDownload?.(); }}><FileText size={14}/>ChordPro (cho)</button>
-          <div className="border-t border-[#D6E4F7]"/>
+          <div className="border-t border-[#D1D5DB]"/>
           <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold whitespace-nowrap hover:bg-[#EEF5FF] rounded" onClick={() => { setMenuOpen(false); onListPDF?.(); }}><Music size={14}/>Chord Over (pdf)</button>
-          <div className="border-t border-[#D6E4F7]"/>
+          <div className="border-t border-[#D1D5DB]"/>
           <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold whitespace-nowrap hover:bg-[#EEF5FF] rounded" onClick={() => { setMenuOpen(false); onShare?.(); }}><Share2 size={14}/>Compartilhar</button>
           {isMaestro && <>
-            <div className="border-t border-[#D6E4F7]"/>
+            <div className="border-t border-[#D1D5DB]"/>
             <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50 rounded" onClick={() => { setMenuOpen(false); onDelete?.(); }}><Trash2 size={14}/>Excluir</button>
           </>}
         </div>}
@@ -5911,8 +5962,8 @@ function RepertorioSidebarItem({
           <ListMusic size={19} strokeWidth={1.9} />
         </div>
         <div className="min-w-0 flex-1 flex flex-col gap-1">
-          <span className="font-bold text-sm truncate tracking-normal uppercase leading-tight text-[#174EA6]">{repertorio.title}</span>
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-[#6D91C7]">{dateLabel}</span>
+          <span className="font-bold text-sm truncate tracking-normal uppercase leading-tight text-black">{repertorio.title}</span>
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-[#666666]">{dateLabel}</span>
         </div>
       </button>
       <span className="shrink-0 min-w-[25px] h-[22px] px-1.5 rounded-md bg-[#174EA6] text-white text-[10px] font-bold flex items-center justify-center tabular-nums" title={`${songCount} músicas`}>
@@ -5920,20 +5971,20 @@ function RepertorioSidebarItem({
       </span>
       {!isSelectionMode && isMaestro && (
         <div ref={menuRootRef} data-archive-menu-root className="relative z-[70] shrink-0" onClick={event => event.stopPropagation()}>
-          <button type="button" aria-label={`Ações do repertório ${repertorio.title}`} onClick={() => setMenuOpen(value => !value)} className="p-1.5 text-[#174EA6] rounded-md transition-colors hover:bg-[#EAF1FC]">
+          <button type="button" aria-label={`Ações do repertório ${repertorio.title}`} onClick={() => setMenuOpen(value => !value)} className="p-1.5 text-[#666666] rounded-md transition-colors hover:bg-[#EAF1FC]">
             <MoreVertical size={19} />
           </button>
           {menuOpen && (
-            <div className="absolute right-0 top-8 z-[10000] w-max min-w-0 max-w-[240px] bg-white border border-[#B8D0F0] rounded-xl shadow-2xl p-1.5 text-left text-[#174EA6]">
-              <div className="flex items-center justify-between gap-3 px-2 py-1.5 mb-1 border-b border-[#D6E4F7]"><div className="flex items-center gap-2 text-xs font-bold text-[#174EA6]"><ListMusic size={15}/>REPERTÓRIOS</div><button type="button" aria-label="Fechar menu" title="Fechar" onClick={() => setMenuOpen(false)} className="p-1 rounded-md text-[#174EA6] hover:bg-[#EEF5FF]"><X size={15}/></button></div>
+            <div className="absolute right-0 top-8 z-[10000] w-max min-w-0 max-w-[240px] bg-white border border-[#D1D5DB] rounded-xl shadow-2xl p-1.5 text-left text-black">
+              <div className="flex items-center justify-between gap-3 px-2 py-1.5 mb-1 border-b border-[#D1D5DB]"><div className="flex items-center gap-2 text-xs font-bold text-black"><ListMusic size={15}/>REPERTÓRIOS</div><button type="button" aria-label="Fechar menu" title="Fechar" onClick={() => setMenuOpen(false)} className="p-1 rounded-md text-[#666666] hover:bg-[#EEF1F5]"><X size={15}/></button></div>
               <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold whitespace-nowrap hover:bg-[#EEF5FF] rounded" onClick={() => { setMenuOpen(false); onEdit?.(); }}><Edit2 size={14}/>Editar</button>
-              <div className="border-t border-[#D6E4F7]" />
+              <div className="border-t border-[#D1D5DB]" />
               <button disabled={songCount === 0} className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold whitespace-nowrap rounded ${songCount === 0 ? 'text-gray-300 cursor-not-allowed' : 'hover:bg-[#EEF5FF]'}`} onClick={() => { setMenuOpen(false); onDownload?.(); }}><Download size={14}/>Download</button>
-              <div className="border-t border-[#D6E4F7]" />
+              <div className="border-t border-[#D1D5DB]" />
               <button disabled={songCount === 0} className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold whitespace-nowrap rounded ${songCount === 0 ? 'text-gray-300 cursor-not-allowed' : 'hover:bg-[#EEF5FF]'}`} onClick={() => { setMenuOpen(false); onSetlist?.(); }}><FileText size={14}/>Setlist (pdf)</button>
-              <div className="border-t border-[#D6E4F7]" />
+              <div className="border-t border-[#D1D5DB]" />
               <button disabled={songCount === 0} className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold whitespace-nowrap rounded ${songCount === 0 ? 'text-gray-300 cursor-not-allowed' : 'hover:bg-[#EEF5FF]'}`} onClick={() => { setMenuOpen(false); onSonglist?.(); }}><Music size={14}/>Songlist (pdf)</button>
-              <div className="border-t border-[#D6E4F7]" />
+              <div className="border-t border-[#D1D5DB]" />
               <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50 rounded" onClick={() => { setMenuOpen(false); onDelete?.(); }}><Trash2 size={14}/>Excluir</button>
             </div>
           )}
@@ -6030,14 +6081,14 @@ function SongItem({
               onClick && onClick();
             }}
           >
-            <div className="font-bold text-sm truncate tracking-normal uppercase leading-none mb-1 text-[#174EA6]">
+            <div className="font-bold text-sm truncate tracking-normal uppercase leading-none mb-1 text-black">
               {song.title?.length > 22 ? song.title.substring(0, 22) + '...' : song.title}
             </div>
             <div className="flex items-center justify-between gap-3">
-              <div className="text-[10px] text-text-dim font-medium uppercase tracking-widest truncate leading-tight flex-1">
+              <div className="text-[10px] text-[#666666] font-medium uppercase tracking-widest truncate leading-tight flex-1">
                 {song.artist?.length > 22 ? song.artist.substring(0, 22) + '...' : song.artist}
               </div>
-              <div className="text-[13px] text-primary font-bold tracking-tight shrink-0 text-right">
+              <div className="text-[13px] text-[#666666] font-bold tracking-tight shrink-0 text-right">
                 {isSelected ? (
                   <button 
                     onClick={(e) => {
@@ -6122,7 +6173,7 @@ function SortableGroupItem({
           ) : (
             <div className="flex-1 min-w-0 flex items-center gap-2 group">
               <h4 
-                className="text-xs font-black uppercase tracking-widest text-[#0D47A1] truncate"
+                className="text-xs font-black uppercase tracking-widest text-black truncate"
               >
                 {group.title || `Marcador de Bloco`}
               </h4>
@@ -6260,7 +6311,12 @@ function RepertorioForm({ initialData, songs, folders, repertorios, categories, 
         normalizeSearchText(s.title).includes(normalizedTerm) ||
         normalizeSearchText(s.artist).includes(normalizedTerm) ||
         normalizeSearchText(s.composition).includes(normalizedTerm) ||
-        normalizeSearchText(s.chordPro).includes(normalizedTerm)
+        normalizeSearchText(
+          (s.chordPro || '')
+            .replace(/\[[^\]]*\]/g, '')
+            .replace(/\{[^}]*\}/g, ' ')
+            .replace(/\s+/g, ' ')
+        ).includes(normalizedTerm)
       );
     }
 
@@ -6390,13 +6446,13 @@ function RepertorioForm({ initialData, songs, folders, repertorios, categories, 
           <div className="p-4 border-b border-border bg-surface/50 space-y-3">
             <div className="flex gap-2">
               <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#0D47A1]" size={14} />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" size={14} />
                 <input 
                   type="text"
                   placeholder="Pesquisar..."
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
-                  className="w-full bg-white border border-[#0D47A1] rounded-lg py-2 pl-9 pr-4 text-xs outline-none focus:ring-1 focus:ring-[#0D47A1] text-[#0D47A1] placeholder:text-[#0D47A1]/50"
+                  className="w-full bg-white border border-[#D1D5DB] rounded-lg py-2 pl-9 pr-4 text-xs outline-none focus:ring-1 focus:ring-[#D1D5DB] text-[#666666] placeholder:text-[#B8BEC8]"
                 />
               </div>
               <button 
