@@ -3150,11 +3150,22 @@ const handleRepertorioPdfFull = async () => {
                   exit={{ opacity: 0, y: -4, scale: 0.98 }}
                   transition={{ duration: 0.12 }}
                   role="menu"
-                  className="absolute right-10 top-full mt-1.5 z-[90] min-w-[190px] overflow-hidden rounded-xl border border-[#D1D5DB] bg-white shadow-xl shadow-black/10"
+                  className="absolute right-10 top-full mt-1.5 z-[90] min-w-[190px] overflow-hidden rounded-xl border border-[#D1D5DB] bg-white shadow-xl shadow-black/10 [&_svg]:!text-[#174EA6]"
                 >
-                  <div className="flex items-center gap-2.5 border-b border-[#E5E7EB] px-3 py-3">
-                    <ArrowUpDown size={15} className="text-[#666666]" />
-                    <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#111827]">ORDENAR POR</span>
+                  <div className="flex items-center justify-between gap-2.5 border-b border-[#E5E7EB] px-3 py-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <ArrowUpDown size={15} className="text-[#666666]" />
+                      <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#111827]">ORDENAR POR</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsSortMenuOpen(false)}
+                      aria-label="Fechar menu de ordenação"
+                      title="Fechar"
+                      className="h-7 w-7 flex items-center justify-center rounded-md text-[#9CA3AF] hover:bg-[#F3F4F6] hover:text-[#666666] transition-colors"
+                    >
+                      <X size={15} />
+                    </button>
                   </div>
                   <div className="py-1">
                   {([
@@ -3192,10 +3203,21 @@ const handleRepertorioPdfFull = async () => {
                   transition={{ duration: 0.12 }}
                   role="dialog"
                   aria-label="Filtros de músicas"
-                  className="absolute right-0 top-full mt-1.5 z-[90] w-[min(250px,calc(100vw-48px))] overflow-hidden rounded-xl border border-[#D1D5DB] bg-white p-2 shadow-xl shadow-black/10"
+                  className="absolute right-0 top-full mt-1.5 z-[90] w-[min(250px,calc(100vw-48px))] overflow-hidden rounded-xl border border-[#D1D5DB] bg-white p-2 shadow-xl shadow-black/10 [&_svg]:!text-[#174EA6]"
                 >
-                  <div className="flex items-center gap-2 px-2 pb-2 text-[10px] font-bold uppercase tracking-widest text-[#666666]">
-                    <Filter size={14} className="text-[#9CA3AF]" /> Filtros
+                  <div className="flex items-center justify-between gap-2 px-2 pb-2">
+                    <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-[#666666]">
+                      <Filter size={14} className="text-[#9CA3AF]" /> Filtros
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsFilterActive(false)}
+                      aria-label="Fechar menu de filtros"
+                      title="Fechar"
+                      className="h-7 w-7 flex items-center justify-center rounded-md text-[#9CA3AF] hover:bg-[#F3F4F6] hover:text-[#666666] transition-colors"
+                    >
+                      <X size={15} />
+                    </button>
                   </div>
                   <div className="border-t border-[#E5E7EB]" />
                   <label className="flex items-center gap-2 px-2 pt-2 text-[10px] font-semibold uppercase tracking-wide text-[#666666]"><Hash size={13} className="text-[#9CA3AF]" /> Tonalidade</label>
@@ -3360,7 +3382,7 @@ const handleRepertorioPdfFull = async () => {
                     </button>
                     <div data-archive-menu-root className="relative shrink-0" onClick={e => e.stopPropagation()}>
                       <button type="button" aria-label="Ações de todas as músicas" onClick={() => setOpenArchiveMenu(openArchiveMenu === 'all' ? null : 'all')} className="p-1.5 text-[#666666] hover:bg-white rounded-md transition-colors"><MoreVertical size={18}/></button>
-                      {openArchiveMenu === 'all' && <div className="absolute right-0 top-9 z-[10000] w-max min-w-0 max-w-[240px] bg-white border border-[#D1D5DB] rounded-xl shadow-2xl p-1.5 text-left text-black">
+                      {openArchiveMenu === 'all' && <div className="absolute right-0 top-9 z-[10000] w-max min-w-0 max-w-[240px] bg-white border border-[#D1D5DB] rounded-xl shadow-2xl p-1.5 text-left text-black [&_svg]:!text-[#174EA6]">
                         <div className="flex items-center justify-between gap-3 px-2 py-1.5 mb-1 border-b border-[#D1D5DB]"><div className="flex items-center gap-2 text-xs font-bold text-black"><Music size={15}/>MÚSICAS</div><button type="button" aria-label="Fechar menu" title="Fechar" onClick={() => setOpenArchiveMenu(null)} className="p-1 rounded-md text-[#666666] hover:bg-[#EEF1F5]"><X size={15}/></button></div>
                         <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold whitespace-nowrap hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); exportArchiveZip(filteredSongs, 'Todas_as_musicas.zip'); }}><Download size={14}/>Download (zip)</button>
                         <div className="border-t border-[#D1D5DB]"/>
@@ -3465,7 +3487,7 @@ const handleRepertorioPdfFull = async () => {
                         </button>
                         <div data-archive-menu-root className="relative shrink-0" onClick={e => e.stopPropagation()}>
                           <button type="button" aria-label={`Ações da pasta ${folder.name}`} onClick={() => setOpenArchiveMenu(openArchiveMenu === folder.id ? null : folder.id!)} className="p-1.5 text-[#666666] hover:bg-white rounded-md transition-colors"><MoreVertical size={18}/></button>
-                          {openArchiveMenu === folder.id && <div className="absolute right-0 top-9 z-[10000] w-max min-w-0 max-w-[240px] bg-white border border-[#D1D5DB] rounded-xl shadow-2xl p-1.5 text-left text-black">
+                          {openArchiveMenu === folder.id && <div className="absolute right-0 top-9 z-[10000] w-max min-w-0 max-w-[240px] bg-white border border-[#D1D5DB] rounded-xl shadow-2xl p-1.5 text-left text-black [&_svg]:!text-[#174EA6]">
                             <div className="flex items-center justify-between gap-3 px-2 py-1.5 mb-1 border-b border-[#D1D5DB]"><div className="flex items-center gap-2 text-xs font-bold text-black"><Music size={15}/>MÚSICAS</div><button type="button" aria-label="Fechar menu" title="Fechar" onClick={() => setOpenArchiveMenu(null)} className="p-1 rounded-md text-[#666666] hover:bg-[#EEF1F5]"><X size={15}/></button></div>
                             <button className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold whitespace-nowrap hover:bg-[#EEF5FF] rounded" onClick={() => { setOpenArchiveMenu(null); exportArchiveZip(folderSongs, `${(folder.name || 'Pasta').replace(/[^\w-]+/g, '_')}.zip`); }}><Download size={14}/>Download</button>
                             <div className="border-t border-[#D1D5DB]"/>
@@ -4093,12 +4115,12 @@ const handleRepertorioPdfFull = async () => {
                 />
                 <AnimatePresence>
                   {isSidebarArchiveOpen && sidebarTab === 'songs' && (
-                    <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-fit min-w-max max-w-[calc(100vw-24px)] bg-white border border-[#DDE3EC] rounded-xl shadow-2xl z-[300] overflow-hidden">
-                      <div className="flex items-center justify-between gap-6 px-4 py-3 border-b border-[#DDE3EC] text-[#0D47A1]"><div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest whitespace-nowrap"><Music size={15} /> MÚSICAS</div><button type="button" onClick={() => setIsSidebarArchiveOpen(false)} aria-label="Fechar menu" title="Fechar" className="p-1 rounded-md hover:bg-[#E6ECF5] transition-colors"><X size={16} /></button></div>
-                      <button onClick={() => { handleIndividualImport(); setIsSidebarArchiveOpen(false); setIsSidebarOpen(false); }} className="w-full px-4 py-3 text-left whitespace-nowrap text-[11px] font-bold tracking-widest text-[#0D47A1] hover:bg-[#E6ECF5] border-b border-[#DDE3EC] flex items-center gap-2"><Download size={14} /> Importar Música</button>
-                      <button onClick={() => { handleBulkImport(); setIsSidebarArchiveOpen(false); setIsSidebarOpen(false); }} className="w-full px-4 py-3 text-left whitespace-nowrap text-[11px] font-bold tracking-widest text-[#0D47A1] hover:bg-[#E6ECF5] border-b border-[#DDE3EC] flex items-center gap-2"><Download size={14} /> Importar Acervo (zip)</button>
-                      <button disabled={selectedSongIds.length === 0} onClick={() => { handleManualExport(); setIsSidebarArchiveOpen(false); if (selectedSongIds.length > 0) setIsSidebarOpen(false); }} className={`w-full px-4 py-3 text-left whitespace-nowrap text-[11px] font-bold tracking-widest border-b border-[#DDE3EC] flex items-center gap-2 ${selectedSongIds.length === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-[#0D47A1] hover:bg-[#E6ECF5]'}`}><Upload size={14} /> Exportar Música</button>
-                      <button disabled={songs.length === 0} onClick={() => { setIsExportFolderModalOpen(true); setIsSidebarArchiveOpen(false); setIsSidebarOpen(false); }} className={`w-full px-4 py-3 text-left whitespace-nowrap text-[11px] font-bold tracking-widest flex items-center gap-2 ${songs.length === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-[#0D47A1] hover:bg-[#E6ECF5]'}`}><Upload size={14} /> Exportar Acervo (zip)</button>
+                    <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-fit min-w-max max-w-[calc(100vw-24px)] bg-white border border-[#DDE3EC] rounded-xl shadow-2xl z-[300] overflow-hidden [&_svg]:!text-[#174EA6]">
+                      <div className="flex items-center justify-between gap-6 px-4 py-3 border-b border-gray-300 text-black"><div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest whitespace-nowrap"><Music size={15} /> MÚSICAS</div><button type="button" onClick={() => setIsSidebarArchiveOpen(false)} aria-label="Fechar menu" title="Fechar" className="p-1 rounded-md hover:bg-[#E6ECF5] transition-colors"><X size={16} /></button></div>
+                      <button onClick={() => { handleIndividualImport(); setIsSidebarArchiveOpen(false); setIsSidebarOpen(false); }} className="w-full px-4 py-3 text-left whitespace-nowrap text-[11px] font-bold tracking-widest text-black hover:bg-[#E6ECF5] border-b border-gray-300 flex items-center gap-2"><Download size={14} /> Importar Música</button>
+                      <button onClick={() => { handleBulkImport(); setIsSidebarArchiveOpen(false); setIsSidebarOpen(false); }} className="w-full px-4 py-3 text-left whitespace-nowrap text-[11px] font-bold tracking-widest text-black hover:bg-[#E6ECF5] border-b border-gray-300 flex items-center gap-2"><Download size={14} /> Importar Acervo (zip)</button>
+                      <button disabled={selectedSongIds.length === 0} onClick={() => { handleManualExport(); setIsSidebarArchiveOpen(false); if (selectedSongIds.length > 0) setIsSidebarOpen(false); }} className={`w-full px-4 py-3 text-left whitespace-nowrap text-[11px] font-bold tracking-widest border-b border-gray-300 flex items-center gap-2 ${selectedSongIds.length === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-black hover:bg-[#E6ECF5]'}`}><Upload size={14} /> Exportar Música</button>
+                      <button disabled={songs.length === 0} onClick={() => { setIsExportFolderModalOpen(true); setIsSidebarArchiveOpen(false); setIsSidebarOpen(false); }} className={`w-full px-4 py-3 text-left whitespace-nowrap text-[11px] font-bold tracking-widest flex items-center gap-2 ${songs.length === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-black hover:bg-[#E6ECF5]'}`}><Upload size={14} /> Exportar Acervo (zip)</button>
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -4146,10 +4168,10 @@ const handleRepertorioPdfFull = async () => {
                 />
                 <AnimatePresence>
                   {isSidebarArchiveOpen && (
-                    <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-fit min-w-max max-w-[calc(100vw-24px)] bg-white border border-[#DDE3EC] rounded-xl shadow-2xl z-[300] overflow-hidden">
-                      <div className="flex items-center justify-between gap-6 px-4 py-3 border-b border-[#DDE3EC] text-[#0D47A1]"><div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest whitespace-nowrap"><ListMusic size={15} /> REPERTÓRIO</div><button type="button" onClick={() => setIsSidebarArchiveOpen(false)} aria-label="Fechar menu" title="Fechar" className="p-1 rounded-md hover:bg-[#E6ECF5] transition-colors"><X size={16} /></button></div>
-                      <button disabled={!(selectedRepertorio.songIds || []).some((id: string) => !id.startsWith('group:'))} onClick={() => { handleRepertorioPdfList(); setIsSidebarArchiveOpen(false); }} className={`w-full px-4 py-3 text-left whitespace-nowrap text-[11px] font-bold uppercase tracking-widest border-b border-[#DDE3EC] flex items-center gap-2 ${!(selectedRepertorio.songIds || []).some((id: string) => !id.startsWith('group:')) ? 'text-gray-300 cursor-not-allowed' : 'text-[#0D47A1] hover:bg-[#E6ECF5]'}`}><FileText size={14} /> Exportar Setlist</button>
-                      <button disabled={!(selectedRepertorio.songIds || []).some((id: string) => songs.some(song => song.id === id))} onClick={() => { handleRepertorioPdfFull(); setIsSidebarArchiveOpen(false); }} className={`w-full px-4 py-3 text-left whitespace-nowrap text-[11px] font-bold uppercase tracking-widest flex items-center gap-2 ${!(selectedRepertorio.songIds || []).some((id: string) => songs.some(song => song.id === id)) ? 'text-gray-300 cursor-not-allowed' : 'text-[#0D47A1] hover:bg-[#E6ECF5]'}`}><FileText size={14} /> Exportar Set Musical</button>
+                    <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-fit min-w-max max-w-[calc(100vw-24px)] bg-white border border-[#DDE3EC] rounded-xl shadow-2xl z-[300] overflow-hidden [&_svg]:!text-[#174EA6]">
+                      <div className="flex items-center justify-between gap-6 px-4 py-3 border-b border-gray-300 text-black"><div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest whitespace-nowrap"><ListMusic size={15} /> REPERTÓRIO</div><button type="button" onClick={() => setIsSidebarArchiveOpen(false)} aria-label="Fechar menu" title="Fechar" className="p-1 rounded-md hover:bg-[#E6ECF5] transition-colors"><X size={16} /></button></div>
+                      <button disabled={!(selectedRepertorio.songIds || []).some((id: string) => !id.startsWith('group:'))} onClick={() => { handleRepertorioPdfList(); setIsSidebarArchiveOpen(false); }} className={`w-full px-4 py-3 text-left whitespace-nowrap text-[11px] font-bold uppercase tracking-widest border-b border-gray-300 flex items-center gap-2 ${!(selectedRepertorio.songIds || []).some((id: string) => !id.startsWith('group:')) ? 'text-gray-300 cursor-not-allowed' : 'text-black hover:bg-[#E6ECF5]'}`}><FileText size={14} /> Exportar Setlist</button>
+                      <button disabled={!(selectedRepertorio.songIds || []).some((id: string) => songs.some(song => song.id === id))} onClick={() => { handleRepertorioPdfFull(); setIsSidebarArchiveOpen(false); }} className={`w-full px-4 py-3 text-left whitespace-nowrap text-[11px] font-bold uppercase tracking-widest flex items-center gap-2 ${!(selectedRepertorio.songIds || []).some((id: string) => songs.some(song => song.id === id)) ? 'text-gray-300 cursor-not-allowed' : 'text-black hover:bg-[#E6ECF5]'}`}><FileText size={14} /> Exportar Set Musical</button>
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -4207,10 +4229,10 @@ const handleRepertorioPdfFull = async () => {
                 />
                 <AnimatePresence>
                   {isSidebarArchiveOpen && sidebarTab === 'repertorios' && (
-                    <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-fit min-w-max max-w-[calc(100vw-24px)] bg-white border border-[#DDE3EC] rounded-xl shadow-2xl z-[300] overflow-hidden">
-                      <div className="flex items-center justify-between gap-6 px-4 py-3 border-b border-[#DDE3EC] text-[#0D47A1]"><div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest whitespace-nowrap"><ListMusic size={15} /> REPERTÓRIOS</div><button type="button" onClick={() => setIsSidebarArchiveOpen(false)} aria-label="Fechar menu" title="Fechar" className="p-1 rounded-md hover:bg-[#E6ECF5] transition-colors"><X size={16} /></button></div>
-                      <button onClick={() => { handleRepertorioJsonImport(); setIsSidebarArchiveOpen(false); }} className="w-full px-4 py-3 text-left whitespace-nowrap text-[11px] font-bold tracking-widest text-[#0D47A1] hover:bg-[#E6ECF5] border-b border-[#DDE3EC] flex items-center gap-2"><Download size={14} /> Importar Repertório (json)</button>
-                      <button onClick={() => { setIsRepertorioJsonExportModalOpen(true); setIsSidebarArchiveOpen(false); }} className="w-full px-4 py-3 text-left whitespace-nowrap text-[11px] font-bold tracking-widest text-[#0D47A1] hover:bg-[#E6ECF5] flex items-center gap-2"><Upload size={14} /> Exportar Repertório (json)</button>
+                    <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-fit min-w-max max-w-[calc(100vw-24px)] bg-white border border-[#DDE3EC] rounded-xl shadow-2xl z-[300] overflow-hidden [&_svg]:!text-[#174EA6]">
+                      <div className="flex items-center justify-between gap-6 px-4 py-3 border-b border-gray-300 text-black"><div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest whitespace-nowrap"><ListMusic size={15} /> REPERTÓRIOS</div><button type="button" onClick={() => setIsSidebarArchiveOpen(false)} aria-label="Fechar menu" title="Fechar" className="p-1 rounded-md hover:bg-[#E6ECF5] transition-colors"><X size={16} /></button></div>
+                      <button onClick={() => { handleRepertorioJsonImport(); setIsSidebarArchiveOpen(false); }} className="w-full px-4 py-3 text-left whitespace-nowrap text-[11px] font-bold tracking-widest text-black hover:bg-[#E6ECF5] border-b border-gray-300 flex items-center gap-2"><Download size={14} /> Importar Repertório (json)</button>
+                      <button onClick={() => { setIsRepertorioJsonExportModalOpen(true); setIsSidebarArchiveOpen(false); }} className="w-full px-4 py-3 text-left whitespace-nowrap text-[11px] font-bold tracking-widest text-black hover:bg-[#E6ECF5] flex items-center gap-2"><Upload size={14} /> Exportar Repertório (json)</button>
                     </motion.div>
                   )}
                 </AnimatePresence>
