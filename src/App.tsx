@@ -4489,7 +4489,7 @@ const handleRepertorioPdfFull = async () => {
             <>
               <div className="contents">
                 <div className="flex-1 min-w-0 flex justify-center">
-                  <SidebarNavItem icon={<Plus size={18} />} label="BLOCO" tooltip="Criar um novo bloco." active={true} variant="light" onClick={() => {
+                  <SidebarNavItem icon={<Plus size={18} />} label="BLOCO" hideLabelOnMobile={true} tooltip="Criar um novo bloco." active={true} variant="light" onClick={() => {
                     const blockFolders = folders.filter(folder => (folder.type as string) === 'block');
                     if (blockFolders.length === 0) { alert('Crie um conjunto de blocos primeiro usando o botão “Conjuntos”.'); return; }
                     setIsPickingFolderForNewBlock(true);
@@ -4723,7 +4723,7 @@ const handleRepertorioPdfFull = async () => {
                 <button type="button" onClick={addBlockToSelectedSet}
                   className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-[#174EA6] hover:bg-white/90"
                   title="Adicionar bloco ao conjunto">
-                  <Plus size={13} /> Bloco
+                  <Plus size={13} /> <span className="hidden sm:inline">Bloco</span>
                 </button>
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-white border border-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-[#174EA6]" title="Quantidade de blocos no conjunto">
                   <LayoutList size={13} /> {(selectedBlockSet.suggestions || []).length}
@@ -6606,7 +6606,7 @@ function SortableSongItem({ id, song, index, onClick, onDelete, onShare, isMaest
 }
 
 
-function SidebarNavItem({ icon, label, active, onClick, variant = 'dark', disabled = false, tooltip, activeColorOverride, showActiveIndicator = true }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void, variant?: 'dark' | 'light', disabled?: boolean, tooltip?: string, activeColorOverride?: string, showActiveIndicator?: boolean }) {
+function SidebarNavItem({ icon, label, active, onClick, variant = 'dark', disabled = false, tooltip, activeColorOverride, showActiveIndicator = true, hideLabelOnMobile = false }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void, variant?: 'dark' | 'light', disabled?: boolean, tooltip?: string, activeColorOverride?: string, showActiveIndicator?: boolean, hideLabelOnMobile?: boolean }) {
   const activeColor = activeColorOverride || (variant === 'dark' ? 'text-[#E6ECF5]' : 'text-[#0D47A1]');
   const inactiveColor = variant === 'dark' ? 'text-white hover:text-white/80' : 'text-[#0D47A1]/60 hover:text-[#0D47A1]';
 
@@ -6618,7 +6618,7 @@ function SidebarNavItem({ icon, label, active, onClick, variant = 'dark', disabl
       className={`relative flex flex-col items-center gap-1 p-2 transition-all ${active ? activeColor : inactiveColor} ${disabled ? 'cursor-not-allowed opacity-35 pointer-events-none' : ''}`}
     >
       {icon}
-      <span className="text-[9px] uppercase font-bold tracking-widest">{label}</span>
+      <span className={`text-[9px] uppercase font-bold tracking-widest ${hideLabelOnMobile ? 'hidden sm:inline' : ''}`}>{label}</span>
       {variant === 'dark' && active && showActiveIndicator && (
         <span className="absolute bottom-0 left-2 right-2 h-[3px] rounded-full bg-[#E6ECF5]" aria-hidden="true" />
       )}

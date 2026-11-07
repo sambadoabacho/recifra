@@ -27,7 +27,7 @@ export function SongBlockList({ blocks, songs, onSelect, onDelete, isMaestro = t
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {blocks.map(set => (
         <div 
           key={set.id}
