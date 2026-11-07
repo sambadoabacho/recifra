@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Brain, Calendar, ChevronRight, LayoutGrid, Music, Trash2, Info, Menu, Plus, Pencil, Check, X, GripVertical } from 'lucide-react';
+import { Brain, Calendar, ChevronRight, LayoutGrid, Music, Trash2, Menu, Plus, Pencil, Check, X, GripVertical } from 'lucide-react';
 import { Song, SongBlock } from '../types';
 
 interface SongBlockListProps {
@@ -27,7 +27,7 @@ export function SongBlockList({ blocks, songs, onSelect, onDelete, isMaestro = t
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {blocks.map(set => (
         <div 
           key={set.id}
@@ -68,10 +68,6 @@ export function SongBlockList({ blocks, songs, onSelect, onDelete, isMaestro = t
             </div>
           </div>
           
-          <div className="px-5 py-4 bg-primary/5 border-t border-border flex items-center justify-between group-hover:bg-primary transition-all">
-            <span className="text-[10px] font-black uppercase tracking-widest text-text-dim group-hover:text-white">Ver Detalhes</span>
-            <ChevronRight size={16} className="text-text-dim group-hover:text-white" />
-          </div>
         </div>
       ))}
     </div>
@@ -168,7 +164,7 @@ export function SongBlockDetails({ blockSet, songs, repertorios = [], onAddToRep
         <div className="space-y-6 animate-in fade-in duration-300">
             {saving && <div className="text-xs text-[#174EA6] font-semibold">Salvando alterações...</div>}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 pb-12">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 pb-12">
                 {suggestions.map((suggestion:any, idx:number) => (
                     <div key={suggestion.id || `${idx}-${suggestion.name}`} draggable
                         onDragStart={() => setDragBlock(idx)}
@@ -283,10 +279,6 @@ export function SongBlockDetails({ blockSet, songs, repertorios = [], onAddToRep
                                 </div>
                             </div>
                         )}
-                        {suggestion.reason && <div className="mx-4 mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                            <div className="text-[9px] font-black uppercase text-[#174EA6] mb-1"><Info size={12} className="inline mr-1"/>Por que este grupo?</div>
-                            <p className="text-[11px] text-gray-600 italic">{suggestion.reason}</p>
-                        </div>}
                     </div>
                 ))}
             </div>
