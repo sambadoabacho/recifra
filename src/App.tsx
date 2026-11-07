@@ -199,8 +199,68 @@ export default function App() {
   const [isMaestroActive, setIsMaestroActive] = useState(false);
   const [followLeader, setFollowLeader] = useState(false);
   const [userRole, setUserRole] = useState<'maestro' | 'musician'>('musician');
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const autoSaveIndicatorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isCreatingBackup, setIsCreatingBackup] = useState(false);
 
   const isMaestro = userRole === 'maestro';
+
+  const handleCompleteBackup = () => {
+    if (!user) {
+      alert('Entre na sua conta para gerar o backup dos seus dados.');
+      return;
+    }
+    setIsCreatingBackup(true);
+    try {
+      const localSettings: Record<string, string> = {};
+      const settingKeys = [
+        'theme', 'pdfQuality', 'recifra_lyric_size', 'recifra_chord_size',
+        'recifra_lyric_color', 'recifra_chord_color', 'pedalConfig',
+        'chordProScale_desktop', 'chordProScale_tablet', 'chordProScale_mobile'
+      ];
+      settingKeys.forEach(key => {
+        const value = localStorage.getItem(key);
+        if (value !== null) localSettings[key] = value;
+      });
+
+      const backup = {
+        format: 'set-complete-backup',
+        version: 1,
+        createdAt: new Date().toISOString(),
+        account: { uid: user.uid, email: user.email || '' },
+        data: {
+          songs,
+          folders,
+          categories,
+          labels,
+          repertorios,
+          songBlocks,
+          chordBanks
+        },
+        settings: localSettings,
+        security: {
+          excluded: ['Chave da API Gemini'],
+          note: 'A chave da API não é incluída no backup por segurança.'
+        }
+      };
+
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const dateStamp = new Date().toISOString().slice(0, 10);
+      link.href = url;
+      link.download = `set-backup-completo-${dateStamp}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Erro ao gerar backup completo:', error);
+      alert('Não foi possível gerar o backup. Verifique o espaço disponível e tente novamente.');
+    } finally {
+      setIsCreatingBackup(false);
+    }
+  };
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('songs');
@@ -971,14 +1031,19 @@ export default function App() {
 
   const autoSaveSong = async (songData: Partial<Song>, draftId?: string | null): Promise<string | null> => {
     if (!user) return null;
+    if (autoSaveIndicatorTimeoutRef.current) clearTimeout(autoSaveIndicatorTimeoutRef.current);
+    setIsAutoSaving(false);
+    let savedSuccessfully = false;
     try {
       const payload = { ...songData, updatedAt: new Date().toISOString() };
       if (editingSong?.id) {
         await updateDoc(doc(db, 'songs', editingSong.id), payload);
+        savedSuccessfully = true;
         return editingSong.id;
       }
       if (draftId) {
         await updateDoc(doc(db, 'songs', draftId), payload);
+        savedSuccessfully = true;
         return draftId;
       }
       const created = await addDoc(collection(db, 'songs'), {
@@ -986,10 +1051,16 @@ export default function App() {
         createdBy: user.uid,
         isDraft: true,
       });
+      savedSuccessfully = true;
       return created.id;
     } catch (error) {
       console.error('Erro no salvamento automático da música:', error);
       return null;
+    } finally {
+      if (savedSuccessfully) {
+        setIsAutoSaving(true);
+        autoSaveIndicatorTimeoutRef.current = setTimeout(() => setIsAutoSaving(false), 1200);
+      }
     }
   };
 
@@ -1197,10 +1268,11 @@ export default function App() {
 
       setSelectedBlockFolderId(folderId);
       setSelectedBlockSet(target);
-      setCurrentView('block-details');
+      // Abrir o conjunto dentro da própria barra lateral, mantendo a busca visível.
+      setCurrentView('blocks');
       setSidebarTab('blocks');
       setSidebarView('tabs');
-      setIsSidebarOpen(false);
+      setIsSidebarOpen(true);
     } catch (error) {
       console.error('Erro ao abrir conjunto de blocos:', error);
       handleFirestoreError(error, OperationType.WRITE, 'song_blocks');
@@ -2679,6 +2751,44 @@ const handleRepertorioPdfFull = async () => {
 
   const sortableIds = useMemo(() => sortableItemsData.map(item => item.id), [sortableItemsData]);
 
+  // Dentro de um setlist aberto, a busca é restrita a ele. Ao encontrar uma música
+  // pertencente a um marcador, mantém o marcador e todas as músicas daquele grupo.
+  const visibleRepertorioItems = useMemo(() => {
+    const term = normalizeSearchText(searchTerm.trim());
+    if (!term) return sortableItemsData;
+    const visibleIds = new Set<string>();
+    let currentGroup: any = null;
+    let currentGroupItems: any[] = [];
+    const flushGroup = () => {
+      if (!currentGroup) return;
+      const groupMatches = normalizeSearchText(currentGroup.group?.title || '').includes(term);
+      const songMatches = currentGroupItems.some(item => {
+        const song = songs.find(entry => entry.id === item.id);
+        return song && normalizeSearchText(song.title).includes(term);
+      });
+      if (groupMatches || songMatches) {
+        visibleIds.add(currentGroup.id);
+        currentGroupItems.forEach(item => visibleIds.add(item.id));
+      }
+      currentGroup = null;
+      currentGroupItems = [];
+    };
+    sortableItemsData.forEach(item => {
+      if (item.type === 'group_handle') {
+        flushGroup();
+        currentGroup = item;
+      } else if (currentGroup) {
+        currentGroupItems.push(item);
+      } else {
+        const song = songs.find(entry => entry.id === item.id);
+        if (song && normalizeSearchText(song.title).includes(term)) visibleIds.add(item.id);
+      }
+    });
+    flushGroup();
+    return sortableItemsData.filter(item => visibleIds.has(item.id));
+  }, [sortableItemsData, songs, searchTerm]);
+  const visibleRepertorioSortableIds = useMemo(() => visibleRepertorioItems.map(item => item.id), [visibleRepertorioItems]);
+
   const handleUpdateGroupTitle = async (groupId: string, newTitle: string) => {
     if (!selectedRepertorio) return;
     const newGroups = (selectedRepertorio.songGroups || []).map((g: any) => 
@@ -2851,11 +2961,46 @@ const handleRepertorioPdfFull = async () => {
     return filteredSongs.filter(s => !s.folderId);
   }, [searchTerm, filteredSongs, expandedFolders, activeSongFolderId]);
 
+  // A busca em Repertórios considera tanto o nome do setlist quanto os títulos
+  // das músicas vinculadas a ele. Assim, uma música encontrada mantém visível
+  // o repertório que a contém.
   const filteredRepertorios = useMemo(() => {
-    return repertorios.filter(s => 
-      s.title.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [repertorios, searchTerm]);
+    const term = normalizeSearchText(searchTerm.trim());
+    if (!term) return repertorios;
+    return repertorios.filter((repertorio: any) => {
+      const titleMatches = normalizeSearchText(repertorio.title).includes(term);
+      const songMatches = (repertorio.songIds || []).some((id: string) => {
+        if (String(id).startsWith('group:')) return false;
+        const song = songs.find(item => item.id === id);
+        return song && normalizeSearchText(song.title).includes(term);
+      });
+      const groupSongMatches = (repertorio.songGroups || []).some((group: any) =>
+        (group.songIds || []).some((id: string) => {
+          const song = songs.find(item => item.id === id);
+          return song && normalizeSearchText(song.title).includes(term);
+        })
+      );
+      return titleMatches || songMatches || groupSongMatches;
+    });
+  }, [repertorios, songs, searchTerm]);
+
+  // Em Blocos, a busca pelo título de uma música identifica os conjuntos que
+  // possuem essa música em pelo menos um de seus blocos.
+  const filteredBlockFolders = useMemo(() => {
+    const blockFolders = folders.filter(folder => (folder.type as string) === 'block');
+    const term = normalizeSearchText(searchTerm.trim());
+    if (!term) return blockFolders;
+    return blockFolders.filter(folder => {
+      if (normalizeSearchText(folder.name).includes(term)) return true;
+      const blockSet = songBlocks.find(block => block.folderId === folder.id);
+      return (blockSet?.suggestions || []).some((suggestion: any) =>
+        (suggestion.songIds || []).some((id: string) => {
+          const song = songs.find(item => item.id === id);
+          return song && normalizeSearchText(song.title).includes(term);
+        })
+      );
+    });
+  }, [folders, songBlocks, songs, searchTerm]);
 
   const allKeys = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   // A lista do seletor acompanha o modo da tonalidade original: maior ou menor.
@@ -3045,7 +3190,7 @@ const handleRepertorioPdfFull = async () => {
               </button>
             )}
             <div className="flex items-center">
-              <img src={SET_LOGO_SIDEBAR_SRC} alt="#set" className="h-8 w-auto max-w-full object-contain" />
+              <img src={SET_LOGO_SIDEBAR_SRC} alt="#set" className="h-9 w-auto max-w-full object-contain" />
             </div>
           </div>
           <div className="flex items-center gap-1.5" ref={dropdownRef}>
@@ -3158,6 +3303,46 @@ const handleRepertorioPdfFull = async () => {
                 <FolderOpen size={20} className="shrink-0 text-[#174EA6]" />
                 <span className="min-w-0 flex-1 truncate text-[13px] font-black uppercase tracking-[0.06em] text-black">{activeFolder.name}</span>
                 <span className="shrink-0 text-[10px] min-w-[22px] h-[20px] px-1.5 bg-[#174EA6] rounded-md text-white font-bold flex items-center justify-center tabular-nums">{songs.filter(song => song.folderId === activeSongFolderId).length}</span>
+              </div>
+            );
+          })()}
+          {sidebarTab === 'repertorios' && sidebarView === 'repertorio-songs' && selectedRepertorio && (
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => { setSidebarView('tabs'); setSelectedSongIdForAction(null); setSelectedRepertorio(null); setSearchTerm(''); setTransposition(0); }}
+              onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSidebarView('tabs'); setSelectedSongIdForAction(null); setSelectedRepertorio(null); setSearchTerm(''); setTransposition(0); } }}
+              aria-label="Voltar para todos os repertórios"
+              title="Voltar para todos os repertórios"
+              className="mb-2 flex w-full items-center gap-3 min-h-[48px] px-3 py-2 rounded-xl bg-[#EEF1F5] border border-[#DCE3EC] cursor-pointer hover:bg-[#E7ECF3] active:scale-[0.99] transition-all outline-none focus-visible:ring-2 focus-visible:ring-[#174EA6]"
+            >
+              <span className="shrink-0 p-1 text-[#174EA6] rounded-lg" aria-hidden="true"><ArrowLeft size={19} /></span>
+              <FolderOpen size={20} className="shrink-0 text-[#174EA6]" />
+              <span className="min-w-0 flex-1 flex items-center gap-2 overflow-hidden">
+                <span className="truncate text-[13px] font-black uppercase tracking-[0.06em] text-black">{selectedRepertorio.title}</span>
+                {selectedRepertorio.date && <span className="shrink-0 text-[10px] font-semibold tracking-wide text-[#64748B]">{new Date(selectedRepertorio.date + 'T12:00:00').toLocaleDateString('pt-BR')}</span>}
+              </span>
+              <span className="shrink-0 text-[10px] min-w-[22px] h-[20px] px-1.5 bg-[#174EA6] rounded-md text-white font-bold flex items-center justify-center tabular-nums">{selectedRepertorio.songIds?.filter((id: string) => !id.startsWith('group:')).length || 0}</span>
+            </div>
+          )}
+          {sidebarTab === 'blocks' && selectedBlockFolderId && (() => {
+            const activeFolder = folders.find(folder => folder.id === selectedBlockFolderId && (folder.type as string) === 'block');
+            const activeSet = songBlocks.find(block => block.folderId === selectedBlockFolderId);
+            const blockCount = (activeSet?.suggestions || []).length;
+            return (
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => { setSelectedBlockFolderId(null); setSelectedBlockSet(null); setSearchTerm(''); setCurrentView('blocks'); }}
+                onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedBlockFolderId(null); setSelectedBlockSet(null); setSearchTerm(''); setCurrentView('blocks'); } }}
+                aria-label="Voltar para todos os conjuntos"
+                title="Voltar para todos os conjuntos"
+                className="mb-2 flex w-full items-center gap-3 min-h-[48px] px-3 py-2 rounded-xl bg-[#EEF1F5] border border-[#DCE3EC] cursor-pointer hover:bg-[#E7ECF3] active:scale-[0.99] transition-all outline-none focus-visible:ring-2 focus-visible:ring-[#174EA6]"
+              >
+                <span className="shrink-0 p-1 text-[#174EA6] rounded-lg" aria-hidden="true"><ArrowLeft size={19} /></span>
+                <FolderOpen size={20} className="shrink-0 text-[#174EA6]" />
+                <span className="min-w-0 flex-1 truncate text-[13px] font-black uppercase tracking-[0.06em] text-black">{activeFolder?.name || activeSet?.title || 'Conjunto'}</span>
+                <span className="shrink-0 text-[10px] min-w-[22px] h-[20px] px-1.5 bg-[#174EA6] rounded-md text-white font-bold flex items-center justify-center tabular-nums">{blockCount}</span>
               </div>
             );
           })()}
@@ -3695,7 +3880,7 @@ const handleRepertorioPdfFull = async () => {
                         </button>
                         
                         <AnimatePresence>
-                          {isExpanded && (
+                          {(isExpanded || !!searchTerm.trim()) && (
                             <motion.div 
                               initial={{ height: 0, opacity: 0 }}
                               animate={{ height: 'auto', opacity: 1 }}
@@ -3811,28 +3996,89 @@ const handleRepertorioPdfFull = async () => {
 
               {sidebarTab === 'blocks' && (
                 <div className="space-y-0 text-primary">
-                  {folders.filter(folder => (folder.type as string) === 'block').map(folder => {
-                    const folderBlocks = songBlocks.filter(block => block.folderId === folder.id);
-                    const cardCount = folderBlocks.reduce((total, block) => total + (block.suggestions || []).length, 0);
+                  {selectedBlockFolderId ? (() => {
+                    const activeFolder = folders.find(folder => folder.id === selectedBlockFolderId && (folder.type as string) === 'block');
+                    const activeSet = songBlocks.find(block => block.folderId === selectedBlockFolderId);
+                    const allSuggestions = activeSet?.suggestions || [];
+                    const term = normalizeSearchText(searchTerm.trim());
+                    const visibleSuggestions = !term ? allSuggestions : allSuggestions.map((suggestion: any) => {
+                      const matchingSongs = (suggestion.songIds || []).map((id: string) => songs.find(item => item.id === id)).filter(Boolean).filter((song: any) => normalizeSearchText(song.title).includes(term));
+                      const titleMatches = normalizeSearchText(suggestion.name).includes(term);
+                      return titleMatches ? suggestion : { ...suggestion, __matchingSongs: matchingSongs };
+                    }).filter((suggestion: any) => normalizeSearchText(suggestion.name).includes(term) || suggestion.__matchingSongs?.length);
                     return (
-                      <div key={folder.id} className="relative mx-2 mt-2 mb-2 border border-[#ECEDEF] rounded-[14px] overflow-visible bg-[#EEF1F5]">
-                        <button
-                          type="button"
-                          onClick={() => { void openBlockFolder(folder.id!); }}
-                          className="w-full min-h-[48px] flex items-center justify-between gap-3 px-3.5 py-2.5 bg-[#EEF1F5] transition-colors rounded-[13px]"
-                        >
-                          <div className="flex w-full min-w-0 items-center gap-3">
-                            <FolderIcon size={16} className="text-[#174EA6]" />
-                            <span className="min-w-0 flex-1 text-left text-[13px] font-bold uppercase tracking-[0.08em] truncate max-w-[140px] text-black">{folder.name}</span>
-                            <span className="ml-auto text-[10px] min-w-[18px] h-[18px] px-1 bg-[#174EA6] rounded-[4px] text-white font-bold flex items-center justify-center tabular-nums">{cardCount}</span>
-                          </div>
-                          <ChevronRight size={16} className="text-text-dim" />
-                        </button>
+                      <div className="space-y-0 bg-white">
+                        {visibleSuggestions.map((suggestion: any, index: number) => {
+                          const sourceSuggestion = allSuggestions.find((item: any) => item.id === suggestion.id) || suggestion;
+                          const songIds = sourceSuggestion.songIds || [];
+                          const blockSongs = (term && !normalizeSearchText(sourceSuggestion.name).includes(term) ? suggestion.__matchingSongs || [] : songIds.map((id: string) => songs.find(item => item.id === id)).filter(Boolean));
+                          return (
+                            <div key={suggestion.id || index} className="border-b border-[#DDE3EC] last:border-b-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (activeSet) setSelectedBlockSet(activeSet);
+                                  setCurrentView('block-details');
+                                  setSidebarTab('blocks');
+                                  setIsSidebarOpen(false);
+                                }}
+                                className="w-full min-h-[48px] px-3 py-2.5 flex items-center gap-3 text-left bg-[#F3F6FA] hover:bg-[#EAF0F7] transition-colors"
+                              >
+                                <span className="w-7 h-7 rounded-full bg-[#174EA6] text-white flex items-center justify-center text-[11px] font-bold shrink-0">{index + 1}</span>
+                                <span className="min-w-0 flex-1 text-[12px] font-black uppercase tracking-wide text-black truncate">{sourceSuggestion.name || `Bloco ${index + 1}`}</span>
+                                <span className="shrink-0 text-[10px] min-w-[20px] h-[19px] px-1 bg-[#174EA6] rounded-md text-white font-bold flex items-center justify-center">{blockSongs.length}</span>
+                                <ChevronRight size={15} className="text-[#64748B] shrink-0" />
+                              </button>
+                              <div className="divide-y divide-[#DDE3EC] bg-white">
+                                {blockSongs.map((song: any, songIndex: number) => (
+                                  <button
+                                    key={song.id}
+                                    type="button"
+                                    onClick={() => { setSelectedSong(song); setCurrentView('details'); setIsSidebarOpen(false); updateLiveSong(song.id!); }}
+                                    className="w-full min-h-[56px] px-4 py-2.5 flex items-center gap-3 text-left hover:bg-[#F4F7FB] transition-colors"
+                                  >
+                                    <span className="w-7 h-7 rounded-full bg-[#F3F4F6] border border-[#DDE3EC] text-[#64748B] flex items-center justify-center text-[10px] font-bold shrink-0">{songIndex + 1}</span>
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block text-[12px] font-bold uppercase tracking-wide text-black truncate">{song.title}</span>
+                                      <span className="block text-[10px] font-medium uppercase tracking-[0.08em] text-[#64748B] truncate">{song.artist || 'Artista não informado'}</span>
+                                    </span>
+                                    <span className="shrink-0 text-[12px] font-bold text-[#64748B]">{song.key || ''}</span>
+                                  </button>
+                                ))}
+                                {blockSongs.length === 0 && <p className="px-4 py-3 text-[10px] text-[#94A3B8] italic">Nenhuma música cadastrada neste bloco.</p>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {visibleSuggestions.length === 0 && <p className="p-4 text-center text-[10px] text-text-dim italic uppercase tracking-widest">Nenhum bloco ou música encontrado</p>}
                       </div>
                     );
-                  })}
-                  {folders.filter(folder => (folder.type as string) === 'block').length === 0 && (
-                    <p className="p-3 text-center text-[11px] text-text-dim">Crie um conjunto para organizar seus blocos.</p>
+                  })() : (
+                    <>
+                      {filteredBlockFolders.map(folder => {
+                        const folderBlocks = songBlocks.filter(block => block.folderId === folder.id);
+                        const cardCount = folderBlocks.reduce((total, block) => total + (block.suggestions || []).length, 0);
+                        return (
+                          <div key={folder.id} className="relative mx-2 mt-2 mb-2 border border-[#ECEDEF] rounded-[14px] overflow-visible bg-[#EEF1F5]">
+                            <button
+                              type="button"
+                              onClick={() => { void openBlockFolder(folder.id!); }}
+                              className="w-full min-h-[48px] flex items-center justify-between gap-3 px-3.5 py-2.5 bg-[#EEF1F5] transition-colors rounded-[13px]"
+                            >
+                              <div className="flex w-full min-w-0 items-center gap-3">
+                                <FolderIcon size={16} className="text-[#174EA6]" />
+                                <span className="min-w-0 flex-1 text-left text-[13px] font-bold uppercase tracking-[0.08em] truncate max-w-[140px] text-black">{folder.name}</span>
+                                <span className="ml-auto text-[10px] min-w-[18px] h-[18px] px-1 bg-[#174EA6] rounded-[4px] text-white font-bold flex items-center justify-center tabular-nums">{cardCount}</span>
+                              </div>
+                              <ChevronRight size={16} className="text-text-dim" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {filteredBlockFolders.length === 0 && (
+                        <p className="p-3 text-center text-[11px] text-text-dim">Crie um conjunto para organizar seus blocos.</p>
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -3883,48 +4129,19 @@ const handleRepertorioPdfFull = async () => {
             </>
           ) : (
             <div className="space-y-0 mt-2">
-              <div className="px-4 pt-1 pb-2 border-b border-border/60 mb-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-lg truncate uppercase tracking-tight text-black leading-none mb-1">
-                      {selectedRepertorio?.title} {selectedRepertorio?.songIds?.filter((id: string) => !id.startsWith('group:')).length || 0}
-                    </h3>
-                    {selectedRepertorio?.date ? (
-                      <p className="text-[10px] text-text-dim uppercase font-bold tracking-[0.2em] mt-1">
-                        {new Date(selectedRepertorio.date + 'T12:00:00').toLocaleDateString('pt-BR')}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-
-                    <button 
-                      onClick={() => {
-                        setSidebarView('tabs');
-                        setSelectedSongIdForAction(null);
-                        setSelectedRepertorio(null);
-                        setTransposition(0);
-                      }}
-                      className="p-2 hover:bg-surface rounded-full text-text-dim transition-all hover:scale-110 active:scale-95"
-                      title="Fechar"
-                    >
-                      <X size={20} />
-                    </button>
-                  </div>
-                </div>
-              </div>
               <DndContext 
-                sensors={sensors}
+                sensors={searchTerm.trim() ? [] : sensors}
                 collisionDetection={closestCenter}
                 onDragStart={handleDragStart}
                 onDragEnd={handleReorderSongs}
                 onDragCancel={() => setActiveId(null)}
               >
                 <SortableContext 
-                  items={sortableIds}
+                  items={visibleRepertorioSortableIds}
                   strategy={verticalListSortingStrategy}
                 >
                     {(() => {
-                      return sortableItemsData.map((item: any, idx: number) => {
+                      return visibleRepertorioItems.map((item: any, idx: number) => {
                         if (item.type === 'group_handle') {
                           return (
                             <SortableGroupItem 
@@ -4485,6 +4702,12 @@ const handleRepertorioPdfFull = async () => {
           </div>
           
           <div className="flex items-center gap-3">
+            {isAutoSaving && (
+              <div role="status" aria-live="polite" className="fixed bottom-5 right-5 z-[100] inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                Salvo
+              </div>
+            )}
             {currentView === 'list' && sidebarTab === 'songs' && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white border border-white px-3 py-1 text-[10px] font-black uppercase tracking-wide text-[#174EA6]" title="Quantidade de pastas">
                 <FolderIcon size={13} /> {folders.filter(f => !f.type || f.type === 'song').length}
@@ -5207,6 +5430,19 @@ const handleRepertorioPdfFull = async () => {
 
               {activeSettingsTab === 'geral' && (
                 <div className="max-w-2xl space-y-4">
+                  <section className="rounded-2xl border border-border bg-surface p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-bold text-primary">Backup completo</h3>
+                        <p className="text-[11px] text-text-dim">Baixe uma cópia dos seus dados e preferências do #set.</p>
+                      </div>
+                      <button type="button" onClick={handleCompleteBackup} disabled={isCreatingBackup || !user} className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50">
+                        {isCreatingBackup ? <Download size={15} className="animate-pulse" /> : <Download size={15} />}
+                        {isCreatingBackup ? 'Preparando...' : 'Baixar backup'}
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-text-dim">Inclui músicas, pastas, repertórios, conjuntos de blocos, banco de acordes e preferências. A chave da API Gemini não é incluída por segurança.</p>
+                  </section>
                   <section className="rounded-2xl border border-border bg-surface p-4 space-y-3">
                     <div className="flex items-center justify-between">
                       <div><h3 className="text-sm font-bold text-primary">Aparência</h3><p className="text-[11px] text-text-dim">Personalize a leitura das músicas.</p></div>
@@ -6235,7 +6471,15 @@ function SortableGroupItem({
   };
 
   const handleTitleSubmit = () => {
-    onUpdateGroupTitle(group.id, editedTitle);
+    const nextTitle = (editedTitle || '').trim();
+    if (!nextTitle) {
+      setEditedTitle(group.title || '');
+      setIsEditingTitle(false);
+      return;
+    }
+    if (nextTitle !== (group.title || '').trim()) {
+      onUpdateGroupTitle(group.id, nextTitle);
+    }
     setIsEditingTitle(false);
   };
 
@@ -6262,10 +6506,13 @@ function SortableGroupItem({
               autoFocus
               className="bg-white border-2 border-primary/20 text-[11px] font-black uppercase tracking-widest text-[#0D47A1] px-3 py-1 rounded-lg outline-none w-full max-w-[200px]"
               value={editedTitle}
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
               onChange={(e) => setEditedTitle(e.target.value)}
-              onBlur={handleTitleSubmit}
-              onKeyDown={(e) => e.key === 'Enter' && handleTitleSubmit()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); handleTitleSubmit(); }
+                if (e.key === 'Escape') { e.preventDefault(); setEditedTitle(group.title || ''); setIsEditingTitle(false); }
+              }}
             />
           ) : (
             <div className="flex-1 min-w-0 flex items-center gap-2 group">
@@ -6282,12 +6529,22 @@ function SortableGroupItem({
           className="flex items-center gap-1 shrink-0"
         >
           <button
+            type="button"
             onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => { e.stopPropagation(); setIsEditingTitle(true); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (isEditingTitle) {
+                handleTitleSubmit();
+              } else {
+                setEditedTitle(group.title || '');
+                setIsEditingTitle(true);
+              }
+            }}
             className="p-2 hover:bg-primary/10 text-primary rounded-lg transition-colors"
-            title="Editar nome do bloco"
+            title={isEditingTitle ? 'Salvar nome do marcador' : 'Editar nome do marcador'}
+            aria-label={isEditingTitle ? 'Salvar nome do marcador' : 'Editar nome do marcador'}
           >
-            <Edit2 size={16} />
+            {isEditingTitle ? <Save size={16} /> : <Edit2 size={16} />}
           </button>
           <button 
             onPointerDown={(e) => e.stopPropagation()}
