@@ -501,6 +501,7 @@ export default function App() {
   const [followLeader, setFollowLeader] = useState(false);
   const [isTunerOpen, setIsTunerOpen] = useState(false);
   const [isMetronomeOpen, setIsMetronomeOpen] = useState(false);
+  const [isRiderOpen, setIsRiderOpen] = useState(false);
   const [showChordDiagrams, setShowChordDiagrams] = useState(false);
   const [isAutoScrollActive, setIsAutoScrollActive] = useState(false);
   const [autoScrollSpeed, setAutoScrollSpeed] = useState(5); // nível de 1 a 20
@@ -4516,6 +4517,22 @@ const handleRepertorioPdfFull = async () => {
                       <Activity size={18} />
                       Afinador
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => { setIsMetronomeOpen(true); setIsSidebarOpen(false); }}
+                      className="w-full min-h-[48px] text-left px-3.5 py-2.5 text-[13px] font-bold uppercase tracking-[0.08em] border-b border-b-[#D1D5DB] transition-all flex items-center gap-3 text-black bg-white border-l-4 border-l-transparent hover:bg-[#F3F6FB] [&_svg]:text-[#0D47A1]"
+                    >
+                      <Music2 size={18} />
+                      Metrônomo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setIsRiderOpen(true); setIsSidebarOpen(false); }}
+                      className="w-full min-h-[48px] text-left px-3.5 py-2.5 text-[13px] font-bold uppercase tracking-[0.08em] border-b border-b-[#D1D5DB] transition-all flex items-center gap-3 text-black bg-white border-l-4 border-l-transparent hover:bg-[#F3F6FB] [&_svg]:text-[#0D47A1]"
+                    >
+                      <FileText size={18} />
+                      Rider
+                    </button>
                   </div>
                 </div>
               )}
@@ -4779,7 +4796,23 @@ const handleRepertorioPdfFull = async () => {
 
         <AnimatePresence>
           {isTunerOpen && <ChromaticTuner onClose={() => setIsTunerOpen(false)} />}
-          {isMetronomeOpen && isDesktop && <Metronome onClose={() => setIsMetronomeOpen(false)} />}
+          {isMetronomeOpen && <Metronome onClose={() => setIsMetronomeOpen(false)} />}
+          {isRiderOpen && (
+            <div className="fixed inset-0 z-[220] bg-black/50 flex items-center justify-center p-4" onMouseDown={e => { if (e.target === e.currentTarget) setIsRiderOpen(false); }}>
+              <section className="w-full max-w-xl rounded-2xl bg-white border border-slate-200 shadow-2xl p-6 text-slate-900">
+                <div className="flex items-center justify-between gap-3 mb-5">
+                  <div className="flex items-center gap-2"><FileText size={20} className="text-[#0D47A1]"/><h2 className="font-black text-sm uppercase tracking-wider">Rider</h2></div>
+                  <button type="button" onClick={() => setIsRiderOpen(false)} className="p-1 rounded-lg hover:bg-slate-100" aria-label="Fechar Rider"><X size={18}/></button>
+                </div>
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center">
+                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-[#0D47A1]"><FileText size={24}/></div>
+                  <h3 className="font-bold text-base">Rider técnico</h3>
+                  <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-500">Área reservada para organizar as necessidades técnicas da apresentação e, futuramente, desenvolver o mapa de palco.</p>
+                  <span className="mt-4 inline-flex rounded-full bg-slate-200 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">Em desenvolvimento</span>
+                </div>
+              </section>
+            </div>
+          )}
         </AnimatePresence>
 
         <nav className="p-2 border-t border-border bg-[#E6ECF5] flex justify-around relative">
