@@ -1504,7 +1504,7 @@ export default function App() {
     try {
       await addDoc(collection(db, 'song_blocks'), blockData);
       setSelectedBlockFolderId(null);
-      setCurrentView('blocks');
+      setCurrentView('home');
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'song_blocks');
     }
@@ -1604,8 +1604,8 @@ export default function App() {
 
       setSelectedBlockFolderId(folderId);
       setSelectedBlockSet(target);
-      // Abrir o conjunto dentro da própria barra lateral, mantendo a busca visível.
-      setCurrentView('blocks');
+      // Abrir diretamente a página de blocos do conjunto; não exibir a listagem informativa de conjuntos.
+      setCurrentView('block-details');
       setSidebarTab('blocks');
       setSidebarView('tabs');
       setIsSidebarOpen(true);
@@ -3739,8 +3739,8 @@ const handleRepertorioPdfFull = async () => {
               <div
                 role="button"
                 tabIndex={0}
-                onClick={() => { setSelectedBlockFolderId(null); setSelectedBlockSet(null); setSearchTerm(''); setCurrentView('blocks'); }}
-                onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedBlockFolderId(null); setSelectedBlockSet(null); setSearchTerm(''); setCurrentView('blocks'); } }}
+                onClick={() => { setSelectedBlockFolderId(null); setSelectedBlockSet(null); setSearchTerm(''); setCurrentView('home'); }}
+                onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedBlockFolderId(null); setSelectedBlockSet(null); setSearchTerm(''); setCurrentView('home'); } }}
                 aria-label="Voltar para todos os conjuntos"
                 title="Voltar para todos os conjuntos"
                 className="mb-2 flex w-full items-center gap-3 min-h-[48px] px-3 py-2 rounded-xl bg-[#EEF1F5] border border-[#DCE3EC] cursor-pointer hover:bg-[#E7ECF3] active:scale-[0.99] transition-all outline-none focus-visible:ring-2 focus-visible:ring-[#0D47A1]"
@@ -5459,15 +5459,15 @@ const handleRepertorioPdfFull = async () => {
               transition={{ duration: 0.22 }}
               className="mx-auto w-full max-w-7xl space-y-7 pb-10"
             >
-              <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                <button onClick={() => { setSidebarTab('songs'); setCurrentView('list'); }} className="group flex items-center gap-3 rounded-xl border border-[#0D47A1] bg-[#0D47A1] px-4 py-3 text-left text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0B3D8A]">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 text-white"><Music size={19}/></div><div className="min-w-0"><p className="text-2xl font-black leading-none text-white">{songs.length}</p><p className="mt-1 text-xs font-semibold text-white/90">Músicas cadastradas</p></div>
+              <section className="grid grid-cols-3 gap-2 sm:gap-3">
+                <button onClick={() => { setSidebarTab('songs'); setCurrentView('list'); }} className="group flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-[#0D47A1] bg-[#0D47A1] px-2 py-2.5 text-center text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0B3D8A] sm:flex-row sm:justify-start sm:gap-3 sm:px-4 sm:py-3 sm:text-left">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15 text-white sm:h-10 sm:w-10 sm:rounded-xl"><Music size={18}/></div><div className="min-w-0"><p className="text-xl font-black leading-none text-white sm:text-2xl">{songs.length}</p><p className="mt-1 hidden text-xs font-semibold text-white/90 sm:block">Músicas</p></div>
                 </button>
-                <button onClick={() => { setSidebarTab('repertorios'); setCurrentView('repertorios'); }} className="group flex items-center gap-3 rounded-xl border border-[#0D47A1] bg-[#0D47A1] px-4 py-3 text-left text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0B3D8A]">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 text-white"><ListMusic size={19}/></div><div className="min-w-0"><p className="text-2xl font-black leading-none text-white">{repertorios.length}</p><p className="mt-1 text-xs font-semibold text-white/90">Repertórios</p></div>
+                <button onClick={() => { setSidebarTab('repertorios'); setCurrentView('repertorios'); }} className="group flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-[#0D47A1] bg-[#0D47A1] px-2 py-2.5 text-center text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0B3D8A] sm:flex-row sm:justify-start sm:gap-3 sm:px-4 sm:py-3 sm:text-left">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15 text-white sm:h-10 sm:w-10 sm:rounded-xl"><ListMusic size={18}/></div><div className="min-w-0"><p className="text-xl font-black leading-none text-white sm:text-2xl">{repertorios.length}</p><p className="mt-1 hidden text-xs font-semibold text-white/90 sm:block">Repertórios</p></div>
                 </button>
-                <button onClick={() => { setSidebarTab('blocks'); setCurrentView('blocks'); }} className="group flex items-center gap-3 rounded-xl border border-[#0D47A1] bg-[#0D47A1] px-4 py-3 text-left text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0B3D8A]">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 text-white"><ListTodo size={19}/></div><div className="min-w-0"><p className="text-2xl font-black leading-none text-white">{songBlocks.length}</p><p className="mt-1 text-xs font-semibold text-white/90">Conjuntos e blocos</p></div>
+                <button onClick={() => { setSidebarTab('blocks'); setSidebarView('tabs'); setCurrentView('home'); }} className="group flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-[#0D47A1] bg-[#0D47A1] px-2 py-2.5 text-center text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0B3D8A] sm:flex-row sm:justify-start sm:gap-3 sm:px-4 sm:py-3 sm:text-left">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15 text-white sm:h-10 sm:w-10 sm:rounded-xl"><ListTodo size={18}/></div><div className="min-w-0"><p className="text-xl font-black leading-none text-white sm:text-2xl">{songBlocks.length}</p><p className="mt-1 hidden text-xs font-semibold text-white/90 sm:block">Conjuntos</p></div>
                 </button>
               </section>
 
@@ -5478,7 +5478,7 @@ const handleRepertorioPdfFull = async () => {
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <button onClick={() => { setSidebarTab('songs'); setCurrentView('form'); setEditingSong(null); }} className="flex items-center gap-3 rounded-xl border border-slate-200 p-4 text-left hover:border-blue-300 hover:bg-blue-50/40"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-[#0D47A1]"><Music size={19}/></span><span><strong className="block text-sm text-slate-800">Nova música</strong><small className="text-xs text-slate-500">Adicione uma cifra ao acervo</small></span></button>
                     <button onClick={() => { setSidebarTab('repertorios'); setCurrentView('repertorio-form'); setEditingRepertorio(null); }} className="flex items-center gap-3 rounded-xl border border-slate-200 p-4 text-left hover:border-blue-300 hover:bg-blue-50/40"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-[#0D47A1]"><ListMusic size={19}/></span><span><strong className="block text-sm text-slate-800">Novo repertório</strong><small className="text-xs text-slate-500">Monte uma sequência de músicas</small></span></button>
-                    <button onClick={() => { setSidebarTab('blocks'); setCurrentView('blocks'); }} className="flex items-center gap-3 rounded-xl border border-slate-200 p-4 text-left hover:border-blue-300 hover:bg-blue-50/40"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-[#0D47A1]"><ListTodo size={19}/></span><span><strong className="block text-sm text-slate-800">Organizar conjuntos</strong><small className="text-xs text-slate-500">Agrupe músicas e blocos</small></span></button>
+                    <button onClick={() => { setSidebarTab('blocks'); setSidebarView('tabs'); setCurrentView('home'); }} className="flex items-center gap-3 rounded-xl border border-slate-200 p-4 text-left hover:border-blue-300 hover:bg-blue-50/40"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-[#0D47A1]"><ListTodo size={19}/></span><span><strong className="block text-sm text-slate-800">Organizar conjuntos</strong><small className="text-xs text-slate-500">Agrupe músicas e blocos</small></span></button>
                     <button onClick={() => { setSidebarTab('palco'); setSidebarView('tabs'); }} className="flex items-center gap-3 rounded-xl border border-slate-200 p-4 text-left hover:border-blue-300 hover:bg-blue-50/40"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-[#0D47A1]"><Mic size={19}/></span><span><strong className="block text-sm text-slate-800">Preparar palco</strong><small className="text-xs text-slate-500">Acesse ao vivo e o afinador</small></span></button>
                   </div>
                 </div>
@@ -6216,34 +6216,13 @@ const handleRepertorioPdfFull = async () => {
             </motion.div>
           )}
 
-          {currentView === 'blocks' && (
-            <motion.div 
-              key="blocks-view"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="space-y-6"
-            >
-
-              <SongBlockList 
-                blocks={songBlocks} 
-                songs={songs}
-                isMaestro={isMaestro}
-                onSelect={(block) => {
-                    setSelectedBlockSet(block);
-                    setCurrentView('block-details');
-                }}
-                onDelete={deleteSongBlock}
-              />
-            </motion.div>
-          )}
-
           {currentView === 'block-form' && (
             <SongBlockForm 
                 songs={songs} 
                 user={user} 
                 folderId={selectedBlockFolderId || undefined}
                 onSave={saveSongBlock}
-                onCancel={() => { setSelectedBlockFolderId(null); setCurrentView('blocks'); }}
+                onCancel={() => { setCurrentView(selectedBlockSet ? 'block-details' : 'home'); }}
             />
           )}
 
@@ -6274,7 +6253,7 @@ const handleRepertorioPdfFull = async () => {
                   repertorios={repertorios}
                   onAddToRepertorio={addBlockSuggestionToRepertorio}
                   onUpdate={updateSongBlock}
-                  onBack={() => setCurrentView('blocks')}
+                  onBack={() => { setCurrentView('home'); setSelectedBlockSet(null); setSelectedBlockFolderId(null); }}
               />
             )
           )}
