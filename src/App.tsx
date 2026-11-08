@@ -485,7 +485,7 @@ export default function App() {
   const [repertorios, setRepertorios] = useState<any[]>([]);
   const [songBlocks, setSongBlocks] = useState<SongBlock[]>([]);
   const [chordBanks, setChordBanks] = useState<ChordBank[]>([]);
-  const [currentView, setCurrentView] = useState<View>(() => typeof window !== 'undefined' && window.innerWidth >= 1024 ? 'home' : 'list');
+  const [currentView, setCurrentView] = useState<View>('home');
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
   const [editingQuickSongField, setEditingQuickSongField] = useState<'title' | 'artist' | 'composition' | null>(null);
   const [quickSongFieldValue, setQuickSongFieldValue] = useState('');
@@ -995,9 +995,9 @@ export default function App() {
     const unsubscribeAuth = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
-        // Desktop inicia no dashboard; mobile preserva a abertura tradicional em Músicas.
+        // Todas as telas iniciam no dashboard principal; a navegação lateral só altera a seção ativa.
         setSidebarTab('songs');
-        setCurrentView(typeof window !== 'undefined' && window.innerWidth >= 1024 ? 'home' : 'list');
+        setCurrentView('home');
         setSelectedSong(null);
         setSelectedRepertorio(null);
       }
@@ -3550,9 +3550,9 @@ const handleRepertorioPdfFull = async () => {
       {isDesktop && (
         <div className="fixed top-0 left-0 right-0 h-[72px] z-[220] flex bg-[#0D47A1] border-b border-[#0D47A1]">
           <div className="w-80 shrink-0 px-2 flex items-center justify-around border-r border-white/20">
-            <SidebarNavItem icon={<Music size={18} />} label="Músicas" tooltip="Consulte, pesquise e organize seu acervo musical." active={sidebarTab === 'songs'} onClick={() => { if (isDesktop) { setSidebarTab('songs'); setSidebarView('tabs'); if (currentView !== 'home') setCurrentView('home'); } else { setSidebarTab('songs'); setSidebarView('tabs'); setCurrentView('list'); setSelectedRepertorio(null); setTransposition(0); setSelectedSongIds([]); setIsSelectionMode(false); } }} />
-            <SidebarNavItem icon={<ListMusic size={18} />} label="Repertórios" tooltip="Monte e gerencie listas de músicas para apresentações." active={sidebarTab === 'repertorios'} onClick={() => { if (isDesktop) { setSidebarTab('repertorios'); setSidebarView('tabs'); if (currentView !== 'home') setCurrentView('home'); } else { setSidebarTab('repertorios'); setSidebarView('tabs'); setCurrentView('list'); setSelectedRepertorio(null); setTransposition(0); setSelectedSongIds([]); setIsSelectionMode(false); } }} />
-            <SidebarNavItem icon={<LayoutList size={18} />} label="Blocos" tooltip="Organize músicas em blocos para orientar a execução." active={sidebarTab === 'blocks'} onClick={() => { if (isDesktop) { setSidebarTab('blocks'); setSidebarView('tabs'); if (currentView !== 'home') setCurrentView('home'); } else { setSidebarTab('blocks'); setSidebarView('tabs'); setSelectedRepertorio(null); setTransposition(0); setCurrentView('list'); setSelectedSongIds([]); setIsSelectionMode(false); } }} />
+            <SidebarNavItem icon={<Music size={18} />} label="Músicas" tooltip="Consulte, pesquise e organize seu acervo musical." active={sidebarTab === 'songs'} onClick={() => { setSidebarTab('songs'); setSidebarView('tabs'); if (currentView !== 'home') setCurrentView('home'); }} />
+            <SidebarNavItem icon={<ListMusic size={18} />} label="Repertórios" tooltip="Monte e gerencie listas de músicas para apresentações." active={sidebarTab === 'repertorios'} onClick={() => { setSidebarTab('repertorios'); setSidebarView('tabs'); if (currentView !== 'home') setCurrentView('home'); }} />
+            <SidebarNavItem icon={<LayoutList size={18} />} label="Blocos" tooltip="Organize músicas em blocos para orientar a execução." active={sidebarTab === 'blocks'} onClick={() => { setSidebarTab('blocks'); setSidebarView('tabs'); if (currentView !== 'home') setCurrentView('home'); }} />
             <SidebarNavItem icon={<Mic size={18} />} label="Palco" tooltip="Acesse Show e Afinador." active={isMaestroActive || followLeader} activeColorOverride="text-[#ff6900]" showActiveIndicator={false} onClick={() => { setSidebarTab('palco'); setSidebarView('tabs'); }} />
           </div>
           <div className="flex-1 min-w-0 h-full !bg-[#EEF1F5] flex items-center justify-between px-6">
@@ -3643,11 +3643,7 @@ const handleRepertorioPdfFull = async () => {
             onClick={() => {
               setSidebarTab('songs');
               setSidebarView('tabs');
-              setCurrentView('list');
-              setSelectedRepertorio(null);
-              setTransposition(0);
-              setSelectedSongIds([]);
-              setIsSelectionMode(false);
+              if (currentView !== 'home') setCurrentView('home');
             }} 
           />
           <SidebarNavItem 
@@ -3658,11 +3654,7 @@ const handleRepertorioPdfFull = async () => {
             onClick={() => {
               setSidebarTab('repertorios');
               setSidebarView('tabs');
-              setCurrentView('list');
-              setSelectedRepertorio(null);
-              setTransposition(0);
-              setSelectedSongIds([]);
-              setIsSelectionMode(false);
+              if (currentView !== 'home') setCurrentView('home');
             }} 
           />
           <SidebarNavItem 
@@ -3673,11 +3665,7 @@ const handleRepertorioPdfFull = async () => {
             onClick={() => {
               setSidebarTab('blocks');
               setSidebarView('tabs');
-              setSelectedRepertorio(null);
-              setTransposition(0);
-              setCurrentView('list');
-              setSelectedSongIds([]);
-              setIsSelectionMode(false);
+              if (currentView !== 'home') setCurrentView('home');
             }} 
           />
           <SidebarNavItem
@@ -5462,7 +5450,7 @@ const handleRepertorioPdfFull = async () => {
 
       <main className={`flex-1 p-5 ${currentView === 'details' ? 'pb-0 overflow-hidden min-h-0 flex flex-col' : 'pb-32 overflow-y-auto'}`}>
         <AnimatePresence mode="wait">
-          {currentView === 'home' && isDesktop && (
+          {currentView === 'home' && (
             <motion.div
               key="home"
               initial={{ opacity: 0, y: 12 }}
