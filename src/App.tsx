@@ -5186,7 +5186,7 @@ const handleRepertorioPdfFull = async () => {
                         const nextSongKey = nextSong
                           ? (selectedRepertorio.songKeys && nextSong.id && selectedRepertorio.songKeys[nextSong.id]) || nextSong.key
                           : '';
-                        return nextSong ? <span title={`${nextSong.title}${nextSongKey ? ` (${nextSongKey})` : ''}`} className="block truncate text-[18px] font-bold uppercase tracking-tight text-white/85 leading-tight">{nextSong.title}{nextSongKey && <span className="ml-1 normal-case opacity-70">({nextSongKey})</span>}</span> : null;
+                        return nextSong ? <span title={`${nextSong.title}${nextSongKey ? ` (${nextSongKey})` : ''}`} className="flex min-w-0 flex-col items-start"><span className="text-[8px] font-medium uppercase tracking-wider text-white/55 leading-none mb-0.5">Próxima Música</span><span className="block w-full truncate text-left text-[18px] font-bold uppercase tracking-tight text-white/85 leading-tight">{nextSong.title}{nextSongKey && <span className="ml-1 normal-case opacity-70">({nextSongKey})</span>}</span></span> : null;
                       })()}
                     </div>
                   </div>
@@ -5319,8 +5319,11 @@ const handleRepertorioPdfFull = async () => {
                   {isMobileSongActionsOpen && (
                     <motion.div initial={{opacity:0,y:-5}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-5}} className="absolute right-0 top-full mt-2 w-48 rounded-xl border border-[#D1D5DB] bg-white py-1 shadow-xl z-[220] text-black">
                       {isMaestro && <button type="button" onClick={() => { setEditingSong(selectedSong); setCurrentView('form'); setIsMobileSongActionsOpen(false); }} className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-bold hover:bg-[#EEF1F5]"><Edit2 size={16} /> Editar</button>}
+                      {isMaestro && <div className="border-t border-[#D1D5DB]"/>}
                       <button type="button" onClick={() => { downloadSongFile(selectedSong); setIsMobileSongActionsOpen(false); }} className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-bold hover:bg-[#EEF1F5]"><Download size={16} /> Baixar</button>
+                      <div className="border-t border-[#D1D5DB]"/>
                       <button type="button" onClick={() => { shareAsPDF([selectedSong], selectedSong.title); setIsMobileSongActionsOpen(false); }} className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-bold hover:bg-[#EEF1F5]"><Share2 size={16} /> Compartilhar</button>
+                      <div className="border-t border-[#D1D5DB]"/>
                       {isMaestro && <button type="button" onClick={() => { if (window.confirm('Excluir esta música permanentemente?')) { deleteSong(selectedSong.id!); setCurrentView('home'); } setIsMobileSongActionsOpen(false); }} className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-bold text-red-600 hover:bg-red-50"><Trash2 size={16} /> Excluir</button>}
                     </motion.div>
                   )}
@@ -5623,7 +5626,7 @@ const handleRepertorioPdfFull = async () => {
                   {!selectedSong.isGroup ? (
                     <>
                       <div className={`${isDesktop ? 'flex flex-wrap items-center gap-2' : 'hidden'}`}>
-                        {editingQuickSongField === 'title' ? (
+                        {!selectedRepertorio && editingQuickSongField === 'title' ? (
                           <div className="inline-flex items-center gap-1.5">
                             <input autoFocus type="text" value={quickSongFieldValue} onChange={e => setQuickSongFieldValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleQuickSongTextUpdate('title', quickSongFieldValue); if (e.key === 'Escape') setEditingQuickSongField(null); }} className="h-9 min-w-[180px] max-w-full rounded-lg border border-primary bg-white px-2 text-sm font-bold uppercase text-text-main outline-none focus:ring-2 focus:ring-primary/20" aria-label="Renomear título da música" />
                             <button type="button" onClick={() => handleQuickSongTextUpdate('title', quickSongFieldValue)} className="rounded-md p-1.5 text-emerald-600 hover:bg-emerald-50" title="Salvar título"><Check size={16}/></button>
@@ -5631,14 +5634,14 @@ const handleRepertorioPdfFull = async () => {
                           </div>
                         ) : (
                           <h2 className="inline-flex items-center gap-0 text-[18px] font-extrabold tracking-tight leading-tight mr-2 uppercase">
-                            <button type="button" onClick={() => startQuickSongFieldEdit('title')} className={`${isDesktop ? 'ml-0 mr-[10px]' : 'shrink-0 -ml-1 mr-[10px]'} rounded-md p-0 text-text-dim hover:bg-primary/10 hover:text-primary transition`} title="Clique para renomear o título"><Music2 size={18}/></button>
+                            {selectedRepertorio ? <Music2 size={18} className={`${isDesktop ? 'ml-0 mr-[10px]' : 'shrink-0 -ml-1 mr-[10px]'} text-text-dim`} /> : <button type="button" onClick={() => startQuickSongFieldEdit('title')} className={`${isDesktop ? 'ml-0 mr-[10px]' : 'shrink-0 -ml-1 mr-[10px]'} rounded-md p-0 text-text-dim hover:bg-primary/10 hover:text-primary transition`} title="Clique para renomear o título"><Music2 size={18}/></button>}
                             {selectedSong.title}{currentKey && <span className="ml-1 normal-case opacity-70">({currentKey})</span>}
                           </h2>
                         )}
                       </div>
                       <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-dim font-light ${isDesktop ? 'mt-1' : '-mt-2'}`}>
                         <span className="inline-flex items-center gap-1.5">
-                          {editingQuickSongField === 'artist' ? (
+                          {!selectedRepertorio && editingQuickSongField === 'artist' ? (
                             <>
                               <input autoFocus type="text" value={quickSongFieldValue} onChange={e => setQuickSongFieldValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleQuickSongTextUpdate('artist', quickSongFieldValue); if (e.key === 'Escape') setEditingQuickSongField(null); }} className="h-8 min-w-[140px] max-w-full rounded-lg border border-primary bg-white px-2 text-sm text-text-main outline-none focus:ring-2 focus:ring-primary/20" aria-label="Renomear intérprete" />
                               <button type="button" onClick={() => handleQuickSongTextUpdate('artist', quickSongFieldValue)} className="rounded-md p-1 text-emerald-600 hover:bg-emerald-50" title="Salvar intérprete"><Check size={14}/></button>
@@ -5646,13 +5649,13 @@ const handleRepertorioPdfFull = async () => {
                             </>
                           ) : (
                             <>
-                              <button type="button" onClick={() => startQuickSongFieldEdit('artist')} className={`${isDesktop ? 'ml-0 mr-2' : '-ml-1 mr-2'} rounded-md p-0 text-text-dim hover:bg-primary/10 hover:text-primary transition`} title="Clique para renomear o intérprete"><Mic2 size={14}/></button>
+                              {!selectedRepertorio && <button type="button" onClick={() => startQuickSongFieldEdit('artist')} className={`${isDesktop ? 'ml-0 mr-2' : '-ml-1 mr-2'} rounded-md p-0 text-text-dim hover:bg-primary/10 hover:text-primary transition`} title="Clique para renomear o intérprete"><Mic2 size={14}/></button>}
                               <span>{selectedSong.artist}</span>
                             </>
                           )}
                         </span>
                         <span className="inline-flex items-center gap-1.5">
-                          {editingQuickSongField === 'composition' ? (
+                          {!selectedRepertorio && editingQuickSongField === 'composition' ? (
                             <>
                               <input autoFocus type="text" value={quickSongFieldValue} onChange={e => setQuickSongFieldValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleQuickSongTextUpdate('composition', quickSongFieldValue); if (e.key === 'Escape') setEditingQuickSongField(null); }} className="h-8 min-w-[140px] max-w-full rounded-lg border border-primary bg-white px-2 text-sm text-text-main outline-none focus:ring-2 focus:ring-primary/20" aria-label="Renomear compositor" />
                               <button type="button" onClick={() => handleQuickSongTextUpdate('composition', quickSongFieldValue)} className="rounded-md p-1 text-emerald-600 hover:bg-emerald-50" title="Salvar composição"><Check size={14}/></button>
@@ -5660,7 +5663,7 @@ const handleRepertorioPdfFull = async () => {
                             </>
                           ) : (
                             <>
-                              <button type="button" onClick={() => startQuickSongFieldEdit('composition')} className={`${isDesktop ? 'ml-0 mr-2' : '-ml-1 mr-2'} rounded-md p-0 text-text-dim hover:bg-primary/10 hover:text-primary transition`} title="Clique para renomear o compositor"><Users size={14}/></button>
+                              {!selectedRepertorio && <button type="button" onClick={() => startQuickSongFieldEdit('composition')} className={`${isDesktop ? 'ml-0 mr-2' : '-ml-1 mr-2'} rounded-md p-0 text-text-dim hover:bg-primary/10 hover:text-primary transition`} title="Clique para renomear o compositor"><Users size={14}/></button>}
                               {selectedSong.composition && <span>{selectedSong.composition}</span>}
                             </>
                           )}
@@ -7164,7 +7167,7 @@ function SortableSongItem({ id, song, index, onClick, onDelete, onShare, isMaest
     <div 
       ref={setNodeRef} 
       style={style} 
-      className={`transition-all bg-white overflow-hidden ${isDragging ? 'opacity-40 translate-y-1 shadow-lg scale-[1.01] z-[200]' : ''}`}
+      className={`transition-all bg-white overflow-hidden border-b border-[#D1D5DB] last:border-b-0 ${isDragging ? 'opacity-40 translate-y-1 shadow-lg scale-[1.01] z-[200]' : ''}`}
     >
       <SongItem
         song={song}
