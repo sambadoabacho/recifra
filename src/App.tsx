@@ -5174,7 +5174,13 @@ const handleRepertorioPdfFull = async () => {
                 <div className="flex h-11 min-w-0 flex-1 items-center px-1" data-key-picker-root>
                   <div className="flex w-full min-w-0 items-center justify-between gap-3">
                     <div className="w-[42%] min-w-0 overflow-hidden text-left" title={selectedSong.title}>
-                      <span className="block truncate text-[18px] font-extrabold uppercase tracking-tight text-white leading-tight">{selectedSong.title}{currentKey && <span className="ml-1 normal-case opacity-70">({currentKey})</span>}</span>
+                      <span className="flex min-w-0 flex-col items-start">
+                        {selectedRepertorio && <span className="text-[8px] font-medium uppercase tracking-wider text-white/55 leading-none mb-0.5">Música em Tela</span>}
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <Music2 size={15} className="shrink-0 text-white/75" aria-hidden="true" />
+                          <span className="block min-w-0 truncate text-[18px] font-extrabold uppercase tracking-tight text-white leading-tight">{selectedSong.title}{currentKey && <span className="ml-1 normal-case opacity-70">({currentKey})</span>}</span>
+                        </span>
+                      </span>
                     </div>
                     {selectedRepertorio && <div className="mx-1 h-7 w-px shrink-0 bg-white/40" aria-hidden="true" />}
                     <div className="w-[42%] min-w-0 overflow-hidden text-left pl-2 pr-4">
@@ -5623,7 +5629,6 @@ const handleRepertorioPdfFull = async () => {
 
               <div className={`flex flex-row justify-between items-start gap-2 relative z-[60] px-[6px] pb-2 md:px-[6px] lg:px-6 ${isDesktop && !selectedRepertorio && !selectedSong.isGroup && sidebarTab === 'songs' ? 'mr-52' : ''}`}>
                 <div className="space-y-1 flex-1 min-w-0">
-                  {selectedRepertorio && !selectedSong.isGroup && <div className="text-[8px] font-medium uppercase tracking-wider text-text-dim leading-none mb-0.5">Música em Tela</div>}
                   {!selectedSong.isGroup ? (
                     <>
                       <div className={`${isDesktop ? 'flex flex-wrap items-center gap-2' : 'hidden'}`}>
@@ -5635,7 +5640,7 @@ const handleRepertorioPdfFull = async () => {
                           </div>
                         ) : (
                           <h2 className="inline-flex items-center gap-0 text-[18px] font-extrabold tracking-tight leading-tight mr-2 uppercase">
-                            {selectedRepertorio ? <Music2 size={18} className={`${isDesktop ? 'ml-0 mr-[10px]' : 'shrink-0 -ml-1 mr-[10px]'} text-text-main`} /> : <button type="button" onClick={() => startQuickSongFieldEdit('title')} className={`${isDesktop ? 'ml-0 mr-[10px]' : 'shrink-0 -ml-1 mr-[10px]'} rounded-md p-0 text-text-dim hover:bg-primary/10 hover:text-primary transition`} title="Clique para renomear o título"><Music2 size={18}/></button>}
+                            {selectedRepertorio ? <Music2 size={18} className={`${isDesktop ? 'ml-0 mr-[10px]' : 'shrink-0 -ml-1 mr-[10px]'} text-text-dim`} /> : <button type="button" onClick={() => startQuickSongFieldEdit('title')} className={`${isDesktop ? 'ml-0 mr-[10px]' : 'shrink-0 -ml-1 mr-[10px]'} rounded-md p-0 text-text-dim hover:bg-primary/10 hover:text-primary transition`} title="Clique para renomear o título"><Music2 size={18}/></button>}
                             {selectedSong.title}{currentKey && <span className="ml-1 normal-case opacity-70">({currentKey})</span>}
                           </h2>
                         )}
