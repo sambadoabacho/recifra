@@ -903,7 +903,7 @@ export default function App() {
       }
 
       const topSafety = 4;
-      const bottomSafety = 12;
+      const bottomSafety = 34;
       const pageHeight = viewport.clientHeight;
       const usableHeight = pageHeight - topSafety - bottomSafety;
       if (usableHeight <= 0) return;
@@ -5170,6 +5170,41 @@ const handleRepertorioPdfFull = async () => {
                   </div>
                 )}
                 </motion.div>
+              ) : currentView === 'details' && selectedSong && !isDesktop && !selectedSong.isGroup ? (
+                <div className="flex min-w-0 flex-1 items-center justify-between gap-1 px-1">
+                  <div className="min-w-0 flex-1 overflow-hidden text-left" title={selectedSong.title}>
+                    <span className="block truncate text-[10px] sm:text-[11px] font-extrabold uppercase tracking-tight text-white leading-tight">{selectedSong.title}</span>
+                  </div>
+                  <div className="relative z-[210] shrink-0" data-key-picker-root>
+                    <button type="button" onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)} className="inline-flex items-center gap-1 rounded-full bg-white text-[#0D47A1] border border-white px-2 sm:px-2.5 py-1.5 text-[10px] sm:text-[11px] font-black shadow-sm whitespace-nowrap">
+                      <Music size={13} /> Tom: {currentKey}
+                    </button>
+                    <AnimatePresence>
+                      {isKeyPickerOpen && (
+                        <motion.div initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} exit={{opacity:0,y:6}} className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-80 max-w-[calc(100vw-1.5rem)] bg-white border border-border rounded-xl shadow-2xl z-[220] grid grid-cols-4 p-3 gap-2">
+                          {songKeyOptions.map(k => <button key={k} type="button" onClick={e => { e.stopPropagation(); handleKeySelect(k); }} className={`p-3 text-xs font-bold rounded-lg border ${k === currentKey ? 'bg-primary border-primary text-white' : 'bg-bg border-border text-text-dim'}`}>{k}</button>)}
+                          {vocalistKeyOptions.length > 0 && (
+                            <div className="col-span-4 mt-1 pt-2 border-t border-border/70">
+                              <div className="flex items-center gap-1.5 px-1 pb-1.5 text-[9px] font-black uppercase tracking-wider text-text-dim"><Mic2 size={11} /> Tons dos vocalistas</div>
+                              <div className="max-h-44 overflow-y-auto space-y-1">
+                                {vocalistKeyOptions.map(vocalist => <button key={vocalist.id} type="button" onClick={e => { e.stopPropagation(); handleVocalistKeySelect(vocalist.key); }} className={`w-full flex items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-left ${currentKey === vocalist.key ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-bg border-border text-text-dim'}`}><span className="min-w-0 truncate text-[11px] font-bold">{vocalist.name}</span><span className="shrink-0 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-black text-primary">{vocalist.key}</span></button>)}
+                              </div>
+                            </div>
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                  <div className="min-w-0 flex-1 overflow-hidden text-right">
+                    {selectedRepertorio && (() => {
+                      const ids = selectedRepertorio.songIds || [];
+                      const currentIndex = ids.indexOf(selectedSong.id || '');
+                      const nextId = ids.slice(currentIndex + 1).find((id: string) => !id.startsWith('group:'));
+                      const nextSong = songs.find(song => song.id === nextId);
+                      return nextSong ? <span title={nextSong.title} className="block truncate text-[9px] sm:text-[10px] font-bold uppercase tracking-tight text-white/85 leading-tight">{nextSong.title}</span> : null;
+                    })()}
+                  </div>
+                </div>
               ) : currentView === 'details' && selectedRepertorio ? (
                 <motion.div 
                   key="next-song-header"
@@ -5701,7 +5736,7 @@ const handleRepertorioPdfFull = async () => {
                 </div>
               )}
 
-              <div className={`flex flex-col sm:flex-row justify-between items-start gap-4 relative z-[60] px-6 pb-4 md:px-6 lg:px-6 ${isDesktop && !selectedRepertorio && !selectedSong.isGroup && sidebarTab === 'songs' ? 'mr-52' : ''}`}>
+              <div className={`flex flex-col sm:flex-row justify-between items-start gap-4 relative z-[60] px-[6px] pb-4 md:px-[6px] lg:px-6 ${isDesktop && !selectedRepertorio && !selectedSong.isGroup && sidebarTab === 'songs' ? 'mr-52' : ''}`}>
                 <div className="space-y-1 flex-1 min-w-0">
                   {!selectedSong.isGroup ? (
                     <>
@@ -5908,7 +5943,7 @@ const handleRepertorioPdfFull = async () => {
                               style={{ 
                                 paddingLeft: isDesktop ? '1.5rem' : '6px',
                                 paddingRight: isDesktop ? '1.5rem' : '6px',
-                                paddingBottom: isDesktop ? '32px' : '12px',
+                                paddingBottom: isDesktop ? '32px' : '40px',
                                 paddingTop: isDesktop ? '0px' : '4px'
                               }}
                             >
