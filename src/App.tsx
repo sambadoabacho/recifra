@@ -817,32 +817,18 @@ export default function App() {
 
   // Limite de zoom mobile: a maior linha pode ocupar toda a largura útil,
   // mas nunca ultrapassá-la. A medição usa as linhas reais renderizadas no DOM.
-  const getMobileMaxScale = (scaleAtMeasurement = chordProScale) => {
+  const getMobileMaxScale = () => {
     const viewport = songViewRef.current;
-    const measureRoot = contentRef.current;
-    if (!viewport || !measureRoot) return Math.max(1, scaleAtMeasurement);
+    if (!viewport || maxLineChars <= 0) return 2.5;
 
-    const horizontalMargin = 8; // margem mínima de 8px em cada lateral
+    // maxLineChars é calculado a partir dos blocos de acorde/letra da linha,
+    // sem depender do tamanho atual do DOM. Isso evita que a medição herde
+    // uma largura fixa em "ch" e bloqueie a ampliação logo no início.
+    const horizontalMargin = 8;
     const availableWidth = Math.max(100, viewport.clientWidth - horizontalMargin * 2);
-    const lines = measureRoot.querySelectorAll<HTMLElement>('.music-line');
-    let widestLine = 0;
-    lines.forEach(line => {
-      // A .music-line ocupa toda a largura do contêiner; por isso medir
-      // apenas seu retângulo faria o limite travar no zoom atual. Somamos
-      // a largura intrínseca dos segmentos (acordes + letras) de cada linha.
-      const segments = Array.from(line.children) as HTMLElement[];
-      const intrinsicWidth = segments.length
-        ? segments.reduce((total, segment) => total + segment.getBoundingClientRect().width, 0)
-        : line.scrollWidth;
-      widestLine = Math.max(widestLine, intrinsicWidth);
-    });
-
-    if (widestLine > 0) {
-      return Math.max(0.35, scaleAtMeasurement * availableWidth / widestLine);
-    }
-
-    // Fallback para a primeira renderização, antes de o DOM medir as linhas.
-    return Math.max(0.35, availableWidth / Math.max(1, maxLineChars * 8.4));
+    const baseCharacterWidth = 8.4; // fonte monoespaçada de referência a 14px
+    const estimatedLongestLineWidth = maxLineChars * baseCharacterWidth;
+    return Math.min(2.5, Math.max(0.35, availableWidth / estimatedLongestLineWidth));
   };
 
   // Handle device-specific zoom persistence per song
@@ -1004,7 +990,7 @@ export default function App() {
     if (Math.abs(ratio - 1) < 0.002) return;
 
     const currentScale = pinchScaleRef.current;
-    const maxScale = getMobileMaxScale(chordProScale);
+    const maxScale = getMobileMaxScale();
     const nextScale = Math.min(maxScale, Math.max(0.35, currentScale * ratio));
 
     if (Math.abs(nextScale - currentScale) > 0.0005) {
@@ -5323,7 +5309,7 @@ const handleRepertorioPdfFull = async () => {
                   className="cursor-pointer hover:scale-105 transition-transform relative"
                   onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)}
                 >
-                  <span className="hidden lg:inline-flex text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full bg-white text-[#0D47A1] border border-white whitespace-nowrap items-center gap-1.5">
+                  <span className="inline-flex text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full bg-white text-[#0D47A1] border border-white whitespace-nowrap items-center gap-1.5">
                     <Music size={13} /> Tom: {currentKey}
                   </span>
                   <AnimatePresence>
