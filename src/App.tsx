@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   auth, db, googleProvider, googleProvider as provider, 
@@ -731,9 +731,8 @@ export default function App() {
   const songViewRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  const pinchDistanceRef = useRef<number | null>(null);
-  const pinchScaleRef = useRef(chordProScale);
-  const [isPinching, setIsPinching] = useState(false);
+  const initialDistRef = useRef<number | null>(null);
+  const pinchScaleRef = useRef<number>(1);
 
   // Determine if we should paginate (only on mobile/tablets)
   const isDesktop = useMemo(() => {
@@ -815,35 +814,35 @@ export default function App() {
     return max;
   }, [selectedSong, transposition]);
 
-  // Limite de zoom mobile: a maior linha pode ocupar toda a largura útil,
-  // mas nunca ultrapassá-la. A medição usa as linhas reais renderizadas no DOM.
-  const getMobileMaxScale = (scaleAtMeasurement = chordProScale) => {
+  // Limite de zoom calculado pela largura real da linha mais longa renderizada.
+  const getMobileMaxScale = () => {
     const viewport = songViewRef.current;
-    const measureRoot = contentRef.current;
-    if (!viewport || !measureRoot) return Math.max(1, scaleAtMeasurement);
-
-    const horizontalMargin = 8; // margem mínima de 8px em cada lateral
-    const availableWidth = Math.max(100, viewport.clientWidth - horizontalMargin * 2);
-    const lines = measureRoot.querySelectorAll<HTMLElement>('.music-line');
+    const measurement = contentRef.current;
+    if (!viewport || !measurement) return 2.5;
+    const availableWidth = Math.max(100, viewport.clientWidth - 14);
+    const lines = measurement.querySelectorAll<HTMLElement>('.music-line');
     let widestLine = 0;
     lines.forEach(line => {
-      // A .music-line ocupa toda a largura do contêiner; por isso medir
-      // apenas seu retângulo faria o limite travar no zoom atual. Somamos
-      // a largura intrínseca dos segmentos (acordes + letras) de cada linha.
-      const segments = Array.from(line.children) as HTMLElement[];
-      const intrinsicWidth = segments.length
-        ? segments.reduce((total, segment) => total + segment.getBoundingClientRect().width, 0)
-        : line.scrollWidth;
-      widestLine = Math.max(widestLine, intrinsicWidth);
+      const children = Array.from(line.children) as HTMLElement[];
+      if (!children.length) return;
+      const firstRect = children[0].getBoundingClientRect();
+      const lastRect = children[children.length - 1].getBoundingClientRect();
+      widestLine = Math.max(widestLine, lastRect.right - firstRect.left);
     });
-
-    if (widestLine > 0) {
-      return Math.max(0.35, scaleAtMeasurement * availableWidth / widestLine);
-    }
-
-    // Fallback para a primeira renderização, antes de o DOM medir as linhas.
-    return Math.max(0.35, availableWidth / Math.max(1, maxLineChars * 8.4));
+    if (!widestLine) return 2.5;
+    return Math.min(2.5, Math.max(0.35, chordProScale * availableWidth / widestLine));
   };
+
+  // Corrige escalas antigas salvas que ultrapassem a largura útil após esta atualização.
+  useEffect(() => {
+    if (isDesktop || currentView !== 'details' || !selectedSong || selectedSong.isGroup ||
+        (selectedSong.pdfPages && selectedSong.pdfPages.length > 0)) return;
+    const frame = window.requestAnimationFrame(() => {
+      const maxScale = getMobileMaxScale();
+      if (chordProScale > maxScale + 0.01) setChordProScale(maxScale);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [chordProScale, selectedSong?.id, transposition, currentView, isDesktop]);
 
   // Handle device-specific zoom persistence per song
   useEffect(() => {
@@ -867,158 +866,143 @@ export default function App() {
     }
   }, [chordProScale, selectedSong?.id, isDesktop]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (selectedSong?.isGroup) {
-      setTotalPages(1);
-      setPageOffsets([0]);
-      setCurrentPage(0);
+      setTotalPages(1); setPageOffsets([0]); setPageBreakIndices([]); setCurrentPage(0);
       return;
     }
-
     if (isDesktop) {
-      setTotalPages(1);
-      setPageOffsets([0]);
-      setCurrentPage(0);
+      setTotalPages(1); setPageOffsets([0]); setCurrentPage(0);
       return;
     }
-
     if (selectedSong?.pdfPages && selectedSong.pdfPages.length > 0) {
       setTotalPages(selectedSong.pdfPages.length);
       if (songViewRef.current) {
-        const offsets = Array.from({ length: selectedSong.pdfPages.length }, (_, i) => i * songViewRef.current!.clientHeight);
-        setPageOffsets(offsets);
+        setPageOffsets(Array.from({ length: selectedSong.pdfPages.length }, (_, i) => i * songViewRef.current!.clientHeight));
         setPageBreakIndices([]);
       }
-    } else if (contentRef.current && songViewRef.current) {
-        const topSafetyMargin = 12;
-        const bottomSafetyMargin = 14;
-        const viewHeight = Math.max(120, (songViewRef.current?.clientHeight || 0) - 60);
-        const measurementTop = contentRef.current?.getBoundingClientRect().top || 0;
-        
-        // Find all line elements inside the music content
-        const lines = contentRef.current?.querySelectorAll('.music-line');
-        if (!lines || lines.length === 0) {
-          setTotalPages(1);
-          setPageOffsets([0]);
-          setPageBreakIndices([[0, 10000]]);
-          return;
-        }
-
-        const newOffsets: number[] = [0];
-        const newBreakIndices: [number, number][] = [];
-        let currentPageStart = 0;
-        let currentPageLineStartIdx = 0;
-        const availableHeightPerPage = viewHeight - bottomSafetyMargin - topSafetyMargin;
-        
-        if (availableHeightPerPage <= 0) return;
-
-        lines.forEach((line, index) => {
-          const lineEl = line as HTMLElement;
-          // getBoundingClientRect mantém as posições coerentes mesmo com
-          // elementos internos que tenham offsetParent diferente.
-          const lineTop = lineEl.getBoundingClientRect().top - measurementTop;
-          const lineBottom = lineTop + lineEl.getBoundingClientRect().height;
-
-          // Threshold for the current page
-          const currentThreshold = currentPageStart + (currentPageStart === 0 ? viewHeight - bottomSafetyMargin : availableHeightPerPage);
-
-          if (lineBottom > currentThreshold) {
-            let breakIndex = index;
-            
-            // Handle chord+lyric pairing: move both to next page if lyric line is about to be cut
-            const hasLyrics = lineEl.getAttribute('data-has-lyrics') === 'true';
-            const hasChords = lineEl.getAttribute('data-has-chords') === 'true';
-            
-            if (hasLyrics && !hasChords && index > 0) {
-              const prevLine = lines[index - 1] as HTMLElement;
-              const prevHasChords = prevLine.getAttribute('data-has-chords') === 'true';
-              const prevHasLyrics = prevLine.getAttribute('data-has-lyrics') === 'true';
-              if (prevHasChords && !prevHasLyrics) {
-                breakIndex = index - 1;
-              }
-            }
-
-            const breakLine = lines[breakIndex] as HTMLElement;
-            // Get the source line index from data attribute
-            const sourceStartIdx = parseInt(breakLine.getAttribute('data-line-index') || '0');
-            
-            // Previous page ends at sourceStartIdx - 1
-            const prevSourceStartIdx = parseInt((lines[currentPageLineStartIdx] as HTMLElement).getAttribute('data-line-index') || '0');
-            newBreakIndices.push([prevSourceStartIdx, sourceStartIdx - 1]);
-            
-            const newStartPos = breakLine.offsetTop - topSafetyMargin;
-            newOffsets.push(newStartPos);
-            currentPageStart = newStartPos;
-            currentPageLineStartIdx = breakIndex;
-          }
-        });
-
-        // Add the last page range
-        const lastStartSourceIdx = parseInt((lines[currentPageLineStartIdx] as HTMLElement).getAttribute('data-line-index') || '0');
-        newBreakIndices.push([lastStartSourceIdx, 10000]); // Use arbitrary large end index
-
-        setTotalPages(newOffsets.length);
-        setPageOffsets(newOffsets);
-        setPageBreakIndices(newBreakIndices);
-        setCurrentPage(previous => Math.min(previous, newOffsets.length - 1));
-    } else {
-      setTotalPages(1);
-      setPageOffsets([0]);
-      setPageBreakIndices([[0, 10000]]);
+      setCurrentPage(0);
+      return;
     }
+    if (!contentRef.current || !songViewRef.current) {
+      setTotalPages(1); setPageOffsets([0]); setPageBreakIndices([[0, 10000]]); setCurrentPage(0);
+      return;
+    }
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let observer: ResizeObserver | null = null;
+
+    const measurePages = () => {
+      const measurement = contentRef.current;
+      const viewport = songViewRef.current;
+      if (!measurement || !viewport) return;
+      const elements = Array.from(measurement.querySelectorAll<HTMLElement>('.music-line'));
+      if (!elements.length) {
+        setTotalPages(1); setPageOffsets([0]); setPageBreakIndices([[0, 10000]]); setCurrentPage(0);
+        return;
+      }
+
+      const topSafety = 4;
+      const bottomSafety = 34;
+      const pageHeight = viewport.clientHeight;
+      const usableHeight = pageHeight - topSafety - bottomSafety;
+      if (usableHeight <= 0) return;
+
+      const measurementTop = measurement.getBoundingClientRect().top;
+      const rows = elements.map((element, index) => ({
+        element,
+        source: Number.parseInt(element.getAttribute('data-line-index') || String(index), 10),
+        top: element.getBoundingClientRect().top - measurementTop,
+        bottom: element.getBoundingClientRect().bottom - measurementTop,
+        chords: element.getAttribute('data-has-chords') === 'true',
+        lyrics: element.getAttribute('data-has-lyrics') === 'true'
+      }));
+
+      // Cifra sem letra + linha de letra seguinte formam uma unidade inseparável.
+      const groups: Array<{ top: number; bottom: number; start: number; end: number }> = [];
+      rows.forEach((row, index) => {
+        const prev = rows[index - 1];
+        const continuesPair = row.lyrics && !row.chords && !!prev && prev.chords && !prev.lyrics;
+        if (continuesPair && groups.length) {
+          groups[groups.length - 1].bottom = row.bottom;
+          groups[groups.length - 1].end = row.source;
+        } else {
+          groups.push({ top: row.top, bottom: row.bottom, start: row.source, end: row.source });
+        }
+      });
+
+      const ranges: [number, number][] = [];
+      const offsets: number[] = [0];
+      let firstGroup = 0;
+      let pageTop = 0;
+      for (let i = 0; i < groups.length; i++) {
+        const limit = pageTop + (firstGroup === 0 ? pageHeight - bottomSafety : usableHeight);
+        if (groups[i].bottom > limit && i > firstGroup) {
+          ranges.push([groups[firstGroup].start, groups[i - 1].end]);
+          const nextTop = Math.max(0, groups[i].top - topSafety);
+          offsets.push(nextTop);
+          pageTop = nextTop;
+          firstGroup = i;
+        }
+      }
+      ranges.push([groups[firstGroup].start, 10000]);
+      setTotalPages(Math.max(1, ranges.length));
+      setPageOffsets(offsets);
+      setPageBreakIndices(ranges);
+      setCurrentPage(current => Math.min(current, Math.max(0, ranges.length - 1)));
+    };
+
+    const scheduleMeasure = (delay = 120) => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(measurePages, delay);
+    };
+    scheduleMeasure();
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => scheduleMeasure(100));
+      observer.observe(songViewRef.current);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+      observer?.disconnect();
+    };
   }, [selectedSong, transposition, chordProScale, currentView, isDesktop]);
-
-  useEffect(() => {
-    setCurrentPage(0);
-  }, [selectedSong?.id, transposition, currentView]);
-
-  const getTouchDistance = (touches: React.TouchList) => {
-    if (touches.length < 2) return 0;
-    return Math.hypot(
-      touches[0].pageX - touches[1].pageX,
-      touches[0].pageY - touches[1].pageY
-    );
-  };
 
   const handlePinchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
-      e.stopPropagation();
-      const distance = getTouchDistance(e.touches);
-      pinchDistanceRef.current = distance;
+      initialDistRef.current = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
       pinchScaleRef.current = chordProScale;
-      setIsPinching(true);
+    } else {
+      initialDistRef.current = null;
     }
   };
 
   const handlePinchMove = (e: React.TouchEvent) => {
-    if (e.touches.length !== 2 || pinchDistanceRef.current === null) return;
+    if (e.touches.length !== 2 || initialDistRef.current === null) return;
+    if (e.cancelable) e.preventDefault();
 
-    // A pinça tem prioridade sobre o gesto horizontal de troca de música.
-    e.stopPropagation();
-    const distance = getTouchDistance(e.touches);
-    const previousDistance = pinchDistanceRef.current;
-    if (distance <= 0 || previousDistance <= 0) return;
+    const distance = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    const previous = initialDistRef.current;
+    if (previous <= 0) return;
+    const ratio = distance / previous;
+    if (Math.abs(ratio - 1) < 0.004) return;
 
-    const ratio = distance / previousDistance;
-    // Ignora apenas ruído mínimo do sensor, sem acumular saltos artificiais.
-    if (Math.abs(ratio - 1) < 0.002) return;
-
-    const currentScale = pinchScaleRef.current;
-    const maxScale = getMobileMaxScale(chordProScale);
-    const nextScale = Math.min(maxScale, Math.max(0.35, currentScale * ratio));
-
-    if (Math.abs(nextScale - currentScale) > 0.0005) {
-      pinchScaleRef.current = nextScale;
-      setChordProScale(nextScale);
+    const proposed = pinchScaleRef.current * ratio;
+    const next = Math.min(getMobileMaxScale(), Math.max(0.35, proposed));
+    if (Math.abs(next - pinchScaleRef.current) > 0.002) {
+      pinchScaleRef.current = next;
+      setChordProScale(next);
     }
-    pinchDistanceRef.current = distance;
+    initialDistRef.current = distance;
   };
 
   const handlePinchEnd = (e: React.TouchEvent) => {
-    if (e.touches.length < 2) {
-      pinchDistanceRef.current = null;
-      setIsPinching(false);
-    }
+    if (e.touches.length < 2) initialDistRef.current = null;
   };
 
   const [isCapturingKey, setIsCapturingKey] = useState<any>(null); // 'next' or 'prev'
@@ -5688,7 +5672,7 @@ const handleRepertorioPdfFull = async () => {
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 1.02 }}
-              drag={isPinching ? false : "x"}
+              drag="x"
               dragConstraints={{ left: 0, right: 0 }}
               dragElastic={0.2}
               onDragEnd={(_, info) => {
@@ -5828,7 +5812,8 @@ const handleRepertorioPdfFull = async () => {
 
               <div 
                 ref={songViewRef}
-                className={`pt-0 relative flex-1 min-w-0 select-none ${isDesktop ? 'mr-52 h-auto min-h-full overflow-visible' : 'overflow-hidden'}`}
+                className={`pt-0 relative flex-1 min-w-0 select-none ${isDesktop ? 'mr-52 h-auto min-h-full overflow-visible' : 'overflow-hidden overscroll-none'}`}
+                style={!isDesktop ? { touchAction: 'pan-y' } : undefined}
                 onClick={(e) => {
                   if (isDesktop) return;
                   const width = e.currentTarget.clientWidth;
@@ -5892,9 +5877,9 @@ const handleRepertorioPdfFull = async () => {
                           className="absolute top-0 left-0 opacity-0 pointer-events-none"
                           style={{ 
                             width: songViewRef.current?.clientWidth || '100%',
-                            paddingLeft: '8px',
-                            paddingRight: '8px',
-                            paddingTop: '8px'
+                            paddingLeft: '6px',
+                            paddingRight: '6px',
+                            paddingTop: '4px'
                           }}
                         >
                           <div>
@@ -5921,10 +5906,10 @@ const handleRepertorioPdfFull = async () => {
                           <div key={idx} className={`flex-shrink-0 w-full ${isDesktop ? 'h-auto min-h-full overflow-visible' : 'h-full overflow-hidden'}`}>
                             <div 
                               style={{ 
-                                paddingLeft: isDesktop ? '1.5rem' : '8px',
-                                paddingRight: isDesktop ? '1.5rem' : '8px',
-                                paddingBottom: isDesktop ? '32px' : '16px',
-                                paddingTop: isDesktop ? '0px' : '8px'
+                                paddingLeft: isDesktop ? '1.5rem' : '6px',
+                                paddingRight: isDesktop ? '1.5rem' : '6px',
+                                paddingBottom: isDesktop ? '32px' : '20px',
+                                paddingTop: isDesktop ? '0px' : '4px'
                               }}
                             >
                               <div>
