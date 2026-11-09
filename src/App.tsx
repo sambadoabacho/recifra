@@ -5623,6 +5623,7 @@ const handleRepertorioPdfFull = async () => {
 
               <div className={`flex flex-row justify-between items-start gap-2 relative z-[60] px-[6px] pb-2 md:px-[6px] lg:px-6 ${isDesktop && !selectedRepertorio && !selectedSong.isGroup && sidebarTab === 'songs' ? 'mr-52' : ''}`}>
                 <div className="space-y-1 flex-1 min-w-0">
+                  {selectedRepertorio && !selectedSong.isGroup && <div className="text-[8px] font-medium uppercase tracking-wider text-text-dim leading-none mb-0.5">Música em Tela</div>}
                   {!selectedSong.isGroup ? (
                     <>
                       <div className={`${isDesktop ? 'flex flex-wrap items-center gap-2' : 'hidden'}`}>
@@ -5634,12 +5635,12 @@ const handleRepertorioPdfFull = async () => {
                           </div>
                         ) : (
                           <h2 className="inline-flex items-center gap-0 text-[18px] font-extrabold tracking-tight leading-tight mr-2 uppercase">
-                            {selectedRepertorio ? <Music2 size={18} className={`${isDesktop ? 'ml-0 mr-[10px]' : 'shrink-0 -ml-1 mr-[10px]'} text-text-dim`} /> : <button type="button" onClick={() => startQuickSongFieldEdit('title')} className={`${isDesktop ? 'ml-0 mr-[10px]' : 'shrink-0 -ml-1 mr-[10px]'} rounded-md p-0 text-text-dim hover:bg-primary/10 hover:text-primary transition`} title="Clique para renomear o título"><Music2 size={18}/></button>}
+                            {selectedRepertorio ? <Music2 size={18} className={`${isDesktop ? 'ml-0 mr-[10px]' : 'shrink-0 -ml-1 mr-[10px]'} text-text-main`} /> : <button type="button" onClick={() => startQuickSongFieldEdit('title')} className={`${isDesktop ? 'ml-0 mr-[10px]' : 'shrink-0 -ml-1 mr-[10px]'} rounded-md p-0 text-text-dim hover:bg-primary/10 hover:text-primary transition`} title="Clique para renomear o título"><Music2 size={18}/></button>}
                             {selectedSong.title}{currentKey && <span className="ml-1 normal-case opacity-70">({currentKey})</span>}
                           </h2>
                         )}
                       </div>
-                      <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-dim font-light ${isDesktop ? 'mt-1' : '-mt-2'}`}>
+                      <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-dim font-light ${isDesktop ? 'mt-1' : '-mt-1'}`}>
                         <span className="inline-flex items-center gap-1.5">
                           {!selectedRepertorio && editingQuickSongField === 'artist' ? (
                             <>
