@@ -497,7 +497,21 @@ export default function App() {
   const [editingSong, setEditingSong] = useState<Song | null>(null);
   const [editingRepertorio, setEditingRepertorio] = useState<any | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isVoiceSearchActive, setIsVoiceSearchActive] = useState(false);
+  const [voiceSearchSupported, setVoiceSearchSupported] = useState(true);
+  const voiceRecognitionRef = useRef<any>(null);
   const [transposition, setTransposition] = useState(0);
+  // Cores da cifra na página da música, sincronizadas com o painel lateral.
+  const [displayLyricColor, setDisplayLyricColor] = useState(() => localStorage.getItem('recifra_lyric_color') || '#333333');
+  const [displayChordColor, setDisplayChordColor] = useState(() => localStorage.getItem('recifra_chord_color') || '#ff6900');
+  useEffect(() => {
+    const syncDisplayColors = () => {
+      setDisplayLyricColor(localStorage.getItem('recifra_lyric_color') || '#333333');
+      setDisplayChordColor(localStorage.getItem('recifra_chord_color') || '#ff6900');
+    };
+    window.addEventListener('recifra:display-settings', syncDisplayColors);
+    return () => window.removeEventListener('recifra:display-settings', syncDisplayColors);
+  }, []);
   const [liveSession, setLiveSession] = useState<Session | null>(null);
   const initialLiveSessionHandledRef = useRef(false);
   const [isMaestroActive, setIsMaestroActive] = useState(false);
@@ -515,6 +529,47 @@ export default function App() {
   const [isCreatingBackup, setIsCreatingBackup] = useState(false);
 
   const isMaestro = userRole === 'maestro';
+
+  const toggleVoiceSearch = () => {
+    if (isVoiceSearchActive) {
+      voiceRecognitionRef.current?.stop?.();
+      setIsVoiceSearchActive(false);
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setVoiceSearchSupported(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'pt-BR';
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.onresult = (event: any) => {
+        const transcript = event.results?.[0]?.[0]?.transcript?.trim();
+        if (transcript) {
+          setSearchTerm(transcript);
+          if (!activeSongFolderId) setExpandedFolders(['all']);
+        }
+      };
+      recognition.onerror = () => setIsVoiceSearchActive(false);
+      recognition.onend = () => setIsVoiceSearchActive(false);
+      voiceRecognitionRef.current = recognition;
+      recognition.start();
+      setVoiceSearchSupported(true);
+      setIsVoiceSearchActive(true);
+    } catch {
+      setIsVoiceSearchActive(false);
+    }
+  };
+
+  useEffect(() => () => {
+    voiceRecognitionRef.current?.stop?.();
+  }, []);
 
   const handleCompleteBackup = () => {
     if (!user) {
@@ -1065,7 +1120,7 @@ export default function App() {
     }
   }, [selectedSong]);
 
-  // A página inicial do Maestro permanece na visão de pastas; nenhuma música é aberta automaticamente.
+  // O dashboard é a página principal; nenhuma música é aberta automaticamente.
 
   // Sync selected song with updated data or clear if deleted
   useEffect(() => {
@@ -1073,7 +1128,7 @@ export default function App() {
       const updated = songs.find(s => s.id === selectedSong.id);
       if (!updated) {
         setSelectedSong(null);
-        setCurrentView('list');
+        setCurrentView('home');
       } else if (updated.updatedAt !== selectedSong.updatedAt) {
         setSelectedSong(updated);
       }
@@ -1447,7 +1502,7 @@ export default function App() {
         } else {
           await addDoc(collection(db, 'songs'), data);
         }
-        setCurrentView('list');
+        setCurrentView('home');
       }
     } catch (error) {
       console.error('Error saving song:', error);
@@ -1529,8 +1584,15 @@ export default function App() {
     }
 
     const groupId = `group-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const groupTitle = (suggestion.name || 'Novo Bloco').trim();
-    const newGroups = [...(target.songGroups || []), { id: groupId, title: groupTitle, songIds: newSongIds }];
+    const groupTitle = String(suggestion.name || suggestion.title || 'Novo Bloco').trim();
+    const newGroups = [...(target.songGroups || []), {
+      id: groupId,
+      title: groupTitle,
+      songIds: newSongIds,
+      sourceBlockId: suggestion.id || null
+    }];
+    // O marcador group:<id> é inserido imediatamente antes das músicas do bloco,
+    // para que o repertório preserve visualmente o nome e a composição do bloco.
     const newIds = [...(target.songIds || []), `group:${groupId}`, ...newSongIds];
     try {
       await updateDoc(doc(db, 'setlists', repertorioId), {
@@ -1714,7 +1776,7 @@ export default function App() {
       setSidebarTab('repertorios');
       setSidebarView('repertorio-songs');
       setIsSidebarOpen(true);
-      setCurrentView('repertorios');
+      setCurrentView('home');
       
       // Set main view to first song if exists
       if (cleanData.songIds.length > 0) {
@@ -2544,7 +2606,7 @@ export default function App() {
           ? `\n\nMúsicas não localizadas e ignoradas: ${[...new Set(missingSongs)].join(', ')}`
           : '';
         alert(`${data.exportType === 'folder' ? `Pasta importada com ${importedCount} setlist(s)` : 'Setlist importado'} com sucesso.${missingMessage}`);
-        setCurrentView('repertorios');
+        setCurrentView('home');
         setSidebarTab('repertorios');
       } catch (error) {
         console.error('Erro ao importar repertório JSON:', error);
@@ -3550,37 +3612,27 @@ const handleRepertorioPdfFull = async () => {
         )}
       </AnimatePresence>
 
-      {/* Cabeçalho unificado do desktop: identidade à esquerda e título/ações à direita */}
+      {/* Cabeçalho superior do desktop: faixa branca em toda a largura */}
       {isDesktop && (
-        <div className="fixed top-0 left-0 right-0 h-[72px] z-[220] flex bg-[#0D47A1] border-b border-[#0D47A1]">
-          <div className="w-80 shrink-0 px-2 flex items-center justify-around border-r border-white/20">
-            <SidebarNavItem icon={<Music size={18} />} label="Músicas" tooltip="Consulte, pesquise e organize seu acervo musical." active={sidebarTab === 'songs'} onClick={() => { setSidebarTab('songs'); setSidebarView('tabs'); if (currentView !== 'home') setCurrentView('home'); }} />
-            <SidebarNavItem icon={<ListMusic size={18} />} label="Repertórios" tooltip="Monte e gerencie listas de músicas para apresentações." active={sidebarTab === 'repertorios'} onClick={() => { setSidebarTab('repertorios'); setSidebarView('tabs'); if (currentView !== 'home') setCurrentView('home'); }} />
-            <SidebarNavItem icon={<LayoutList size={18} />} label="Blocos" tooltip="Organize músicas em blocos para orientar a execução." active={sidebarTab === 'blocks'} onClick={() => { setSidebarTab('blocks'); setSidebarView('tabs'); if (currentView !== 'home') setCurrentView('home'); }} />
-            <SidebarNavItem icon={<Mic size={18} />} label="Palco" tooltip="Acesse Show e Afinador." active={isMaestroActive || followLeader} activeColorOverride="text-[#ff6900]" showActiveIndicator={false} onClick={() => { setSidebarTab('palco'); setSidebarView('tabs'); }} />
-          </div>
-          <div className="flex-1 min-w-0 h-full !bg-[#EEF1F5] flex items-center justify-between px-6">
-            <div className="flex items-center">
-              <button
-                type="button"
-                onClick={() => { setCurrentView('home'); setSidebarTab('songs'); setSidebarView('tabs'); }}
-                className="inline-flex items-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D47A1] focus-visible:ring-offset-2"
-                title="Página principal"
-                aria-label="Ir para a página principal"
-              >
-                <img src={SET_LOGO_DESKTOP_TRANSPARENT_SRC} alt="#nymbo" className="h-10 w-auto max-w-[250px] object-contain self-center" />
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => { setSidebarTab('settings'); setSidebarView('tabs'); setCurrentView('settings'); }}
-              className="h-10 w-10 shrink-0 rounded-full bg-white text-[#0D47A1] flex items-center justify-center shadow-sm hover:bg-slate-50"
-              title="Ajustes"
-              aria-label="Ajustes"
-            >
-              <Settings size={19} />
-            </button>
-          </div>
+        <div className="fixed top-0 left-0 right-0 h-[72px] z-[240] flex items-center justify-between bg-[#E6ECF5] border-b border-[#D9E0E9] px-5">
+          <button
+            type="button"
+            onClick={() => { setCurrentView('home'); setSidebarTab('songs'); setSidebarView('tabs'); }}
+            className="inline-flex items-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D47A1] focus-visible:ring-offset-2"
+            title="Página principal"
+            aria-label="Ir para a página principal"
+          >
+            <img src={SET_LOGO_DESKTOP_TRANSPARENT_SRC} alt="#nymbo" className="h-10 w-auto max-w-[250px] object-contain self-center" />
+          </button>
+          <button
+            type="button"
+            onClick={() => { setSidebarTab('settings'); setSidebarView('tabs'); setCurrentView('settings'); }}
+            className="h-10 w-10 shrink-0 rounded-full bg-white text-[#0D47A1] flex items-center justify-center shadow-sm hover:bg-slate-50 border border-slate-100"
+            title="Ajustes"
+            aria-label="Ajustes"
+          >
+            <Settings size={19} />
+          </button>
         </div>
       )}
 
@@ -3638,7 +3690,7 @@ const handleRepertorioPdfFull = async () => {
           </div>
         </div>
 
-        <nav className={`p-2 border-b border-border bg-[#0D47A1] flex justify-around relative ${isDesktop ? 'hidden' : ''}`}>
+        <nav className={`p-2 border-b border-border bg-[#0D47A1] flex justify-around relative shrink-0`}>
           <SidebarNavItem 
             icon={<Music size={18} />} 
             label="Músicas" 
@@ -3757,7 +3809,6 @@ const handleRepertorioPdfFull = async () => {
             );
           })()}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" size={16} />
             <input
               type="text"
               placeholder="Buscar..."
@@ -3767,8 +3818,20 @@ const handleRepertorioPdfFull = async () => {
                 setSearchTerm(value);
                 if (!activeSongFolderId) setExpandedFolders(value.trim() ? ['all'] : []);
               }}
-              className={`w-full bg-white border border-[#D1D5DB] rounded-lg py-2 pl-9 ${sidebarTab === 'songs' && (activeSongFolderId || expandedFolders.length > 0 || searchTerm) ? 'pr-[82px]' : 'pr-10'} text-sm focus:ring-1 focus:ring-[#D1D5DB] outline-none text-[#666666] placeholder:text-[#B8BEC8]`}
+              className={`w-full bg-white border border-[#D1D5DB] rounded-lg py-2 pl-11 ${sidebarTab === 'songs' && (activeSongFolderId || expandedFolders.length > 0 || searchTerm) ? 'pr-[82px]' : 'pr-10'} text-sm focus:ring-1 focus:ring-[#D1D5DB] outline-none text-[#666666] placeholder:text-[#B8BEC8]`}
             />
+            <button
+              type="button"
+              onClick={toggleVoiceSearch}
+              disabled={!voiceSearchSupported}
+              aria-label={isVoiceSearchActive ? 'Parar busca por voz' : 'Pesquisar por voz'}
+              aria-pressed={isVoiceSearchActive}
+              title={!voiceSearchSupported ? 'Busca por voz não suportada neste navegador' : isVoiceSearchActive ? 'Parar busca por voz' : 'Pesquisar por voz'}
+              className={`absolute left-2 top-1/2 -translate-y-1/2 h-7 w-7 flex items-center justify-center rounded-md transition-colors ${isVoiceSearchActive ? 'bg-red-50 text-red-600 animate-pulse' : voiceSearchSupported ? 'text-[#0D47A1] hover:bg-[#EEF4FF]' : 'text-slate-300 cursor-not-allowed'}`}
+            >
+              <Mic size={16} />
+            </button>
+            {isVoiceSearchActive && <span className="absolute left-3 -bottom-5 text-[10px] font-semibold text-red-600" role="status">Ouvindo… fale para pesquisar</span>}
             {sidebarTab === 'songs' && (activeSongFolderId || expandedFolders.length > 0 || searchTerm) && (
               <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
                 <button
@@ -4323,7 +4386,7 @@ const handleRepertorioPdfFull = async () => {
                                       setSelectedSongIdForAction(null);
                                       setSelectedRepertorio(repertorio);
                                       setSidebarView('repertorio-songs');
-                                      setCurrentView('repertorios');
+                                      setCurrentView('home');
                                     }}
                                     onDelete={() => deleteRepertorio(repertorio.id)}
                                     onEdit={() => { setEditingRepertorio(repertorio); setIsSidebarOpen(false); setCurrentView('repertorio-form'); }}
@@ -4381,7 +4444,7 @@ const handleRepertorioPdfFull = async () => {
                         setSelectedSongIdForAction(null);
                         setSelectedRepertorio(repertorio);
                         setSidebarView('repertorio-songs');
-                        setCurrentView('repertorios');
+                        setCurrentView('home');
                       }}
                       onDelete={() => deleteRepertorio(repertorio.id)}
                       onEdit={() => { setEditingRepertorio(repertorio); setCurrentView('repertorio-form'); }}
@@ -4797,27 +4860,6 @@ const handleRepertorioPdfFull = async () => {
           </div>
         )}
 
-        <AnimatePresence>
-          {isTunerOpen && <ChromaticTuner onClose={() => setIsTunerOpen(false)} />}
-          {isMetronomeOpen && <Metronome onClose={() => setIsMetronomeOpen(false)} />}
-          {isRiderOpen && (
-            <div className="fixed inset-0 z-[220] bg-black/50 flex items-center justify-center p-4" onMouseDown={e => { if (e.target === e.currentTarget) setIsRiderOpen(false); }}>
-              <section className="w-full max-w-xl rounded-2xl bg-white border border-slate-200 shadow-2xl p-6 text-slate-900">
-                <div className="flex items-center justify-between gap-3 mb-5">
-                  <div className="flex items-center gap-2"><FileText size={20} className="text-[#0D47A1]"/><h2 className="font-black text-sm uppercase tracking-wider">Rider</h2></div>
-                  <button type="button" onClick={() => setIsRiderOpen(false)} className="p-1 rounded-lg hover:bg-slate-100" aria-label="Fechar Rider"><X size={18}/></button>
-                </div>
-                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center">
-                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-[#0D47A1]"><FileText size={24}/></div>
-                  <h3 className="font-bold text-base">Rider técnico</h3>
-                  <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-500">Área reservada para organizar as necessidades técnicas da apresentação e, futuramente, desenvolver o mapa de palco.</p>
-                  <span className="mt-4 inline-flex rounded-full bg-slate-200 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">Em desenvolvimento</span>
-                </div>
-              </section>
-            </div>
-          )}
-        </AnimatePresence>
-
         <nav className="p-2 border-t border-border bg-[#E6ECF5] flex justify-around relative">
           {sidebarTab === 'songs' ? (
             <>
@@ -5013,10 +5055,33 @@ const handleRepertorioPdfFull = async () => {
         </nav>
       </motion.aside>
 
+      {/* Modais globais fora da sidebar animada: permanecem centralizados após seu fechamento no mobile. */}
+        <AnimatePresence>
+          {isTunerOpen && <ChromaticTuner onClose={() => setIsTunerOpen(false)} />}
+          {isMetronomeOpen && <Metronome onClose={() => setIsMetronomeOpen(false)} />}
+          {isRiderOpen && (
+            <div className="fixed inset-0 z-[220] bg-black/50 flex items-center justify-center p-4" onMouseDown={e => { if (e.target === e.currentTarget) setIsRiderOpen(false); }}>
+              <section className="w-full max-w-xl rounded-2xl bg-white border border-slate-200 shadow-2xl p-6 text-slate-900">
+                <div className="flex items-center justify-between gap-3 mb-5">
+                  <div className="flex items-center gap-2"><FileText size={20} className="text-[#0D47A1]"/><h2 className="font-black text-sm uppercase tracking-wider">Rider</h2></div>
+                  <button type="button" onClick={() => setIsRiderOpen(false)} className="p-1 rounded-lg hover:bg-slate-100" aria-label="Fechar Rider"><X size={18}/></button>
+                </div>
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center">
+                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-[#0D47A1]"><FileText size={24}/></div>
+                  <h3 className="font-bold text-base">Rider técnico</h3>
+                  <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-500">Área reservada para organizar as necessidades técnicas da apresentação e, futuramente, desenvolver o mapa de palco.</p>
+                  <span className="mt-4 inline-flex rounded-full bg-slate-200 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">Em desenvolvimento</span>
+                </div>
+              </section>
+            </div>
+          )}
+        </AnimatePresence>
+
+
       <div className={`w-full bg-bg border-x border-border h-screen flex flex-col relative overflow-hidden ${isDesktop ? 'ml-80 max-w-none pt-[72px]' : 'max-w-[1000px]'}`}>
         {/* Sticky Header Section */}
-        <div className={`${isDesktop ? 'fixed top-0 left-80 right-0 bg-[#EEF1F5] border-b border-[#D9E0E9]' : 'sticky top-0 bg-[#0D47A1] border-b border-[#0D47A1]'} ${isDesktop ? "z-[230]" : (followLeader ? "z-[210]" : "z-[100]")} transition-colors`}>
-          <header className={`${isDesktop ? 'h-[72px] px-5 py-0 bg-[#EEF1F5]' : 'px-5 py-3 bg-[#0D47A1]'} flex items-center justify-between`}>
+        <div className={`${isDesktop ? 'fixed top-0 left-80 right-0 bg-transparent border-b-0' : 'sticky top-0 bg-[#0D47A1] border-b border-[#0D47A1]'} ${isDesktop ? "z-[250]" : (followLeader ? "z-[210]" : "z-[100]")} transition-colors`}>
+          <header className={`${isDesktop ? 'h-[72px] px-5 py-0 bg-transparent' : 'px-5 py-3 bg-[#0D47A1]'} flex items-center justify-between`}>
           <div className="flex items-center gap-4">
             {followLeader ? (
               <button
@@ -5032,15 +5097,7 @@ const handleRepertorioPdfFull = async () => {
                 <span>SAIR DO PALCO</span>
               </button>
             ) : isDesktop ? (
-              <button
-                type="button"
-                onClick={() => { setCurrentView('home'); setSidebarTab('songs'); setSidebarView('tabs'); }}
-                className="inline-flex items-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D47A1] focus-visible:ring-offset-2"
-                title="Página principal"
-                aria-label="Ir para a página principal"
-              >
-                <img src={SET_LOGO_DESKTOP_TRANSPARENT_SRC} alt="#nymbo" className="h-10 w-auto max-w-[250px] object-contain self-center" />
-              </button>
+              <div className="w-0" aria-hidden="true" />
             ) : (
               <button
                 onClick={() => setIsSidebarOpen(true)}
@@ -5162,8 +5219,8 @@ const handleRepertorioPdfFull = async () => {
                   </button>
                   <AnimatePresence>
                     {isKeyPickerOpen && (
-                      <motion.div initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} exit={{opacity:0,y:6}} className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-56 bg-white border border-border rounded-xl shadow-2xl z-[200] grid grid-cols-4 p-2 gap-1">
-                        {songKeyOptions.map(k => <button key={k} type="button" onClick={e => { e.stopPropagation(); handleKeySelect(k); }} className={`p-2 text-[10px] font-bold rounded-lg border ${k === currentKey ? 'bg-primary border-primary text-white' : 'bg-bg border-border text-text-dim'}`}>{k}</button>)}
+                      <motion.div initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} exit={{opacity:0,y:6}} className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-72 max-w-[calc(100vw-2rem)] bg-white border border-border rounded-xl shadow-2xl z-[200] grid grid-cols-4 p-3 gap-2">
+                        {songKeyOptions.map(k => <button key={k} type="button" onClick={e => { e.stopPropagation(); handleKeySelect(k); }} className={`p-3 text-xs font-bold rounded-lg border ${k === currentKey ? 'bg-primary border-primary text-white' : 'bg-bg border-border text-text-dim'}`}>{k}</button>)}
                         {vocalistKeyOptions.length > 0 && (
                           <div className="col-span-4 mt-1 pt-2 border-t border-border/70">
                             <div className="flex items-center gap-1.5 px-1 pb-1.5 text-[9px] font-black uppercase tracking-wider text-text-dim"><Mic2 size={11} /> Tons dos vocalistas</div>
@@ -5207,7 +5264,7 @@ const handleRepertorioPdfFull = async () => {
                 Salvo
               </div>
             )}
-            {currentView === 'list' && sidebarTab === 'songs' && (
+            {false && currentView === 'list' && sidebarTab === 'songs' && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white border border-white px-3 py-1 text-[10px] font-black uppercase tracking-wide text-[#0D47A1]" title="Quantidade de pastas">
                 <FolderIcon size={13} /> {folders.filter(f => !f.type || f.type === 'song').length}
               </span>
@@ -5229,7 +5286,7 @@ const handleRepertorioPdfFull = async () => {
                 </span>
               </div>
             )}
-            {currentView === 'repertorios' && sidebarTab === 'repertorios' && !selectedRepertorio && (
+            {false && currentView === 'repertorios' && sidebarTab === 'repertorios' && !selectedRepertorio && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white border border-white px-3 py-1 text-[10px] font-black uppercase tracking-wide text-[#0D47A1]" title="Quantidade de repertórios">
                 <ListMusic size={13} /> {repertorios.length}
               </span>
@@ -5338,7 +5395,7 @@ const handleRepertorioPdfFull = async () => {
                       {isMaestro && <button type="button" onClick={() => { setEditingSong(selectedSong); setCurrentView('form'); setIsMobileSongActionsOpen(false); }} className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-bold hover:bg-[#EEF1F5]"><Edit2 size={16} /> Editar</button>}
                       <button type="button" onClick={() => { downloadSongFile(selectedSong); setIsMobileSongActionsOpen(false); }} className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-bold hover:bg-[#EEF1F5]"><Download size={16} /> Baixar</button>
                       <button type="button" onClick={() => { shareAsPDF([selectedSong], selectedSong.title); setIsMobileSongActionsOpen(false); }} className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-bold hover:bg-[#EEF1F5]"><Share2 size={16} /> Compartilhar</button>
-                      {isMaestro && <button type="button" onClick={() => { if (window.confirm('Excluir esta música permanentemente?')) { deleteSong(selectedSong.id!); setCurrentView('list'); } setIsMobileSongActionsOpen(false); }} className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-bold text-red-600 hover:bg-red-50"><Trash2 size={16} /> Excluir</button>}
+                      {isMaestro && <button type="button" onClick={() => { if (window.confirm('Excluir esta música permanentemente?')) { deleteSong(selectedSong.id!); setCurrentView('home'); } setIsMobileSongActionsOpen(false); }} className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-bold text-red-600 hover:bg-red-50"><Trash2 size={16} /> Excluir</button>}
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -5473,7 +5530,7 @@ const handleRepertorioPdfFull = async () => {
       </div>
 
       {/* Atalhos de cadastro ficam fora do cabeçalho, imediatamente abaixo dele. */}
-      {currentView === 'list' && sidebarTab === 'songs' && (
+      {false && currentView === 'list' && sidebarTab === 'songs' && (
         <div className="px-5 pt-3 pb-2 flex gap-2 bg-bg">
           <button type="button" disabled={!isMaestro} onClick={() => { setEditingSong(null); setSelectedRepertorio(null); setCurrentView('form'); }} className="flex-1 h-12 rounded-xl bg-[#0D47A1] text-white flex items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-wide disabled:opacity-40">
             <Plus size={16} /> Música
@@ -5496,10 +5553,10 @@ const handleRepertorioPdfFull = async () => {
               className="mx-auto w-full max-w-7xl space-y-7 pb-10"
             >
               <section className="grid grid-cols-3 gap-2 sm:gap-3">
-                <button onClick={() => { setSidebarTab('songs'); setCurrentView('list'); }} className="group flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-[#0D47A1] bg-[#0D47A1] px-2 py-2.5 text-center text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0B3D8A] sm:flex-row sm:justify-start sm:gap-3 sm:px-4 sm:py-3 sm:text-left">
+                <button onClick={() => { setSidebarTab('songs'); setSidebarView('tabs'); setCurrentView('home'); }} className="group flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-[#0D47A1] bg-[#0D47A1] px-2 py-2.5 text-center text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0B3D8A] sm:flex-row sm:justify-start sm:gap-3 sm:px-4 sm:py-3 sm:text-left">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15 text-white sm:h-10 sm:w-10 sm:rounded-xl"><Music size={18}/></div><div className="min-w-0"><p className="text-xl font-black leading-none text-white sm:text-2xl">{songs.length}</p><p className="mt-1 hidden text-xs font-semibold text-white/90 sm:block">Músicas</p></div>
                 </button>
-                <button onClick={() => { setSidebarTab('repertorios'); setCurrentView('repertorios'); }} className="group flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-[#0D47A1] bg-[#0D47A1] px-2 py-2.5 text-center text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0B3D8A] sm:flex-row sm:justify-start sm:gap-3 sm:px-4 sm:py-3 sm:text-left">
+                <button onClick={() => { setSidebarTab('repertorios'); setSidebarView('tabs'); setCurrentView('home'); }} className="group flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-[#0D47A1] bg-[#0D47A1] px-2 py-2.5 text-center text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0B3D8A] sm:flex-row sm:justify-start sm:gap-3 sm:px-4 sm:py-3 sm:text-left">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15 text-white sm:h-10 sm:w-10 sm:rounded-xl"><ListMusic size={18}/></div><div className="min-w-0"><p className="text-xl font-black leading-none text-white sm:text-2xl">{repertorios.length}</p><p className="mt-1 hidden text-xs font-semibold text-white/90 sm:block">Repertórios</p></div>
                 </button>
                 <button onClick={() => { setSidebarTab('blocks'); setSidebarView('tabs'); setCurrentView('home'); }} className="group flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-[#0D47A1] bg-[#0D47A1] px-2 py-2.5 text-center text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0B3D8A] sm:flex-row sm:justify-start sm:gap-3 sm:px-4 sm:py-3 sm:text-left">
@@ -5523,7 +5580,15 @@ const handleRepertorioPdfFull = async () => {
                   {songs.length > 0 ? (
                     <div className="divide-y divide-slate-100">
                       {songs.slice(0,5).map((song:any,index:number) => (
-                        <button key={song.id || index} onClick={() => { setSelectedSong(song); setCurrentView('details'); }} className="flex w-full items-center gap-3 py-3 text-left hover:text-[#0D47A1]">
+                        <button key={song.id || index} onClick={() => {
+                          setSelectedSong(song);
+                          setSelectedRepertorio(null);
+                          setSelectedBlockSet(null);
+                          setSidebarTab('songs');
+                          setSidebarView('tabs');
+                          setCurrentView('details');
+                          updateLiveSong(song.id!);
+                        }} className="flex w-full items-center gap-3 py-3 text-left hover:text-[#0D47A1]">
                           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-[#0D47A1]"><Music2 size={17}/></span>
                           <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-700">{song.title || song.name || 'Música sem título'}</span>
                           <ChevronRight size={16} className="shrink-0 text-slate-400"/>
@@ -5535,7 +5600,7 @@ const handleRepertorioPdfFull = async () => {
               </section>
             </motion.div>
           )}
-          {currentView === 'list' && (
+          {false && currentView === 'list' && (
             <motion.div 
               key="list"
               initial={{ opacity: 0, x: -20 }}
@@ -5608,7 +5673,7 @@ const handleRepertorioPdfFull = async () => {
               onTouchStart={handlePinchStart}
               onTouchMove={handlePinchMove}
               onTouchEnd={() => setInitialDist(null)}
-              className={`space-y-0 relative flex-1 min-h-0 flex flex-col overflow-hidden ${(!isDesktop && isMaestro) ? 'touch-none' : ''}`}
+              className={`space-y-0 relative flex-1 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden ${(!isDesktop && isMaestro) ? 'touch-none' : ''}`}
             >
               {/* Touch Navigation Overlay */}
               {selectedRepertorio && (
@@ -5626,7 +5691,7 @@ const handleRepertorioPdfFull = async () => {
                 </div>
               )}
 
-              <div className={`flex flex-col sm:flex-row justify-between items-start gap-4 relative z-[60] px-6 pb-4 md:px-[4.5rem] lg:px-[6.5rem] ${isDesktop && !selectedRepertorio && !selectedSong.isGroup && sidebarTab === 'songs' ? 'mr-52' : ''}`}>
+              <div className={`flex flex-col sm:flex-row justify-between items-start gap-4 relative z-[60] px-6 pb-4 md:px-6 lg:px-6 ${isDesktop && !selectedRepertorio && !selectedSong.isGroup && sidebarTab === 'songs' ? 'mr-52' : ''}`}>
                 <div className="space-y-1 flex-1 min-w-0">
                   {!selectedSong.isGroup ? (
                     <>
@@ -5638,8 +5703,8 @@ const handleRepertorioPdfFull = async () => {
                             <button type="button" onClick={() => setEditingQuickSongField(null)} className="rounded-md p-1.5 text-text-dim hover:bg-bg" title="Cancelar"><X size={16}/></button>
                           </div>
                         ) : (
-                          <h2 className="inline-flex items-center gap-2 text-[18px] font-extrabold tracking-tight leading-tight mr-2 uppercase">
-                            <button type="button" onClick={() => startQuickSongFieldEdit('title')} className="shrink-0 rounded-md p-1 text-text-dim hover:bg-primary/10 hover:text-primary transition" title="Clique para renomear o título"><Music2 size={18}/></button>
+                          <h2 className="inline-flex items-center gap-0 text-[18px] font-extrabold tracking-tight leading-tight mr-2 uppercase">
+                            <button type="button" onClick={() => startQuickSongFieldEdit('title')} className={`${isDesktop ? 'ml-0 mr-[10px]' : 'shrink-0 -ml-1 mr-[10px]'} rounded-md p-0 text-text-dim hover:bg-primary/10 hover:text-primary transition`} title="Clique para renomear o título"><Music2 size={18}/></button>
                             {selectedSong.title}
                           </h2>
                         )}
@@ -5654,7 +5719,7 @@ const handleRepertorioPdfFull = async () => {
                             </>
                           ) : (
                             <>
-                              <button type="button" onClick={() => startQuickSongFieldEdit('artist')} className="rounded-md p-1 text-text-dim hover:bg-primary/10 hover:text-primary transition" title="Clique para renomear o intérprete"><Mic2 size={14}/></button>
+                              <button type="button" onClick={() => startQuickSongFieldEdit('artist')} className={`${isDesktop ? 'ml-0 mr-2' : '-ml-1 mr-2'} rounded-md p-0 text-text-dim hover:bg-primary/10 hover:text-primary transition`} title="Clique para renomear o intérprete"><Mic2 size={14}/></button>
                               <span>{selectedSong.artist}</span>
                             </>
                           )}
@@ -5668,7 +5733,7 @@ const handleRepertorioPdfFull = async () => {
                             </>
                           ) : (
                             <>
-                              <button type="button" onClick={() => startQuickSongFieldEdit('composition')} className="rounded-md p-1 text-text-dim hover:bg-primary/10 hover:text-primary transition" title="Clique para renomear o compositor"><Users size={14}/></button>
+                              <button type="button" onClick={() => startQuickSongFieldEdit('composition')} className={`${isDesktop ? 'ml-0 mr-2' : '-ml-1 mr-2'} rounded-md p-0 text-text-dim hover:bg-primary/10 hover:text-primary transition`} title="Clique para renomear o compositor"><Users size={14}/></button>
                               {selectedSong.composition && <span>{selectedSong.composition}</span>}
                             </>
                           )}
@@ -5701,7 +5766,7 @@ const handleRepertorioPdfFull = async () => {
                     <button type="button" onClick={() => { const pdf = generatePDF([selectedSong], selectedSong.title, true) as jsPDF; pdf.save(`${getExportFileName(selectedSong.title)}.pdf`); }} className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-xs font-bold text-[#0D47A1] hover:bg-[#EEF1F5]"><FileText size={15}/>Chord Over (pdf)</button>
                     <div className="border-t border-slate-200"/>
                     <button type="button" onClick={() => shareAsPDF([selectedSong], selectedSong.title)} className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-xs font-bold text-[#0D47A1] hover:bg-[#EEF1F5]"><Share2 size={15}/>Compartilhar</button>
-                    {isMaestro && <><div className="border-t border-slate-200"/><button type="button" onClick={() => { if (window.confirm('Excluir esta música permanentemente?')) { deleteSong(selectedSong.id!); setCurrentView('list'); } }} className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-xs font-bold text-red-600 hover:bg-red-50"><Trash2 size={15}/>Excluir</button></>}
+                    {isMaestro && <><div className="border-t border-slate-200"/><button type="button" onClick={() => { if (window.confirm('Excluir esta música permanentemente?')) { deleteSong(selectedSong.id!); setCurrentView('home'); } }} className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-xs font-bold text-red-600 hover:bg-red-50"><Trash2 size={15}/>Excluir</button></>}
                   </div>
 
                   <div className="rounded-xl border border-[#DCE3EC] bg-white p-2 shadow-sm flex flex-col">
@@ -5737,7 +5802,7 @@ const handleRepertorioPdfFull = async () => {
 
               <div 
                 ref={songViewRef}
-                className={`pt-0 relative flex-1 min-w-0 select-none ${isDesktop ? 'mr-52 h-full min-h-0 overflow-y-scroll overscroll-contain' : 'overflow-hidden'}`}
+                className={`pt-0 relative flex-1 min-w-0 select-none ${isDesktop ? 'mr-52 h-auto min-h-full overflow-visible' : 'overflow-hidden'}`}
                 onClick={(e) => {
                   if (isDesktop) return;
                   const width = e.currentTarget.clientWidth;
@@ -5753,7 +5818,7 @@ const handleRepertorioPdfFull = async () => {
                 }}
               >
                 <div 
-                  className={isDesktop ? '' : 'overflow-hidden h-full'}
+                  className={isDesktop ? 'min-h-full' : 'overflow-hidden h-full'}
                   style={{ 
                     height: (selectedSong.isGroup || (selectedSong.pdfPages && selectedSong.pdfPages.length > 0) || isDesktop)
                       ? 'auto' 
@@ -5801,19 +5866,21 @@ const handleRepertorioPdfFull = async () => {
                           className="absolute top-0 left-0 opacity-0 pointer-events-none"
                           style={{ 
                             width: songViewRef.current?.clientWidth || '100%',
-                            paddingLeft: '1.5rem',
+                            paddingLeft: '0rem',
                             paddingRight: '1.5rem',
                             paddingTop: '8px'
                           }}
                         >
-                          <div className="md:px-12 lg:px-20">
+                          <div className="md:px-6 lg:px-6">
                             <ChordProRenderer 
                               showDiagrams={isDesktop && showChordDiagrams}
                               diagramInstrument={diagramInstrument}
                               text={transposeChordPro(selectedSong.chordPro, transposition)} 
                               chordSize={Number(localStorage.getItem('recifra_chord_size') || 13) * chordProScale}
                               lyricSize={Number(localStorage.getItem('recifra_lyric_size') || 14) * chordProScale}
-                            />
+                            chordColor={displayChordColor}
+                              lyricColor={displayLyricColor}
+                              />
                           </div>
                         </div>
                       )}
@@ -5825,23 +5892,25 @@ const handleRepertorioPdfFull = async () => {
                         }}
                       >
                         {Array.from({ length: totalPages }).map((_, idx) => (
-                          <div key={idx} className={`flex-shrink-0 w-full h-full ${isDesktop ? 'overflow-visible' : 'overflow-hidden'}`}>
+                          <div key={idx} className={`flex-shrink-0 w-full ${isDesktop ? 'h-auto min-h-full overflow-visible' : 'h-full overflow-hidden'}`}>
                             <div 
                               style={{ 
-                                paddingLeft: '1.5rem',
+                                paddingLeft: isDesktop ? '1.5rem' : '0rem',
                                 paddingRight: '1.5rem',
                                 paddingBottom: isDesktop ? '32px' : '50px',
                                 paddingTop: isDesktop ? '0px' : '8px'
                               }}
                             >
-                              <div className="md:px-12 lg:px-20">
+                              <div className={isDesktop ? '' : 'md:px-6 lg:px-6'}>
                                 <ChordProRenderer 
                                   showDiagrams={isDesktop && showChordDiagrams}
                                   diagramInstrument={diagramInstrument}
                                   text={transposeChordPro(selectedSong.chordPro, transposition)} 
                                   chordSize={Number(localStorage.getItem('recifra_chord_size') || 13) * chordProScale}
                                   lyricSize={Number(localStorage.getItem('recifra_lyric_size') || 14) * chordProScale}
-                                  lineRange={pageBreakIndices[idx]}
+                                  chordColor={displayChordColor}
+                              lyricColor={displayLyricColor}
+                              lineRange={pageBreakIndices[idx]}
                                 />
                               </div>
                             </div>
@@ -5888,7 +5957,7 @@ const handleRepertorioPdfFull = async () => {
             </motion.div>
           )}
 
-          {currentView === 'repertorios' && !selectedRepertorio && (
+          {false && currentView === 'repertorios' && !selectedRepertorio && (
             <motion.div
               key="repertorios-overview"
               initial={{ opacity: 0, y: 8 }}
@@ -5929,7 +5998,7 @@ const handleRepertorioPdfFull = async () => {
             </motion.div>
           )}
 
-          {currentView === 'repertorios' && selectedRepertorio && (
+          {false && currentView === 'repertorios' && selectedRepertorio && (
             <motion.div 
               key="repertorio-view"
               initial={{ opacity: 0 }}
@@ -6309,7 +6378,7 @@ const handleRepertorioPdfFull = async () => {
                 categories={categories}
                 onSave={saveRepertorio} 
                 onCancel={() => {
-                  setCurrentView('repertorios');
+                  setCurrentView('home');
                   setEditingRepertorio(null);
                   setSidebarView('repertorio-songs');
                   setIsSidebarOpen(true);
@@ -6336,8 +6405,16 @@ const handleRepertorioPdfFull = async () => {
                 onAutoSave={autoSaveSong}
                 onDiscard={discardAutoSavedSong}
                 onCancel={() => {
-                  setCurrentView(selectedSong ? 'details' : 'list');
+                  // Ao descartar uma nova música, retornar sempre ao dashboard.
+                  // Se estiver editando uma música existente, preservar o retorno aos detalhes.
+                  setCurrentView(selectedSong ? 'details' : 'home');
                   setEditingSong(null);
+                  if (!selectedSong) {
+                    setSelectedRepertorio(null);
+                    setSelectedSong(null);
+                    setSidebarTab('songs');
+                    setSidebarView('tabs');
+                  }
                 }}
               />
             </motion.div>
@@ -6787,7 +6864,7 @@ function SongSidebarItem({ song, isSelectionMode, isSelected, onToggleSelect, on
           <div className="font-bold text-sm truncate tracking-normal uppercase leading-none mb-1 text-black">{song.title?.length > 22 ? song.title.substring(0, 22) + '...' : song.title}</div>
           <div className="text-[10px] text-[#666666] uppercase font-bold tracking-widest truncate leading-tight">{song.artist?.length > 22 ? song.artist.substring(0, 22) + '...' : song.artist}</div>
         </div>
-        <div className="self-center min-w-[30px] h-[22px] px-1.5 rounded-md bg-[#0D47A1] text-white text-[11px] font-bold shrink-0 flex items-center justify-center text-center tabular-nums">{song.key}</div>
+        <div className="self-center min-w-[20px] h-[20px] px-1.5 rounded-md bg-[#0D47A1] text-white text-[11px] font-bold shrink-0 flex items-center justify-center text-center tabular-nums">{song.key}</div>
       </motion.button>
       {!isSelectionMode && <div ref={menuRootRef} data-archive-menu-root className="relative z-[70] shrink-0 mr-2" onClick={e => e.stopPropagation()}>
         <button type="button" aria-label={`Ações da música ${song.title}`} onClick={() => setMenuOpen(v => !v)} className="p-1.5 text-[#666666] rounded-md transition-colors"><MoreVertical size={18}/></button>
@@ -6984,9 +7061,11 @@ function SongItem({
                   >
                     <Trash2 size={16} />
                   </button>
-                ) : (
-                  displayKey || song.key
-                )}
+                ) : (displayKey || song.key) ? (
+                  <span className="inline-flex min-w-[24px] h-[24px] px-1.5 items-center justify-center rounded-md bg-[#0D47A1] text-white text-[11px] font-extrabold tracking-wide shadow-sm">
+                    {displayKey || song.key}
+                  </span>
+                ) : null}
               </div>
             </div>
           </div>
