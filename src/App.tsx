@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   auth, db, googleProvider, googleProvider as provider, 
@@ -853,105 +853,110 @@ export default function App() {
     }
   }, [chordProScale, selectedSong?.id, isDesktop]);
 
-  useLayoutEffect(() => {
-    if (selectedSong?.isGroup) {
-      setTotalPages(1);
-      setPageOffsets([0]);
-      setCurrentPage(0);
-      return;
-    }
-
-    if (isDesktop) {
-      setTotalPages(1);
-      setPageOffsets([0]);
-      setCurrentPage(0);
-      return;
-    }
-
-    if (selectedSong?.pdfPages && selectedSong.pdfPages.length > 0) {
-      setTotalPages(selectedSong.pdfPages.length);
-      if (songViewRef.current) {
-        const offsets = Array.from({ length: selectedSong.pdfPages.length }, (_, i) => i * songViewRef.current!.clientHeight);
-        setPageOffsets(offsets);
-        setPageBreakIndices([]);
+  useEffect(() => {
+    // Aguarda o layout da música estabilizar antes de calcular a paginação.
+    // Evita executar medições síncronas durante o commit em tablets/celulares.
+    const paginationTimer = window.setTimeout(() => {
+      if (selectedSong?.isGroup) {
+        setTotalPages(1);
+        setPageOffsets([0]);
+        setCurrentPage(0);
+        return;
       }
-    } else if (contentRef.current && songViewRef.current) {
-        const topSafetyMargin = 12;
-        const bottomSafetyMargin = 14;
-        const viewHeight = Math.max(120, (songViewRef.current?.clientHeight || 0) - 60);
-        const measurementTop = contentRef.current?.getBoundingClientRect().top || 0;
-        
-        // Find all line elements inside the music content
-        const lines = contentRef.current?.querySelectorAll('.music-line');
-        if (!lines || lines.length === 0) {
-          setTotalPages(1);
-          setPageOffsets([0]);
-          setPageBreakIndices([[0, 10000]]);
-          return;
+
+      if (isDesktop) {
+        setTotalPages(1);
+        setPageOffsets([0]);
+        setCurrentPage(0);
+        return;
+      }
+
+      if (selectedSong?.pdfPages && selectedSong.pdfPages.length > 0) {
+        setTotalPages(selectedSong.pdfPages.length);
+        if (songViewRef.current) {
+          const offsets = Array.from({ length: selectedSong.pdfPages.length }, (_, i) => i * songViewRef.current!.clientHeight);
+          setPageOffsets(offsets);
+          setPageBreakIndices([]);
         }
-
-        const newOffsets: number[] = [0];
-        const newBreakIndices: [number, number][] = [];
-        let currentPageStart = 0;
-        let currentPageLineStartIdx = 0;
-        const availableHeightPerPage = viewHeight - bottomSafetyMargin - topSafetyMargin;
+      } else if (contentRef.current && songViewRef.current) {
+          const topSafetyMargin = 12;
+          const bottomSafetyMargin = 14;
+          const viewHeight = Math.max(120, (songViewRef.current?.clientHeight || 0) - 60);
+          const measurementTop = contentRef.current?.getBoundingClientRect().top || 0;
         
-        if (availableHeightPerPage <= 0) return;
-
-        lines.forEach((line, index) => {
-          const lineEl = line as HTMLElement;
-          // getBoundingClientRect mantém as posições coerentes mesmo com
-          // elementos internos que tenham offsetParent diferente.
-          const lineTop = lineEl.getBoundingClientRect().top - measurementTop;
-          const lineBottom = lineTop + lineEl.getBoundingClientRect().height;
-
-          // Threshold for the current page
-          const currentThreshold = currentPageStart + (currentPageStart === 0 ? viewHeight - bottomSafetyMargin : availableHeightPerPage);
-
-          if (lineBottom > currentThreshold) {
-            let breakIndex = index;
-            
-            // Handle chord+lyric pairing: move both to next page if lyric line is about to be cut
-            const hasLyrics = lineEl.getAttribute('data-has-lyrics') === 'true';
-            const hasChords = lineEl.getAttribute('data-has-chords') === 'true';
-            
-            if (hasLyrics && !hasChords && index > 0) {
-              const prevLine = lines[index - 1] as HTMLElement;
-              const prevHasChords = prevLine.getAttribute('data-has-chords') === 'true';
-              const prevHasLyrics = prevLine.getAttribute('data-has-lyrics') === 'true';
-              if (prevHasChords && !prevHasLyrics) {
-                breakIndex = index - 1;
-              }
-            }
-
-            const breakLine = lines[breakIndex] as HTMLElement;
-            // Get the source line index from data attribute
-            const sourceStartIdx = parseInt(breakLine.getAttribute('data-line-index') || '0');
-            
-            // Previous page ends at sourceStartIdx - 1
-            const prevSourceStartIdx = parseInt((lines[currentPageLineStartIdx] as HTMLElement).getAttribute('data-line-index') || '0');
-            newBreakIndices.push([prevSourceStartIdx, sourceStartIdx - 1]);
-            
-            const newStartPos = breakLine.offsetTop - topSafetyMargin;
-            newOffsets.push(newStartPos);
-            currentPageStart = newStartPos;
-            currentPageLineStartIdx = breakIndex;
+          // Find all line elements inside the music content
+          const lines = contentRef.current?.querySelectorAll('.music-line');
+          if (!lines || lines.length === 0) {
+            setTotalPages(1);
+            setPageOffsets([0]);
+            setPageBreakIndices([[0, 10000]]);
+            return;
           }
-        });
 
-        // Add the last page range
-        const lastStartSourceIdx = parseInt((lines[currentPageLineStartIdx] as HTMLElement).getAttribute('data-line-index') || '0');
-        newBreakIndices.push([lastStartSourceIdx, 10000]); // Use arbitrary large end index
+          const newOffsets: number[] = [0];
+          const newBreakIndices: [number, number][] = [];
+          let currentPageStart = 0;
+          let currentPageLineStartIdx = 0;
+          const availableHeightPerPage = viewHeight - bottomSafetyMargin - topSafetyMargin;
+        
+          if (availableHeightPerPage <= 0) return;
 
-        setTotalPages(newOffsets.length);
-        setPageOffsets(newOffsets);
-        setPageBreakIndices(newBreakIndices);
-        setCurrentPage(previous => Math.min(previous, newOffsets.length - 1));
-    } else {
-      setTotalPages(1);
-      setPageOffsets([0]);
-      setPageBreakIndices([[0, 10000]]);
-    }
+          lines.forEach((line, index) => {
+            const lineEl = line as HTMLElement;
+            // getBoundingClientRect mantém as posições coerentes mesmo com
+            // elementos internos que tenham offsetParent diferente.
+            const lineTop = lineEl.getBoundingClientRect().top - measurementTop;
+            const lineBottom = lineTop + lineEl.getBoundingClientRect().height;
+
+            // Threshold for the current page
+            const currentThreshold = currentPageStart + (currentPageStart === 0 ? viewHeight - bottomSafetyMargin : availableHeightPerPage);
+
+            if (lineBottom > currentThreshold) {
+              let breakIndex = index;
+            
+              // Handle chord+lyric pairing: move both to next page if lyric line is about to be cut
+              const hasLyrics = lineEl.getAttribute('data-has-lyrics') === 'true';
+              const hasChords = lineEl.getAttribute('data-has-chords') === 'true';
+            
+              if (hasLyrics && !hasChords && index > 0) {
+                const prevLine = lines[index - 1] as HTMLElement;
+                const prevHasChords = prevLine.getAttribute('data-has-chords') === 'true';
+                const prevHasLyrics = prevLine.getAttribute('data-has-lyrics') === 'true';
+                if (prevHasChords && !prevHasLyrics) {
+                  breakIndex = index - 1;
+                }
+              }
+
+              const breakLine = lines[breakIndex] as HTMLElement;
+              // Get the source line index from data attribute
+              const sourceStartIdx = parseInt(breakLine.getAttribute('data-line-index') || '0');
+            
+              // Previous page ends at sourceStartIdx - 1
+              const prevSourceStartIdx = parseInt((lines[currentPageLineStartIdx] as HTMLElement).getAttribute('data-line-index') || '0');
+              newBreakIndices.push([prevSourceStartIdx, sourceStartIdx - 1]);
+            
+              const newStartPos = breakLine.offsetTop - topSafetyMargin;
+              newOffsets.push(newStartPos);
+              currentPageStart = newStartPos;
+              currentPageLineStartIdx = breakIndex;
+            }
+          });
+
+          // Add the last page range
+          const lastStartSourceIdx = parseInt((lines[currentPageLineStartIdx] as HTMLElement).getAttribute('data-line-index') || '0');
+          newBreakIndices.push([lastStartSourceIdx, 10000]); // Use arbitrary large end index
+
+          setTotalPages(newOffsets.length);
+          setPageOffsets(newOffsets);
+          setPageBreakIndices(newBreakIndices);
+          setCurrentPage(previous => Math.min(previous, newOffsets.length - 1));
+      } else {
+        setTotalPages(1);
+        setPageOffsets([0]);
+        setPageBreakIndices([[0, 10000]]);
+      }
+    }, 80);
+    return () => window.clearTimeout(paginationTimer);
   }, [selectedSong, transposition, chordProScale, currentView, isDesktop]);
 
   useEffect(() => {
