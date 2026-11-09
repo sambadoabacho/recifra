@@ -903,7 +903,7 @@ export default function App() {
       }
 
       const topSafety = 4;
-      const bottomSafety = 16;
+      const bottomSafety = 8;
       const pageHeight = viewport.clientHeight;
       const usableHeight = pageHeight - topSafety - bottomSafety;
       if (usableHeight <= 0) return;
@@ -5176,27 +5176,8 @@ const handleRepertorioPdfFull = async () => {
                     <div className="w-[42%] min-w-0 overflow-hidden text-left" title={selectedSong.title}>
                       <span className="block truncate text-[18px] font-extrabold uppercase tracking-tight text-white leading-tight">{selectedSong.title}</span>
                     </div>
-                    <div className="absolute left-1/2 top-1/2 z-[210] shrink-0 -translate-x-1/2 -translate-y-1/2">
-                      <button type="button" onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)} className="inline-flex items-center gap-1 rounded-full bg-white text-[#0D47A1] border border-white px-2.5 sm:px-3 py-1.5 text-[10px] sm:text-[11px] font-black shadow-sm whitespace-nowrap">
-                        <Music size={13} /> Tom: {currentKey}
-                      </button>
-                      <AnimatePresence>
-                        {isKeyPickerOpen && (
-                          <motion.div initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} exit={{opacity:0,y:6}} className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-80 max-w-[calc(100vw-1.5rem)] bg-white border border-border rounded-xl shadow-2xl z-[220] grid grid-cols-4 p-3.5 gap-2.5">
-                            {songKeyOptions.map(k => <button key={k} type="button" onClick={e => { e.stopPropagation(); handleKeySelect(k); }} className={`p-3.5 text-xs font-bold rounded-lg border ${k === currentKey ? 'bg-primary border-primary text-white' : 'bg-bg border-border text-text-dim'}`}>{k}</button>)}
-                            {vocalistKeyOptions.length > 0 && (
-                              <div className="col-span-4 mt-1 pt-2 border-t border-border/70">
-                                <div className="flex items-center gap-1.5 px-1 pb-1.5 text-[9px] font-black uppercase tracking-wider text-text-dim"><Mic2 size={11} /> Tons dos vocalistas</div>
-                                <div className="max-h-48 overflow-y-auto space-y-1">
-                                  {vocalistKeyOptions.map(vocalist => <button key={vocalist.id} type="button" onClick={e => { e.stopPropagation(); handleVocalistKeySelect(vocalist.key); }} className={`w-full flex items-center justify-between gap-2 rounded-lg border px-3 py-3 text-left ${currentKey === vocalist.key ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-bg border-border text-text-dim'}`}><span className="min-w-0 truncate text-[11px] font-bold">{vocalist.name}</span><span className="shrink-0 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-black text-primary">{vocalist.key}</span></button>)}
-                                </div>
-                              </div>
-                            )}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                    <div className="w-[42%] min-w-0 overflow-hidden text-right">
+                    {selectedRepertorio && <div className="mx-1 h-7 w-px shrink-0 bg-white/40" aria-hidden="true" />}
+                    <div className="w-[42%] min-w-0 overflow-hidden text-right pl-2">
                       {selectedRepertorio && (() => {
                         const ids = selectedRepertorio.songIds || [];
                         const currentIndex = ids.indexOf(selectedSong.id || '');
@@ -5297,70 +5278,6 @@ const handleRepertorioPdfFull = async () => {
                 <ListMusic size={13} /> {repertorios.length}
               </span>
             )}
-            {currentView === 'details' && selectedRepertorio && selectedSong && !selectedSong.isGroup && (
-              <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                <div
-                  data-key-picker-root
-                  className="cursor-pointer hover:scale-105 transition-transform relative"
-                  onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)}
-                >
-                  <span className="hidden lg:inline-flex text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full bg-white text-[#0D47A1] border border-white whitespace-nowrap items-center gap-1.5">
-                    <Music size={13} /> Tom: {currentKey}
-                  </span>
-                  <AnimatePresence>
-                    {isKeyPickerOpen && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 10 }}
-                        className="absolute top-full right-0 mt-2 w-56 bg-surface border border-border rounded-xl shadow-2xl z-[200] grid grid-cols-4 p-2 gap-1"
-                      >
-                        {songKeyOptions.map(k => (
-                          <button
-                            key={k}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleKeySelect(k);
-                            }}
-                            className={`p-2 text-[10px] font-bold rounded-lg border transition-all ${k === currentKey ? 'bg-primary border-primary text-white scale-105' : 'bg-bg border-border text-text-dim hover:border-primary/50'}`}
-                          >
-                            {k}
-                          </button>
-                        ))}
-                        {vocalistKeyOptions.length > 0 && (
-                          <div className="col-span-4 mt-1 pt-2 border-t border-border/70">
-                            <div className="flex items-center gap-1.5 px-1 pb-1.5 text-[9px] font-black uppercase tracking-wider text-text-dim">
-                              <Mic2 size={11} /> Tons dos vocalistas
-                            </div>
-                            <div className="max-h-40 overflow-y-auto space-y-1">
-                              {vocalistKeyOptions.map(vocalist => (
-                                <button
-                                  key={vocalist.id}
-                                  type="button"
-                                  onClick={e => { e.stopPropagation(); handleVocalistKeySelect(vocalist.key); }}
-                                  className={`w-full flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${currentKey === vocalist.key ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-bg border-border text-text-dim hover:border-primary/40'}`}
-                                >
-                                  <span className="min-w-0 truncate text-[10px] font-bold">{vocalist.name}</span>
-                                  <span className="shrink-0 rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-black text-primary">{vocalist.key}</span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-                <span
-                  className="hidden lg:inline-flex text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full text-[#0D47A1] bg-white border border-white whitespace-nowrap"
-                >
-                  <span className="inline-flex items-center gap-1.5"><Hourglass size={13} />{selectedSong.tempo}</span>
-                </span>
-                <span className="hidden lg:inline-flex text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full bg-white text-[#0D47A1] border border-white whitespace-nowrap items-center gap-1.5">
-                  <Tag size={13} /> {selectedSong.category}
-                </span>
-              </div>
-            )}
             {currentView === 'form' && (
               <div className="flex items-center gap-2">
                 <button
@@ -5383,9 +5300,9 @@ const handleRepertorioPdfFull = async () => {
                 </button>
               </div>
             )}
-            {currentView === 'details' && selectedSong && !selectedRepertorio && (
+            {currentView === 'details' && selectedSong && (
               <>
-              <div className="md:hidden relative" data-mobile-song-actions>
+              <div className="lg:hidden relative" data-mobile-song-actions>
                 <button
                   type="button"
                   onClick={() => setIsMobileSongActionsOpen(open => !open)}
@@ -5698,7 +5615,7 @@ const handleRepertorioPdfFull = async () => {
                 </div>
               )}
 
-              <div className={`flex flex-col sm:flex-row justify-between items-start gap-4 relative z-[60] px-[6px] pb-4 md:px-[6px] lg:px-6 ${isDesktop && !selectedRepertorio && !selectedSong.isGroup && sidebarTab === 'songs' ? 'mr-52' : ''}`}>
+              <div className={`flex flex-row justify-between items-start gap-2 relative z-[60] px-[6px] pb-2 md:px-[6px] lg:px-6 ${isDesktop && !selectedRepertorio && !selectedSong.isGroup && sidebarTab === 'songs' ? 'mr-52' : ''}`}>
                 <div className="space-y-1 flex-1 min-w-0">
                   {!selectedSong.isGroup ? (
                     <>
@@ -5750,7 +5667,28 @@ const handleRepertorioPdfFull = async () => {
                   ) : null}
                 </div>
 
-
+                {!isDesktop && !selectedSong.isGroup && (
+                  <div className="relative z-[90] shrink-0" data-key-picker-root>
+                    <button type="button" onClick={e => { e.stopPropagation(); setIsKeyPickerOpen(open => !open); }} className="inline-flex items-center gap-1.5 rounded-full bg-[#0D47A1] text-white border border-[#0D47A1] px-3 py-2 text-[12px] font-black shadow-sm whitespace-nowrap">
+                      <Music size={14} /> Tom: {currentKey}
+                    </button>
+                    <AnimatePresence>
+                      {isKeyPickerOpen && (
+                        <motion.div initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} exit={{opacity:0,y:6}} className="absolute top-full right-0 mt-2 w-80 max-w-[calc(100vw-1.5rem)] bg-white border border-border rounded-xl shadow-2xl z-[220] grid grid-cols-4 p-3.5 gap-2.5">
+                          {songKeyOptions.map(k => <button key={k} type="button" onClick={e => { e.stopPropagation(); handleKeySelect(k); }} className={`p-3.5 text-sm font-bold rounded-lg border ${k === currentKey ? 'bg-primary border-primary text-white' : 'bg-bg border-border text-text-dim'}`}>{k}</button>)}
+                          {vocalistKeyOptions.length > 0 && (
+                            <div className="col-span-4 mt-1 pt-2 border-t border-border/70">
+                              <div className="flex items-center gap-1.5 px-1 pb-2 text-[11px] font-black uppercase tracking-wider text-text-dim"><Mic2 size={13} /> Tons dos vocalistas</div>
+                              <div className="max-h-48 overflow-y-auto space-y-1">
+                                {vocalistKeyOptions.map(vocalist => <button key={vocalist.id} type="button" onClick={e => { e.stopPropagation(); handleVocalistKeySelect(vocalist.key); }} className={`w-full flex items-center justify-between gap-2 rounded-lg border px-3 py-3 text-left ${currentKey === vocalist.key ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-bg border-border text-text-dim'}`}><span className="min-w-0 truncate text-[13px] font-bold">{vocalist.name}</span><span className="shrink-0 rounded-md bg-primary/10 px-2.5 py-1 text-[13px] font-black text-primary">{vocalist.key}</span></button>)}
+                              </div>
+                            </div>
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
               </div>
 
               <div className={isDesktop ? 'flex flex-1 min-h-0 min-w-0 items-stretch gap-4' : 'contents'}>
@@ -5905,7 +5843,7 @@ const handleRepertorioPdfFull = async () => {
                               style={{ 
                                 paddingLeft: isDesktop ? '1.5rem' : '6px',
                                 paddingRight: isDesktop ? '1.5rem' : '6px',
-                                paddingBottom: isDesktop ? '32px' : '16px',
+                                paddingBottom: isDesktop ? '32px' : '4px',
                                 paddingTop: isDesktop ? '0px' : '4px'
                               }}
                             >
