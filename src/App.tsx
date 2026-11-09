@@ -5174,7 +5174,7 @@ const handleRepertorioPdfFull = async () => {
                 <div className="flex h-11 min-w-0 flex-1 items-center px-1" data-key-picker-root>
                   <div className="flex w-full min-w-0 items-center justify-between gap-1">
                     <div className="w-[42%] min-w-0 overflow-hidden text-left" title={selectedSong.title}>
-                      <span className="block truncate text-[10px] font-extrabold uppercase tracking-tight text-white leading-tight sm:text-[11px]">{selectedSong.title}</span>
+                      <span className="block truncate text-[18px] font-extrabold uppercase tracking-tight text-white leading-tight">{selectedSong.title}</span>
                     </div>
                     <div className="absolute left-1/2 top-1/2 z-[210] shrink-0 -translate-x-1/2 -translate-y-1/2">
                       <button type="button" onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)} className="inline-flex items-center gap-1 rounded-full bg-white text-[#0D47A1] border border-white px-2.5 sm:px-3 py-1.5 text-[10px] sm:text-[11px] font-black shadow-sm whitespace-nowrap">
@@ -5202,7 +5202,7 @@ const handleRepertorioPdfFull = async () => {
                         const currentIndex = ids.indexOf(selectedSong.id || '');
                         const nextId = ids.slice(currentIndex + 1).find((id: string) => !id.startsWith('group:'));
                         const nextSong = songs.find(song => song.id === nextId);
-                        return nextSong ? <span title={nextSong.title} className="block truncate text-[9px] sm:text-[10px] font-bold uppercase tracking-tight text-white/85 leading-tight">{nextSong.title}</span> : null;
+                        return nextSong ? <span title={nextSong.title} className="block truncate text-[18px] font-bold uppercase tracking-tight text-white/85 leading-tight">{nextSong.title}</span> : null;
                       })()}
                     </div>
                   </div>
@@ -5702,7 +5702,7 @@ const handleRepertorioPdfFull = async () => {
                 <div className="space-y-1 flex-1 min-w-0">
                   {!selectedSong.isGroup ? (
                     <>
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className={`${isDesktop ? 'flex flex-wrap items-center gap-2' : 'hidden'}`}>
                         {editingQuickSongField === 'title' ? (
                           <div className="inline-flex items-center gap-1.5">
                             <input autoFocus type="text" value={quickSongFieldValue} onChange={e => setQuickSongFieldValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleQuickSongTextUpdate('title', quickSongFieldValue); if (e.key === 'Escape') setEditingQuickSongField(null); }} className="h-9 min-w-[180px] max-w-full rounded-lg border border-primary bg-white px-2 text-sm font-bold uppercase text-text-main outline-none focus:ring-2 focus:ring-primary/20" aria-label="Renomear título da música" />
@@ -5716,7 +5716,7 @@ const handleRepertorioPdfFull = async () => {
                           </h2>
                         )}
                       </div>
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-dim font-light mt-1">
+                      <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-dim font-light ${isDesktop ? 'mt-1' : 'mt-0'}`}>
                         <span className="inline-flex items-center gap-1.5">
                           {editingQuickSongField === 'artist' ? (
                             <>
