@@ -5172,7 +5172,7 @@ const handleRepertorioPdfFull = async () => {
                 </motion.div>
               ) : currentView === 'details' && selectedSong && !selectedSong.isGroup && !isDesktop ? (
                 <div className="flex h-11 min-w-0 flex-1 items-center px-1" data-key-picker-root>
-                  <div className="flex w-full min-w-0 items-center justify-between gap-1">
+                  <div className="flex w-full min-w-0 items-center justify-between gap-3">
                     <div className="w-[42%] min-w-0 overflow-hidden text-left" title={selectedSong.title}>
                       <span className="block truncate text-[18px] font-extrabold uppercase tracking-tight text-white leading-tight">{selectedSong.title}</span>
                     </div>
@@ -5768,7 +5768,7 @@ const handleRepertorioPdfFull = async () => {
                   style={{ 
                     height: (selectedSong.isGroup || (selectedSong.pdfPages && selectedSong.pdfPages.length > 0) || isDesktop)
                       ? 'auto' 
-                      : `calc(100% - 36px)` 
+                      : `calc(100% - 24px)` 
                   }}
                 >
                   {selectedSong.isGroup ? (
@@ -5868,7 +5868,7 @@ const handleRepertorioPdfFull = async () => {
                 </div>
                 
                 {totalPages > 1 && currentPage < totalPages - 1 && (
-                  <div className="absolute bottom-1 right-4 z-[100] pointer-events-none">
+                  <div className="absolute bottom-2 right-4 z-[100] pointer-events-none">
                     <motion.div 
                       initial={{ scale: 0, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
@@ -5884,7 +5884,7 @@ const handleRepertorioPdfFull = async () => {
                 )}
                 
                 {totalPages > 1 && currentPage > 0 && (
-                  <div className="absolute bottom-1 left-4 z-[100] pointer-events-none">
+                  <div className="absolute bottom-2 left-4 z-[100] pointer-events-none">
                     <motion.div 
                       initial={{ scale: 0, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
