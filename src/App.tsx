@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   auth, db, googleProvider, googleProvider as provider, 
@@ -731,7 +731,9 @@ export default function App() {
   const songViewRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  const [initialDist, setInitialDist] = useState<number | null>(null);
+  const pinchDistanceRef = useRef<number | null>(null);
+  const pinchScaleRef = useRef(chordProScale);
+  const [isPinching, setIsPinching] = useState(false);
 
   // Determine if we should paginate (only on mobile/tablets)
   const isDesktop = useMemo(() => {
@@ -813,18 +815,34 @@ export default function App() {
     return max;
   }, [selectedSong, transposition]);
 
-  // O zoom mobile é controlado por pinça. O limite superior é calculado
-  // para que a linha mais longa alcance, mas nunca ultrapasse, a largura útil.
-  const getMobileMaxScale = () => {
-    if (!songViewRef.current || maxLineChars <= 0) return 2.5;
-    const viewWidth = songViewRef.current.clientWidth;
-    const horizontalPadding = viewWidth >= 768 ? 96 : 48;
-    const availableWidth = Math.max(120, viewWidth - horizontalPadding - 8);
-    const renderedLines = contentRef.current?.querySelectorAll<HTMLElement>('.chordpro-responsive-line');
+  // Limite de zoom mobile: a maior linha pode ocupar toda a largura útil,
+  // mas nunca ultrapassá-la. A medição usa as linhas reais renderizadas no DOM.
+  const getMobileMaxScale = (scaleAtMeasurement = chordProScale) => {
+    const viewport = songViewRef.current;
+    const measureRoot = contentRef.current;
+    if (!viewport || !measureRoot) return Math.max(1, scaleAtMeasurement);
+
+    const horizontalMargin = 8; // margem mínima de 8px em cada lateral
+    const availableWidth = Math.max(100, viewport.clientWidth - horizontalMargin * 2);
+    const lines = measureRoot.querySelectorAll<HTMLElement>('.music-line');
     let widestLine = 0;
-    renderedLines?.forEach(line => { widestLine = Math.max(widestLine, line.scrollWidth); });
-    if (widestLine > 0) return Math.min(2.5, Math.max(chordProScale, chordProScale * availableWidth / widestLine));
-    return Math.min(2.5, Math.max(0.35, availableWidth / (maxLineChars * 8.4))); 
+    lines.forEach(line => {
+      // A .music-line ocupa toda a largura do contêiner; por isso medir
+      // apenas seu retângulo faria o limite travar no zoom atual. Somamos
+      // a largura intrínseca dos segmentos (acordes + letras) de cada linha.
+      const segments = Array.from(line.children) as HTMLElement[];
+      const intrinsicWidth = segments.length
+        ? segments.reduce((total, segment) => total + segment.getBoundingClientRect().width, 0)
+        : line.scrollWidth;
+      widestLine = Math.max(widestLine, intrinsicWidth);
+    });
+
+    if (widestLine > 0) {
+      return Math.max(0.35, scaleAtMeasurement * availableWidth / widestLine);
+    }
+
+    // Fallback para a primeira renderização, antes de o DOM medir as linhas.
+    return Math.max(0.35, availableWidth / Math.max(1, maxLineChars * 8.4));
   };
 
   // Handle device-specific zoom persistence per song
@@ -849,7 +867,7 @@ export default function App() {
     }
   }, [chordProScale, selectedSong?.id, isDesktop]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (selectedSong?.isGroup) {
       setTotalPages(1);
       setPageOffsets([0]);
@@ -872,10 +890,10 @@ export default function App() {
         setPageBreakIndices([]);
       }
     } else if (contentRef.current && songViewRef.current) {
-      const timer = setTimeout(() => {
-        const topSafetyMargin = 30;
-        const bottomSafetyMargin = 20; 
-        const viewHeight = songViewRef.current?.clientHeight || 0;
+        const topSafetyMargin = 12;
+        const bottomSafetyMargin = 14;
+        const viewHeight = Math.max(120, (songViewRef.current?.clientHeight || 0) - 60);
+        const measurementTop = contentRef.current?.getBoundingClientRect().top || 0;
         
         // Find all line elements inside the music content
         const lines = contentRef.current?.querySelectorAll('.music-line');
@@ -896,8 +914,10 @@ export default function App() {
 
         lines.forEach((line, index) => {
           const lineEl = line as HTMLElement;
-          const lineTop = lineEl.offsetTop;
-          const lineBottom = lineTop + lineEl.offsetHeight;
+          // getBoundingClientRect mantém as posições coerentes mesmo com
+          // elementos internos que tenham offsetParent diferente.
+          const lineTop = lineEl.getBoundingClientRect().top - measurementTop;
+          const lineBottom = lineTop + lineEl.getBoundingClientRect().height;
 
           // Threshold for the current page
           const currentThreshold = currentPageStart + (currentPageStart === 0 ? viewHeight - bottomSafetyMargin : availableHeightPerPage);
@@ -940,59 +960,64 @@ export default function App() {
         setTotalPages(newOffsets.length);
         setPageOffsets(newOffsets);
         setPageBreakIndices(newBreakIndices);
-      }, 500);
-      return () => clearTimeout(timer);
+        setCurrentPage(previous => Math.min(previous, newOffsets.length - 1));
     } else {
       setTotalPages(1);
       setPageOffsets([0]);
       setPageBreakIndices([[0, 10000]]);
     }
-    setCurrentPage(0);
   }, [selectedSong, transposition, chordProScale, currentView, isDesktop]);
+
+  useEffect(() => {
+    setCurrentPage(0);
+  }, [selectedSong?.id, transposition, currentView]);
+
+  const getTouchDistance = (touches: React.TouchList) => {
+    if (touches.length < 2) return 0;
+    return Math.hypot(
+      touches[0].pageX - touches[1].pageX,
+      touches[0].pageY - touches[1].pageY
+    );
+  };
 
   const handlePinchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
-      const dist = Math.hypot(
-        e.touches[0].pageX - e.touches[1].pageX,
-        e.touches[0].pageY - e.touches[1].pageY
-      );
-      setInitialDist(dist);
+      e.stopPropagation();
+      const distance = getTouchDistance(e.touches);
+      pinchDistanceRef.current = distance;
+      pinchScaleRef.current = chordProScale;
+      setIsPinching(true);
     }
   };
 
   const handlePinchMove = (e: React.TouchEvent) => {
-    if (e.touches.length === 2 && initialDist !== null) {
-      const dist = Math.hypot(
-        e.touches[0].pageX - e.touches[1].pageX,
-        e.touches[0].pageY - e.touches[1].pageY
-      );
-      const diff = dist - initialDist;
-      if (Math.abs(diff) > 15) {
-        const factor = diff > 0 ? 1.02 : 0.98;
-        let newScale = chordProScale * factor;
+    if (e.touches.length !== 2 || pinchDistanceRef.current === null) return;
 
-        // Dynamic limit to prevent right margin overflow
-        if (songViewRef.current && maxLineChars > 0) {
-          const viewWidth = songViewRef.current.clientWidth;
-          
-          // Calculate total horizontal padding
-          let padding = 48; // 1.5rem (24px) each side from the wrapper
-          if (viewWidth >= 1024) padding += 160; // lg:px-20 (80px each side)
-          else if (viewWidth >= 768) padding += 96; // md:px-12 (48px each side)
-          
-          const availableWidth = viewWidth - padding - 10; // 10px extra safety
-          
-          // Estimate char width at scale 1 (fontSize=14)
-          // For font-mono at 14px, 1ch is approx 8.4px
-          const charWidthAtScale1 = 8.4;
-          const maxAllowedScale = availableWidth / (maxLineChars * charWidthAtScale1);
-          
-          newScale = Math.min(newScale, Math.max(0.1, maxAllowedScale));
-        }
+    // A pinça tem prioridade sobre o gesto horizontal de troca de música.
+    e.stopPropagation();
+    const distance = getTouchDistance(e.touches);
+    const previousDistance = pinchDistanceRef.current;
+    if (distance <= 0 || previousDistance <= 0) return;
 
-        setChordProScale(prev => Math.min(Math.max(0.1, newScale), 2.5));
-        setInitialDist(dist);
-      }
+    const ratio = distance / previousDistance;
+    // Ignora apenas ruído mínimo do sensor, sem acumular saltos artificiais.
+    if (Math.abs(ratio - 1) < 0.002) return;
+
+    const currentScale = pinchScaleRef.current;
+    const maxScale = getMobileMaxScale(chordProScale);
+    const nextScale = Math.min(maxScale, Math.max(0.35, currentScale * ratio));
+
+    if (Math.abs(nextScale - currentScale) > 0.0005) {
+      pinchScaleRef.current = nextScale;
+      setChordProScale(nextScale);
+    }
+    pinchDistanceRef.current = distance;
+  };
+
+  const handlePinchEnd = (e: React.TouchEvent) => {
+    if (e.touches.length < 2) {
+      pinchDistanceRef.current = null;
+      setIsPinching(false);
     }
   };
 
@@ -5663,7 +5688,7 @@ const handleRepertorioPdfFull = async () => {
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 1.02 }}
-              drag="x"
+              drag={isPinching ? false : "x"}
               dragConstraints={{ left: 0, right: 0 }}
               dragElastic={0.2}
               onDragEnd={(_, info) => {
@@ -5672,7 +5697,8 @@ const handleRepertorioPdfFull = async () => {
               }}
               onTouchStart={handlePinchStart}
               onTouchMove={handlePinchMove}
-              onTouchEnd={() => setInitialDist(null)}
+              onTouchEnd={handlePinchEnd}
+              onTouchCancel={handlePinchEnd}
               className={`space-y-0 relative flex-1 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden ${(!isDesktop && isMaestro) ? 'touch-none' : ''}`}
             >
               {/* Touch Navigation Overlay */}
@@ -5866,12 +5892,12 @@ const handleRepertorioPdfFull = async () => {
                           className="absolute top-0 left-0 opacity-0 pointer-events-none"
                           style={{ 
                             width: songViewRef.current?.clientWidth || '100%',
-                            paddingLeft: '1.5rem',
-                            paddingRight: '1.5rem',
+                            paddingLeft: '8px',
+                            paddingRight: '8px',
                             paddingTop: '8px'
                           }}
                         >
-                          <div className="md:px-6 lg:px-6">
+                          <div>
                             <ChordProRenderer 
                               showDiagrams={isDesktop && showChordDiagrams}
                               diagramInstrument={diagramInstrument}
@@ -5895,13 +5921,13 @@ const handleRepertorioPdfFull = async () => {
                           <div key={idx} className={`flex-shrink-0 w-full ${isDesktop ? 'h-auto min-h-full overflow-visible' : 'h-full overflow-hidden'}`}>
                             <div 
                               style={{ 
-                                paddingLeft: '1.5rem',
-                                paddingRight: '1.5rem',
-                                paddingBottom: isDesktop ? '32px' : '50px',
+                                paddingLeft: isDesktop ? '1.5rem' : '8px',
+                                paddingRight: isDesktop ? '1.5rem' : '8px',
+                                paddingBottom: isDesktop ? '32px' : '16px',
                                 paddingTop: isDesktop ? '0px' : '8px'
                               }}
                             >
-                              <div className={isDesktop ? '' : 'md:px-6 lg:px-6'}>
+                              <div>
                                 <ChordProRenderer 
                                   showDiagrams={isDesktop && showChordDiagrams}
                                   diagramInstrument={diagramInstrument}
