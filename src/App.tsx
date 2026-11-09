@@ -5308,7 +5308,7 @@ const handleRepertorioPdfFull = async () => {
                   onClick={() => setIsMobileSongActionsOpen(open => !open)}
                   aria-label="Abrir ações da música"
                   title="Ações da música"
-                  className="w-9 h-9 rounded-full text-white flex items-center justify-center"
+                  className="w-9 h-9 rounded-full bg-white text-[#0D47A1] border border-white shadow-sm flex items-center justify-center hover:bg-[#EEF1F5] transition-colors"
                 >
                   <MoreVertical size={22} />
                 </button>
@@ -5669,7 +5669,7 @@ const handleRepertorioPdfFull = async () => {
 
                 {!isDesktop && !selectedSong.isGroup && (
                   <div className="relative z-[90] shrink-0" data-key-picker-root>
-                    <button type="button" onClick={e => { e.stopPropagation(); setIsKeyPickerOpen(open => !open); }} className="inline-flex items-center gap-1.5 rounded-full bg-[#0D47A1] text-white border border-[#0D47A1] px-3 py-2 text-[12px] font-black shadow-sm whitespace-nowrap">
+                    <button type="button" onClick={e => { e.stopPropagation(); setIsKeyPickerOpen(open => !open); }} className="inline-flex items-center gap-1.5 rounded-none bg-transparent text-[#0D47A1] border-0 px-0 py-1 text-[12px] font-extrabold shadow-none whitespace-nowrap">
                       <Music size={14} /> Tom: {currentKey}
                     </button>
                     <AnimatePresence>
@@ -5768,7 +5768,7 @@ const handleRepertorioPdfFull = async () => {
                   style={{ 
                     height: (selectedSong.isGroup || (selectedSong.pdfPages && selectedSong.pdfPages.length > 0) || isDesktop)
                       ? 'auto' 
-                      : `calc(100% - 60px)` 
+                      : `calc(100% - 36px)` 
                   }}
                 >
                   {selectedSong.isGroup ? (
@@ -5868,7 +5868,7 @@ const handleRepertorioPdfFull = async () => {
                 </div>
                 
                 {totalPages > 1 && currentPage < totalPages - 1 && (
-                  <div className="absolute bottom-[25px] right-4 z-[100] pointer-events-none">
+                  <div className="absolute bottom-1 right-4 z-[100] pointer-events-none">
                     <motion.div 
                       initial={{ scale: 0, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
@@ -5884,7 +5884,7 @@ const handleRepertorioPdfFull = async () => {
                 )}
                 
                 {totalPages > 1 && currentPage > 0 && (
-                  <div className="absolute bottom-[25px] left-4 z-[100] pointer-events-none">
+                  <div className="absolute bottom-1 left-4 z-[100] pointer-events-none">
                     <motion.div 
                       initial={{ scale: 0, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
