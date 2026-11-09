@@ -903,7 +903,7 @@ export default function App() {
       }
 
       const topSafety = 4;
-      const bottomSafety = 34;
+      const bottomSafety = 12;
       const pageHeight = viewport.clientHeight;
       const usableHeight = pageHeight - topSafety - bottomSafety;
       if (usableHeight <= 0) return;
@@ -5908,7 +5908,7 @@ const handleRepertorioPdfFull = async () => {
                               style={{ 
                                 paddingLeft: isDesktop ? '1.5rem' : '6px',
                                 paddingRight: isDesktop ? '1.5rem' : '6px',
-                                paddingBottom: isDesktop ? '32px' : '20px',
+                                paddingBottom: isDesktop ? '32px' : '12px',
                                 paddingTop: isDesktop ? '0px' : '4px'
                               }}
                             >
