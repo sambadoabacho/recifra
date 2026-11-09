@@ -5866,7 +5866,7 @@ const handleRepertorioPdfFull = async () => {
                           className="absolute top-0 left-0 opacity-0 pointer-events-none"
                           style={{ 
                             width: songViewRef.current?.clientWidth || '100%',
-                            paddingLeft: '0rem',
+                            paddingLeft: '1.5rem',
                             paddingRight: '1.5rem',
                             paddingTop: '8px'
                           }}
@@ -5895,7 +5895,7 @@ const handleRepertorioPdfFull = async () => {
                           <div key={idx} className={`flex-shrink-0 w-full ${isDesktop ? 'h-auto min-h-full overflow-visible' : 'h-full overflow-hidden'}`}>
                             <div 
                               style={{ 
-                                paddingLeft: isDesktop ? '1.5rem' : '0rem',
+                                paddingLeft: '1.5rem',
                                 paddingRight: '1.5rem',
                                 paddingBottom: isDesktop ? '32px' : '50px',
                                 paddingTop: isDesktop ? '0px' : '8px'
