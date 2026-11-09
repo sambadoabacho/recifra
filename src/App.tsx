@@ -5177,13 +5177,16 @@ const handleRepertorioPdfFull = async () => {
                       <span className="block truncate text-[18px] font-extrabold uppercase tracking-tight text-white leading-tight">{selectedSong.title}</span>
                     </div>
                     {selectedRepertorio && <div className="mx-1 h-7 w-px shrink-0 bg-white/40" aria-hidden="true" />}
-                    <div className="w-[42%] min-w-0 overflow-hidden text-right pl-2">
+                    <div className="w-[42%] min-w-0 overflow-hidden text-right pl-2 pr-4">
                       {selectedRepertorio && (() => {
                         const ids = selectedRepertorio.songIds || [];
                         const currentIndex = ids.indexOf(selectedSong.id || '');
                         const nextId = ids.slice(currentIndex + 1).find((id: string) => !id.startsWith('group:'));
                         const nextSong = songs.find(song => song.id === nextId);
-                        return nextSong ? <span title={nextSong.title} className="block truncate text-[18px] font-bold uppercase tracking-tight text-white/85 leading-tight">{nextSong.title}</span> : null;
+                        const nextSongKey = nextSong
+                          ? (selectedRepertorio.songKeys && nextSong.id && selectedRepertorio.songKeys[nextSong.id]) || nextSong.key
+                          : '';
+                        return nextSong ? <span title={`${nextSong.title}${nextSongKey ? ` (${nextSongKey})` : ''}`} className="block truncate text-[18px] font-bold uppercase tracking-tight text-white/85 leading-tight">{nextSong.title}{nextSongKey && <span className="ml-1 normal-case opacity-70">({nextSongKey})</span>}</span> : null;
                       })()}
                     </div>
                   </div>
@@ -5633,7 +5636,7 @@ const handleRepertorioPdfFull = async () => {
                           </h2>
                         )}
                       </div>
-                      <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-dim font-light ${isDesktop ? 'mt-1' : 'mt-0'}`}>
+                      <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-dim font-light ${isDesktop ? 'mt-1' : '-mt-1'}`}>
                         <span className="inline-flex items-center gap-1.5">
                           {editingQuickSongField === 'artist' ? (
                             <>
