@@ -731,26 +731,12 @@ export default function App() {
   const songViewRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  const pinchDistanceRef = useRef<number | null>(null);
-  const pinchScaleRef = useRef(chordProScale);
-  const [isPinching, setIsPinching] = useState(false);
+  const initialDistRef = useRef<number | null>(null);
+  const pinchScaleRef = useRef<number>(1);
 
   // Determine if we should paginate (only on mobile/tablets)
-  const [deviceWidth, setDeviceWidth] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth : 1280
-  );
-  const [isDesktop, setIsDesktop] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
-  );
-
-  useEffect(() => {
-    const updateDeviceLayout = () => {
-      setDeviceWidth(window.innerWidth);
-      setIsDesktop(window.innerWidth >= 1024);
-    };
-    window.addEventListener('resize', updateDeviceLayout, { passive: true });
-    updateDeviceLayout();
-    return () => window.removeEventListener('resize', updateDeviceLayout);
+  const isDesktop = useMemo(() => {
+    return typeof window !== 'undefined' ? window.innerWidth >= 1024 : true;
   }, []);
 
   useEffect(() => {
@@ -779,43 +765,89 @@ export default function App() {
     return () => window.cancelAnimationFrame(frameId);
   }, [isAutoScrollActive, autoScrollSpeed, isDesktop, currentView, selectedSong?.id]);
 
-  // O limite de ampliação é calculado pela largura real das linhas renderizadas.
-  const getMobileMaxScale = (currentScale = chordProScale) => {
+  const maxLineChars = useMemo(() => {
+    if (!selectedSong?.chordPro) return 0;
+    const transposedText = transposeChordPro(selectedSong.chordPro, transposition);
+    const lines = transposedText.trim().split('\n');
+    let max = 0;
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) return;
+      
+      const chunks: { chord: string | null, text: string }[] = [];
+      let regex = /\[([^\]]+)\]/g;
+      let match;
+      let lastLyricEnd = 0;
+
+      while ((match = regex.exec(line)) !== null) {
+        if (match.index > lastLyricEnd) {
+          const lyricText = line.slice(lastLyricEnd, match.index);
+           if (chunks.length === 0) {
+              chunks.push({ chord: null, text: lyricText });
+           } else if (chunks[chunks.length - 1].chord !== null && chunks[chunks.length - 1].text === "") {
+              chunks[chunks.length - 1].text = lyricText;
+           } else {
+              chunks.push({ chord: null, text: lyricText });
+           }
+        }
+        chunks.push({ chord: match[1], text: "" });
+        lastLyricEnd = regex.lastIndex;
+      }
+      
+      if (lastLyricEnd < line.length) {
+        const finalLyric = line.slice(lastLyricEnd);
+        if (chunks.length > 0 && chunks[chunks.length - 1].text === "") {
+          chunks[chunks.length - 1].text = finalLyric;
+        } else {
+          chunks.push({ chord: null, text: finalLyric });
+        }
+      }
+
+      let total = 0;
+      chunks.forEach((chunk, j) => {
+        const chordLen = chunk.chord ? chunk.chord.length : 0;
+        const textLen = chunk.text ? chunk.text.length : (j === chunks.length - 1 ? 0 : 1);
+        total += Math.max(chordLen, textLen);
+      });
+      if (total > max) max = total;
+    });
+    return max;
+  }, [selectedSong, transposition]);
+
+  // Limite de zoom calculado pela largura real da linha mais longa renderizada.
+  const getMobileMaxScale = () => {
     const viewport = songViewRef.current;
     const measurement = contentRef.current;
-    if (!viewport || !measurement) return Math.max(1, currentScale);
-
+    if (!viewport || !measurement) return 2.5;
+    const availableWidth = Math.max(100, viewport.clientWidth - 14);
     const lines = measurement.querySelectorAll<HTMLElement>('.music-line');
-    const fontRoot = measurement.querySelector<HTMLElement>('.font-mono');
-    const baseLyricSize = Number(localStorage.getItem('recifra_lyric_size') || 14);
-    const renderedFontSize = fontRoot ? parseFloat(window.getComputedStyle(fontRoot).fontSize) : baseLyricSize;
-    const renderedScale = baseLyricSize > 0 ? renderedFontSize / baseLyricSize : 1;
     let widestLine = 0;
-
     lines.forEach(line => {
-      // .music-line usa flex-nowrap; seu scrollWidth representa a largura
-      // intrínseca conjunta dos segmentos de acorde e letra, sem quebra.
-      widestLine = Math.max(widestLine, line.scrollWidth);
+      const children = Array.from(line.children) as HTMLElement[];
+      if (!children.length) return;
+      const firstRect = children[0].getBoundingClientRect();
+      const lastRect = children[children.length - 1].getBoundingClientRect();
+      widestLine = Math.max(widestLine, lastRect.right - firstRect.left);
     });
-
-    if (!widestLine || !Number.isFinite(widestLine)) {
-      return Math.max(1, currentScale);
-    }
-
-    // A linha é medida já renderizada na escala atual. A razão abaixo
-    // converte essa largura em um limite absoluto de escala.
-    const availableWidth = Math.max(100, viewport.clientWidth - 16);
-    const calculatedMax = renderedScale * (availableWidth / widestLine);
-
-    // Nunca deixa o limite ficar abaixo do zoom atual; permite ampliar
-    // até a linha mais longa ocupar a largura útil, sem ultrapassá-la.
-    return Math.min(2.5, Math.max(currentScale, calculatedMax));
+    if (!widestLine) return 2.5;
+    return Math.min(2.5, Math.max(0.35, chordProScale * availableWidth / widestLine));
   };
+
+  // Corrige escalas antigas salvas que ultrapassem a largura útil após esta atualização.
+  useEffect(() => {
+    if (isDesktop || currentView !== 'details' || !selectedSong || selectedSong.isGroup ||
+        (selectedSong.pdfPages && selectedSong.pdfPages.length > 0)) return;
+    const frame = window.requestAnimationFrame(() => {
+      const maxScale = getMobileMaxScale();
+      if (chordProScale > maxScale + 0.01) setChordProScale(maxScale);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [chordProScale, selectedSong?.id, transposition, currentView, isDesktop]);
 
   // Handle device-specific zoom persistence per song
   useEffect(() => {
     if (selectedSong?.id) {
-      const deviceType = isDesktop ? 'desktop' : deviceWidth >= 768 ? 'tablet' : 'mobile';
+      const deviceType = isDesktop ? 'desktop' : window.innerWidth >= 768 ? 'tablet' : 'mobile';
       const savedSongScale = localStorage.getItem(`chordProScale_${deviceType}_${selectedSong.id}`);
       if (savedSongScale) {
         setChordProScale(parseFloat(savedSongScale));
@@ -824,182 +856,153 @@ export default function App() {
         setChordProScale(savedDeviceScale ? parseFloat(savedDeviceScale) : 1);
       }
     }
-  }, [selectedSong?.id, isDesktop, deviceWidth]);
+  }, [selectedSong?.id, isDesktop]);
 
   useEffect(() => {
-    const deviceType = isDesktop ? 'desktop' : deviceWidth >= 768 ? 'tablet' : 'mobile';
+    const deviceType = isDesktop ? 'desktop' : window.innerWidth >= 768 ? 'tablet' : 'mobile';
     localStorage.setItem(`chordProScale_${deviceType}`, chordProScale.toString());
     if (selectedSong?.id) {
       localStorage.setItem(`chordProScale_${deviceType}_${selectedSong.id}`, chordProScale.toString());
     }
-  }, [chordProScale, selectedSong?.id, isDesktop, deviceWidth]);
+  }, [chordProScale, selectedSong?.id, isDesktop]);
 
   useEffect(() => {
-    // Aguarda o layout da música estabilizar antes de calcular a paginação.
-    // Evita executar medições síncronas durante o commit em tablets/celulares.
-    const paginationTimer = window.setTimeout(() => {
-      try {
-      if (selectedSong?.isGroup) {
-        setTotalPages(1);
-        setPageOffsets([0]);
-        setCurrentPage(0);
+    if (selectedSong?.isGroup) {
+      setTotalPages(1); setPageOffsets([0]); setPageBreakIndices([]); setCurrentPage(0);
+      return;
+    }
+    if (isDesktop) {
+      setTotalPages(1); setPageOffsets([0]); setCurrentPage(0);
+      return;
+    }
+    if (selectedSong?.pdfPages && selectedSong.pdfPages.length > 0) {
+      setTotalPages(selectedSong.pdfPages.length);
+      if (songViewRef.current) {
+        setPageOffsets(Array.from({ length: selectedSong.pdfPages.length }, (_, i) => i * songViewRef.current!.clientHeight));
+        setPageBreakIndices([]);
+      }
+      setCurrentPage(0);
+      return;
+    }
+    if (!contentRef.current || !songViewRef.current) {
+      setTotalPages(1); setPageOffsets([0]); setPageBreakIndices([[0, 10000]]); setCurrentPage(0);
+      return;
+    }
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let observer: ResizeObserver | null = null;
+
+    const measurePages = () => {
+      const measurement = contentRef.current;
+      const viewport = songViewRef.current;
+      if (!measurement || !viewport) return;
+      const elements = Array.from(measurement.querySelectorAll<HTMLElement>('.music-line'));
+      if (!elements.length) {
+        setTotalPages(1); setPageOffsets([0]); setPageBreakIndices([[0, 10000]]); setCurrentPage(0);
         return;
       }
 
-      if (isDesktop) {
-        setTotalPages(1);
-        setPageOffsets([0]);
-        setCurrentPage(0);
-        return;
-      }
+      const topSafety = 4;
+      const bottomSafety = 34;
+      const pageHeight = viewport.clientHeight;
+      const usableHeight = pageHeight - topSafety - bottomSafety;
+      if (usableHeight <= 0) return;
 
-      if (selectedSong?.pdfPages && selectedSong.pdfPages.length > 0) {
-        setTotalPages(selectedSong.pdfPages.length);
-        if (songViewRef.current) {
-          const offsets = Array.from({ length: selectedSong.pdfPages.length }, (_, i) => i * songViewRef.current!.clientHeight);
-          setPageOffsets(offsets);
-          setPageBreakIndices([]);
+      const measurementTop = measurement.getBoundingClientRect().top;
+      const rows = elements.map((element, index) => ({
+        element,
+        source: Number.parseInt(element.getAttribute('data-line-index') || String(index), 10),
+        top: element.getBoundingClientRect().top - measurementTop,
+        bottom: element.getBoundingClientRect().bottom - measurementTop,
+        chords: element.getAttribute('data-has-chords') === 'true',
+        lyrics: element.getAttribute('data-has-lyrics') === 'true'
+      }));
+
+      // Cifra sem letra + linha de letra seguinte formam uma unidade inseparável.
+      const groups: Array<{ top: number; bottom: number; start: number; end: number }> = [];
+      rows.forEach((row, index) => {
+        const prev = rows[index - 1];
+        const continuesPair = row.lyrics && !row.chords && !!prev && prev.chords && !prev.lyrics;
+        if (continuesPair && groups.length) {
+          groups[groups.length - 1].bottom = row.bottom;
+          groups[groups.length - 1].end = row.source;
+        } else {
+          groups.push({ top: row.top, bottom: row.bottom, start: row.source, end: row.source });
         }
-      } else if (contentRef.current && songViewRef.current) {
-          const topSafetyMargin = 12;
-          const bottomSafetyMargin = 14;
-          const viewHeight = Math.max(120, (songViewRef.current?.clientHeight || 0) - 60);
-          const measurementTop = contentRef.current?.getBoundingClientRect().top || 0;
-        
-          // Find all line elements inside the music content
-          const lines = contentRef.current?.querySelectorAll('.music-line');
-          if (!lines || lines.length === 0) {
-            setTotalPages(1);
-            setPageOffsets([0]);
-            setPageBreakIndices([[0, 10000]]);
-            return;
-          }
+      });
 
-          const newOffsets: number[] = [0];
-          const newBreakIndices: [number, number][] = [];
-          let currentPageStart = 0;
-          let currentPageLineStartIdx = 0;
-          const availableHeightPerPage = viewHeight - bottomSafetyMargin - topSafetyMargin;
-        
-          if (availableHeightPerPage <= 0) return;
-
-          lines.forEach((line, index) => {
-            const lineEl = line as HTMLElement;
-            // getBoundingClientRect mantém as posições coerentes mesmo com
-            // elementos internos que tenham offsetParent diferente.
-            const lineTop = lineEl.getBoundingClientRect().top - measurementTop;
-            const lineBottom = lineTop + lineEl.getBoundingClientRect().height;
-
-            // Threshold for the current page
-            const currentThreshold = currentPageStart + (currentPageStart === 0 ? viewHeight - bottomSafetyMargin : availableHeightPerPage);
-
-            if (lineBottom > currentThreshold) {
-              let breakIndex = index;
-            
-              // Handle chord+lyric pairing: move both to next page if lyric line is about to be cut
-              const hasLyrics = lineEl.getAttribute('data-has-lyrics') === 'true';
-              const hasChords = lineEl.getAttribute('data-has-chords') === 'true';
-            
-              if (hasLyrics && !hasChords && index > 0) {
-                const prevLine = lines[index - 1] as HTMLElement;
-                const prevHasChords = prevLine.getAttribute('data-has-chords') === 'true';
-                const prevHasLyrics = prevLine.getAttribute('data-has-lyrics') === 'true';
-                if (prevHasChords && !prevHasLyrics) {
-                  breakIndex = index - 1;
-                }
-              }
-
-              const breakLine = lines[breakIndex] as HTMLElement;
-              // Get the source line index from data attribute
-              const sourceStartIdx = parseInt(breakLine.getAttribute('data-line-index') || '0');
-            
-              // Previous page ends at sourceStartIdx - 1
-              const prevSourceStartIdx = parseInt((lines[currentPageLineStartIdx] as HTMLElement).getAttribute('data-line-index') || '0');
-              newBreakIndices.push([prevSourceStartIdx, sourceStartIdx - 1]);
-            
-              const newStartPos = Math.max(0, breakLine.getBoundingClientRect().top - measurementTop - topSafetyMargin);
-              newOffsets.push(newStartPos);
-              currentPageStart = newStartPos;
-              currentPageLineStartIdx = breakIndex;
-            }
-          });
-
-          // Add the last page range
-          const lastStartSourceIdx = parseInt((lines[currentPageLineStartIdx] as HTMLElement).getAttribute('data-line-index') || '0');
-          newBreakIndices.push([lastStartSourceIdx, 10000]); // Use arbitrary large end index
-
-          setTotalPages(newOffsets.length);
-          setPageOffsets(newOffsets);
-          setPageBreakIndices(newBreakIndices);
-          setCurrentPage(previous => Math.min(previous, newOffsets.length - 1));
-      } else {
-        setTotalPages(1);
-        setPageOffsets([0]);
-        setPageBreakIndices([[0, 10000]]);
+      const ranges: [number, number][] = [];
+      const offsets: number[] = [0];
+      let firstGroup = 0;
+      let pageTop = 0;
+      for (let i = 0; i < groups.length; i++) {
+        const limit = pageTop + (firstGroup === 0 ? pageHeight - bottomSafety : usableHeight);
+        if (groups[i].bottom > limit && i > firstGroup) {
+          ranges.push([groups[firstGroup].start, groups[i - 1].end]);
+          const nextTop = Math.max(0, groups[i].top - topSafety);
+          offsets.push(nextTop);
+          pageTop = nextTop;
+          firstGroup = i;
+        }
       }
-      } catch (paginationError) {
-        console.error('Falha ao calcular paginação da música:', paginationError);
-        // Fallback seguro: mantém a música visível em uma página, sem tela branca.
-        setTotalPages(1);
-        setPageOffsets([0]);
-        setPageBreakIndices([[0, 10000]]);
-        setCurrentPage(0);
-      }
-    }, 80);
-    return () => window.clearTimeout(paginationTimer);
+      ranges.push([groups[firstGroup].start, 10000]);
+      setTotalPages(Math.max(1, ranges.length));
+      setPageOffsets(offsets);
+      setPageBreakIndices(ranges);
+      setCurrentPage(current => Math.min(current, Math.max(0, ranges.length - 1)));
+    };
+
+    const scheduleMeasure = (delay = 120) => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(measurePages, delay);
+    };
+    scheduleMeasure();
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => scheduleMeasure(100));
+      observer.observe(songViewRef.current);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+      observer?.disconnect();
+    };
   }, [selectedSong, transposition, chordProScale, currentView, isDesktop]);
-
-  useEffect(() => {
-    setCurrentPage(0);
-  }, [selectedSong?.id, transposition, currentView]);
-
-  const getTouchDistance = (touches: React.TouchList) => {
-    if (touches.length < 2) return 0;
-    return Math.hypot(
-      touches[0].pageX - touches[1].pageX,
-      touches[0].pageY - touches[1].pageY
-    );
-  };
 
   const handlePinchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
-      e.stopPropagation();
-      const distance = getTouchDistance(e.touches);
-      pinchDistanceRef.current = distance;
+      initialDistRef.current = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
       pinchScaleRef.current = chordProScale;
-      setIsPinching(true);
+    } else {
+      initialDistRef.current = null;
     }
   };
 
   const handlePinchMove = (e: React.TouchEvent) => {
-    if (e.touches.length !== 2 || pinchDistanceRef.current === null) return;
+    if (e.touches.length !== 2 || initialDistRef.current === null) return;
+    if (e.cancelable) e.preventDefault();
 
-    // A pinça tem prioridade sobre o gesto horizontal de troca de música.
-    e.stopPropagation();
-    const distance = getTouchDistance(e.touches);
-    const previousDistance = pinchDistanceRef.current;
-    if (distance <= 0 || previousDistance <= 0) return;
+    const distance = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    const previous = initialDistRef.current;
+    if (previous <= 0) return;
+    const ratio = distance / previous;
+    if (Math.abs(ratio - 1) < 0.004) return;
 
-    const ratio = distance / previousDistance;
-    // Ignora apenas ruído mínimo do sensor, sem acumular saltos artificiais.
-    if (Math.abs(ratio - 1) < 0.002) return;
-
-    const currentScale = pinchScaleRef.current;
-    const maxScale = getMobileMaxScale(currentScale);
-    const nextScale = Math.min(maxScale, Math.max(0.35, currentScale * ratio));
-
-    if (Math.abs(nextScale - currentScale) > 0.0005) {
-      pinchScaleRef.current = nextScale;
-      setChordProScale(nextScale);
+    const proposed = pinchScaleRef.current * ratio;
+    const next = Math.min(getMobileMaxScale(), Math.max(0.35, proposed));
+    if (Math.abs(next - pinchScaleRef.current) > 0.002) {
+      pinchScaleRef.current = next;
+      setChordProScale(next);
     }
-    pinchDistanceRef.current = distance;
+    initialDistRef.current = distance;
   };
 
   const handlePinchEnd = (e: React.TouchEvent) => {
-    if (e.touches.length < 2) {
-      pinchDistanceRef.current = null;
-      setIsPinching(false);
-    }
+    if (e.touches.length < 2) initialDistRef.current = null;
   };
 
   const [isCapturingKey, setIsCapturingKey] = useState<any>(null); // 'next' or 'prev'
@@ -5304,7 +5307,7 @@ const handleRepertorioPdfFull = async () => {
                   className="cursor-pointer hover:scale-105 transition-transform relative"
                   onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)}
                 >
-                  <span className="inline-flex text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full bg-white text-[#0D47A1] border border-white whitespace-nowrap items-center gap-1.5">
+                  <span className="hidden lg:inline-flex text-[10px] font-bold tracking-[0.1em] px-3 py-1.5 rounded-full bg-white text-[#0D47A1] border border-white whitespace-nowrap items-center gap-1.5">
                     <Music size={13} /> Tom: {currentKey}
                   </span>
                   <AnimatePresence>
@@ -5669,7 +5672,7 @@ const handleRepertorioPdfFull = async () => {
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 1.02 }}
-              drag={isPinching ? false : "x"}
+              drag="x"
               dragConstraints={{ left: 0, right: 0 }}
               dragElastic={0.2}
               onDragEnd={(_, info) => {
@@ -5760,7 +5763,7 @@ const handleRepertorioPdfFull = async () => {
                     <div className="grid h-8 grid-cols-[32px_minmax(0,1fr)_32px] items-center overflow-hidden rounded-full border border-[#DCE3EC] bg-[#F7F9FC]">
                       <button type="button" onClick={() => setChordProScale(prev => Math.max(0.6, prev - 0.1))} className="flex h-full w-8 shrink-0 items-center justify-center text-[#0D47A1] hover:bg-[#E6ECF5]" title="Diminuir zoom"><Minus size={13}/></button>
                       <span className="text-center text-[10px] font-black text-[#0D47A1]">{Math.round(chordProScale * 100)}%</span>
-                      <button type="button" onClick={() => { const maxScale = getMobileMaxScale(chordProScale); setChordProScale(Math.min(maxScale, chordProScale + 0.1)); }} className="flex h-full w-8 shrink-0 items-center justify-center text-[#0D47A1] hover:bg-[#E6ECF5]" title="Aumentar zoom"><Plus size={13}/></button>
+                      <button type="button" onClick={() => { let nextScale = chordProScale + 0.1; if (songViewRef.current && maxLineChars > 0) { const viewWidth = songViewRef.current.clientWidth; const availableWidth = viewWidth - 32; const maxAllowedScale = availableWidth / (maxLineChars * 8.4); nextScale = Math.min(nextScale, maxAllowedScale); } setChordProScale(Math.min(2.5, nextScale)); }} className="flex h-full w-8 shrink-0 items-center justify-center text-[#0D47A1] hover:bg-[#E6ECF5]" title="Aumentar zoom"><Plus size={13}/></button>
                     </div>
                     <label className="flex items-center justify-between gap-2 text-[10px] font-semibold text-slate-600">Cor da letra<input aria-label="Cor da letra" type="color" defaultValue={localStorage.getItem('recifra_lyric_color') || '#333333'} onChange={e => { localStorage.setItem('recifra_lyric_color', e.target.value); window.dispatchEvent(new Event('recifra:display-settings')); }} className="h-7 w-9 cursor-pointer rounded border border-slate-200"/></label>
                     <label className="flex items-center justify-between gap-2 text-[10px] font-semibold text-slate-600">Cor das cifras<input aria-label="Cor das cifras" type="color" defaultValue={localStorage.getItem('recifra_chord_color') || '#ff6900'} onChange={e => { localStorage.setItem('recifra_chord_color', e.target.value); window.dispatchEvent(new Event('recifra:display-settings')); }} className="h-7 w-9 cursor-pointer rounded border border-slate-200"/></label>
@@ -5809,7 +5812,8 @@ const handleRepertorioPdfFull = async () => {
 
               <div 
                 ref={songViewRef}
-                className={`pt-0 relative flex-1 min-w-0 select-none ${isDesktop ? 'mr-52 h-auto min-h-full overflow-visible' : 'overflow-hidden'}`}
+                className={`pt-0 relative flex-1 min-w-0 select-none ${isDesktop ? 'mr-52 h-auto min-h-full overflow-visible' : 'overflow-hidden overscroll-none'}`}
+                style={!isDesktop ? { touchAction: 'pan-y' } : undefined}
                 onClick={(e) => {
                   if (isDesktop) return;
                   const width = e.currentTarget.clientWidth;
@@ -5873,9 +5877,9 @@ const handleRepertorioPdfFull = async () => {
                           className="absolute top-0 left-0 opacity-0 pointer-events-none"
                           style={{ 
                             width: songViewRef.current?.clientWidth || '100%',
-                            paddingLeft: '8px',
-                            paddingRight: '8px',
-                            paddingTop: '8px'
+                            paddingLeft: '6px',
+                            paddingRight: '6px',
+                            paddingTop: '4px'
                           }}
                         >
                           <div>
@@ -5902,10 +5906,10 @@ const handleRepertorioPdfFull = async () => {
                           <div key={idx} className={`flex-shrink-0 w-full ${isDesktop ? 'h-auto min-h-full overflow-visible' : 'h-full overflow-hidden'}`}>
                             <div 
                               style={{ 
-                                paddingLeft: isDesktop ? '1.5rem' : '8px',
-                                paddingRight: isDesktop ? '1.5rem' : '8px',
-                                paddingBottom: isDesktop ? '32px' : '16px',
-                                paddingTop: isDesktop ? '0px' : '8px'
+                                paddingLeft: isDesktop ? '1.5rem' : '6px',
+                                paddingRight: isDesktop ? '1.5rem' : '6px',
+                                paddingBottom: isDesktop ? '32px' : '40px',
+                                paddingTop: isDesktop ? '0px' : '4px'
                               }}
                             >
                               <div>
