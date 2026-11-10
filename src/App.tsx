@@ -5143,7 +5143,7 @@ const handleRepertorioPdfFull = async () => {
                                     onClick={e => { e.stopPropagation(); handleVocalistKeySelect(vocalist.key); }}
                                     className={`w-full flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${currentKey === vocalist.key ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-bg border-border text-text-dim hover:border-primary/40'}`}
                                   >
-                                    <span className="min-w-0 truncate text-[12px] font-bold uppercase">{vocalist.name}</span>
+                                    <span className="min-w-0 truncate text-[14px] font-bold uppercase">{vocalist.name}</span>
                                     <span className="shrink-0 rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-black text-primary">{vocalist.key}</span>
                                   </button>
                                 ))}
@@ -5176,7 +5176,7 @@ const handleRepertorioPdfFull = async () => {
               ) : currentView === 'details' && selectedSong && !selectedSong.isGroup && !isDesktop ? (
                 <div className="flex h-11 min-w-0 flex-1 items-center px-1" data-key-picker-root>
                   <div className="flex w-full min-w-0 items-center justify-between gap-1">
-                    <div className="w-[42%] min-w-0 overflow-hidden text-left" title={selectedSong.title}>
+                    <div className={`${selectedRepertorio ? "flex-[1.2]" : "w-full"} min-w-0 overflow-hidden text-left`} title={selectedSong.title}>
                       <span className="flex min-w-0 flex-col items-start">
                         {selectedRepertorio && <span className="text-[8px] font-medium uppercase tracking-wider text-white/55 leading-none mb-0.5">Música em Tela</span>}
                         <span className="flex min-w-0 items-center gap-1.5">
@@ -5196,7 +5196,7 @@ const handleRepertorioPdfFull = async () => {
                       </span>
                     </div>
                     {selectedRepertorio && <div className="mx-0 h-7 w-px shrink-0 bg-white/40" aria-hidden="true" />}
-                    <div className="w-[42%] min-w-0 overflow-hidden text-left pl-1 pr-4">
+                    <div className="min-w-0 flex-1 overflow-hidden text-left pl-1 pr-2">
                       {selectedRepertorio && (() => {
                         const ids = selectedRepertorio.songIds || [];
                         const currentIndex = ids.indexOf(selectedSong.id || '');
@@ -5713,7 +5713,7 @@ const handleRepertorioPdfFull = async () => {
                             <div className="col-span-4 mt-1 pt-2 border-t border-border/70">
                               <div className="flex items-center gap-1.5 px-1 pb-2 text-[11px] font-black uppercase tracking-wider text-text-dim"><Mic2 size={13} /> Tons dos vocalistas</div>
                               <div className="max-h-48 overflow-y-auto space-y-1">
-                                {vocalistKeyOptions.map(vocalist => <button key={vocalist.id} type="button" onClick={e => { e.stopPropagation(); handleVocalistKeySelect(vocalist.key); }} className={`w-full flex items-center justify-between gap-2 rounded-lg border px-3 py-3 text-left ${currentKey === vocalist.key ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-bg border-border text-text-dim'}`}><span className="min-w-0 truncate text-[13px] font-bold">{vocalist.name}</span><span className="shrink-0 rounded-md bg-primary/10 px-2.5 py-1 text-[13px] font-black text-primary">{vocalist.key}</span></button>)}
+                                {vocalistKeyOptions.map(vocalist => <button key={vocalist.id} type="button" onClick={e => { e.stopPropagation(); handleVocalistKeySelect(vocalist.key); }} className={`w-full flex items-center justify-between gap-2 rounded-lg border px-3 py-3 text-left ${currentKey === vocalist.key ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-bg border-border text-text-dim'}`}><span className="min-w-0 truncate text-[15px] font-bold uppercase">{vocalist.name}</span><span className="shrink-0 rounded-md bg-primary/10 px-2.5 py-1 text-[13px] font-black text-primary">{vocalist.key}</span></button>)}
                               </div>
                             </div>
                           )}
