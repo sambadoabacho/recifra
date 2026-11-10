@@ -8096,6 +8096,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
   onCancel: () => void,
   isMaestro: boolean
 }) {
+  const isEditingExistingSong = Boolean(initialData?.id);
   const [formData, setFormData] = useState({
     title: initialData?.title || '',
     artist: initialData?.artist || '',
@@ -8965,7 +8966,10 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                     </button>
                     <span className="text-[12px] font-black uppercase text-white tracking-widest">Editor Chordpro</span>
                   </div>
-                  <div className="flex gap-3">
+                  <div className="flex items-center gap-3">
+                    <button type="button" onClick={() => updateChordPro(formData.chordPro.replace(/\[[^\]]+\]/g, ''))} title="Limpar Cifra" aria-label="Limpar Cifra" className="inline-flex items-center gap-1.5 text-white/80 hover:text-white transition-colors text-[9px] font-bold uppercase tracking-wide"><Eraser size={13} /><span>Limpar Cifra</span></button>
+                    <button type="button" onClick={restoreOriginalKey} title="Restaurar Tom" aria-label="Restaurar Tom" className="inline-flex items-center gap-1.5 text-white/80 hover:text-white transition-colors text-[9px] font-bold uppercase tracking-wide"><RotateCcw size={13} /><span>Restaurar Tom</span></button>
+                    <span className="h-5 w-px bg-white/20" />
                     <button type="button" onClick={undo} title="Desfazer (Ctrl+Z)" aria-label="Desfazer" disabled={history.length === 0} className="text-white/80 hover:text-white transition-colors disabled:opacity-30"><RotateCcw size={14} /></button>
                     <button type="button" onClick={redo} title="Refazer (Ctrl+Y)" aria-label="Refazer" disabled={redoStack.length === 0} className="text-white/80 hover:text-white transition-colors disabled:opacity-30"><RotateCw size={14} /></button>
                   </div>
@@ -9026,13 +9030,19 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                         onChange={handleImportChordPro}
                         aria-label="Selecionar arquivo de cifra para importar"
                       />
-                      <div className="grid grid-cols-5 gap-1.5">
-                        <button type="button" title="Novo" aria-label="Novo" onClick={() => { originalTransposeRef.current = null; setHistory(prev => [formData.chordPro, ...prev].slice(0, 50)); setRedoStack([]); setFormData({...formData, title: '', artist: '', composition: '', category: '', tempo: 'Moderado', key: 'C', chordPro: '', folderId: ''}); }} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white hover:bg-[#0D47A1] transition-all"><FilePlus size={13} /> <span className="truncate">Novo</span></button>
-                        <button type="button" title="Importar cifra" aria-label="Importar" onClick={() => importFileRef.current?.click()} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white hover:bg-[#0D47A1] transition-all"><FileUp size={13} /> <span className="truncate">Importar</span></button>
-                        <button type="button" title="Exportar cifra" aria-label="Exportar" onClick={handleExportChordPro} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white hover:bg-[#0D47A1] transition-all"><Download size={13} /> <span className="truncate">Exportar</span></button>
-                        <button type="button" title="Limpar acordes da cifra" aria-label="Limpar cifra" onClick={() => updateChordPro(formData.chordPro.replace(/\[[^\]]+\]/g, ''))} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white hover:bg-[#0D47A1] transition-all"><Eraser size={13} /> <span className="truncate">Limpar</span></button>
-                        <button type="button" title="Restaurar tom original" aria-label="Restaurar tom" onClick={restoreOriginalKey} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white hover:bg-[#0D47A1] transition-all"><RotateCcw size={13} /> <span className="truncate">Restaurar</span></button>
-                      </div>
+                      {isEditingExistingSong ? (
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <button type="button" onClick={handleDiscard} className="h-9 min-w-0 flex items-center justify-center bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[9px] font-bold uppercase tracking-wide text-white">Cancelar</button>
+                          <button type="button" onClick={handleSave} disabled={!isFormValid} className={`h-9 min-w-0 flex items-center justify-center gap-1 bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[9px] font-bold uppercase tracking-wide text-white ${!isFormValid ? 'opacity-50 cursor-not-allowed' : ''}`}><Save size={13} /> Salvar</button>
+                          <button type="button" title="Exportar cifra" aria-label="Exportar" onClick={handleExportChordPro} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[9px] font-bold uppercase tracking-wide text-white"><Download size={13} /> Exportar</button>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <button type="button" title="Novo" aria-label="Novo" onClick={() => { originalTransposeRef.current = null; setHistory(prev => [formData.chordPro, ...prev].slice(0, 50)); setRedoStack([]); setFormData({...formData, title: '', artist: '', composition: '', category: '', tempo: 'Moderado', key: 'C', chordPro: '', folderId: ''}); }} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white"><FilePlus size={13} /> <span>Novo</span></button>
+                          <button type="button" title="Importar cifra" aria-label="Importar" onClick={() => importFileRef.current?.click()} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white"><FileUp size={13} /> <span>Importar</span></button>
+                          <button type="button" title="Exportar cifra" aria-label="Exportar" onClick={handleExportChordPro} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white"><Download size={13} /> <span>Exportar</span></button>
+                        </div>
+                      )}
                     </div>
                   </>
                 )}
@@ -9172,8 +9182,8 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                        </div>
                     </div>
 
-                    {/* Preview Bottom Actions */}
-                    <div className="flex flex-col gap-1.5 p-2.5 bg-[#EEF1F5] border-t border-[#DCE3EC] rounded-b-2xl">
+                    {/* Preview Bottom Actions: mantidos apenas no fluxo de criação */}
+                    {!isEditingExistingSong && <div className="flex flex-col gap-1.5 p-2.5 bg-[#EEF1F5] border-t border-[#DCE3EC] rounded-b-2xl">
                       <div className="grid grid-cols-2 gap-1.5">
                         <button
                           onClick={handleDiscard}
@@ -9193,7 +9203,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                           <Save size={15} /> Salvar
                         </button>
                       </div>
-                    </div>
+                    </div>}
                   </>
                 )}
               </div>
