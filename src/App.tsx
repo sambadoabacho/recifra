@@ -5125,7 +5125,7 @@ const handleRepertorioPdfFull = async () => {
                                   {currentView === 'details' && selectedSong && sidebarTab === 'songs' && !selectedRepertorio && !selectedSong.isGroup && (
                   <div className="flex flex-wrap items-center justify-center gap-2">
                   <div className="relative" data-key-picker-root>
-                    <button type="button" onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)} className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-black bg-[#0D47A1] text-white border border-[#0D47A1]"><Music size={14} /> Tom: {currentKey}</button>
+                    <button type="button" onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)} className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-black bg-[#0D47A1] text-white border border-[#0D47A1]"><Music2 size={14} /> Tom: {currentKey}</button>
                     <AnimatePresence>
                       {isKeyPickerOpen && (
                         <motion.div initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} exit={{opacity:0,y:6}} className="absolute top-full right-0 mt-2 w-56 bg-white border border-border rounded-xl shadow-2xl z-[200] grid grid-cols-4 p-2 gap-1">
@@ -5143,7 +5143,7 @@ const handleRepertorioPdfFull = async () => {
                                     onClick={e => { e.stopPropagation(); handleVocalistKeySelect(vocalist.key); }}
                                     className={`w-full flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${currentKey === vocalist.key ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-bg border-border text-text-dim hover:border-primary/40'}`}
                                   >
-                                    <span className="min-w-0 truncate text-[10px] font-bold">{vocalist.name}</span>
+                                    <span className="min-w-0 truncate text-[12px] font-bold uppercase">{vocalist.name}</span>
                                     <span className="shrink-0 rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-black text-primary">{vocalist.key}</span>
                                   </button>
                                 ))}
@@ -5175,16 +5175,14 @@ const handleRepertorioPdfFull = async () => {
                 </motion.div>
               ) : currentView === 'details' && selectedSong && !selectedSong.isGroup && !isDesktop ? (
                 <div className="flex h-11 min-w-0 flex-1 items-center px-1" data-key-picker-root>
-                  <div className="flex w-full min-w-0 items-center justify-between gap-3">
+                  <div className="flex w-full min-w-0 items-center justify-between gap-1">
                     <div className="w-[42%] min-w-0 overflow-hidden text-left" title={selectedSong.title}>
                       <span className="flex min-w-0 flex-col items-start">
                         {selectedRepertorio && <span className="text-[8px] font-medium uppercase tracking-wider text-white/55 leading-none mb-0.5">Música em Tela</span>}
                         <span className="flex min-w-0 items-center gap-1.5">
                           {!selectedRepertorio ? (
                             <button type="button" onClick={() => startQuickSongFieldEdit('title')} className="shrink-0 rounded-sm text-white/75 hover:text-white" title="Clique para renomear o título da música" aria-label="Renomear título da música"><Music2 size={15} /></button>
-                          ) : (
-                            <Music2 size={15} className="shrink-0 text-white/75" aria-hidden="true" />
-                          )}
+                          ) : null}
                           {editingQuickSongField === 'title' && !selectedRepertorio ? (
                             <span className="flex min-w-0 items-center gap-1">
                               <input autoFocus type="text" value={quickSongFieldValue} onChange={e => setQuickSongFieldValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleQuickSongTextUpdate('title', quickSongFieldValue); if (e.key === 'Escape') setEditingQuickSongField(null); }} className="h-8 min-w-0 w-full rounded-md border border-white/50 bg-white px-2 text-sm font-bold uppercase text-slate-900 outline-none" aria-label="Renomear título da música" />
@@ -5197,8 +5195,8 @@ const handleRepertorioPdfFull = async () => {
                         </span>
                       </span>
                     </div>
-                    {selectedRepertorio && <div className="mx-1 h-7 w-px shrink-0 bg-white/40" aria-hidden="true" />}
-                    <div className="w-[42%] min-w-0 overflow-hidden text-left pl-2 pr-4">
+                    {selectedRepertorio && <div className="mx-0 h-7 w-px shrink-0 bg-white/40" aria-hidden="true" />}
+                    <div className="w-[42%] min-w-0 overflow-hidden text-left pl-1 pr-4">
                       {selectedRepertorio && (() => {
                         const ids = selectedRepertorio.songIds || [];
                         const currentIndex = ids.indexOf(selectedSong.id || '');
@@ -5242,7 +5240,7 @@ const handleRepertorioPdfFull = async () => {
                 </motion.div>
               ) : currentView === 'details' && selectedSong && !selectedRepertorio && sidebarTab === 'songs' && !selectedSong.isGroup && isDesktop ? (
                 <div className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center" data-key-picker-root>
-                  <button type="button" onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)} className="inline-flex items-center gap-1.5 rounded-full bg-white text-[#0D47A1] border border-white px-3 py-1.5 text-[12px] font-black shadow-sm whitespace-nowrap"><Music size={14} /> Tom: {currentKey}</button>
+                  <button type="button" onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)} className="inline-flex items-center gap-1.5 rounded-full bg-white text-[#0D47A1] border border-white px-3 py-1.5 text-[12px] font-black shadow-sm whitespace-nowrap"><Music2 size={14} /> Tom: {currentKey}</button>
                 </div>
               ) : currentView === 'form' && !isDesktop ? (
                 <motion.div
@@ -5705,7 +5703,7 @@ const handleRepertorioPdfFull = async () => {
                 {!isDesktop && !selectedSong.isGroup && (
                   <div className="relative z-[90] shrink-0 -mt-2" data-key-picker-root>
                     <button type="button" onClick={e => { e.stopPropagation(); setIsKeyPickerOpen(open => !open); }} className="inline-flex items-center gap-1.5 rounded-none bg-transparent text-[#0D47A1] border-0 px-0 py-1 text-sm font-extrabold shadow-none whitespace-nowrap">
-                      <Music size={14} /> Tom: {currentKey}
+                      <Music2 size={14} /> Tom: {currentKey}
                     </button>
                     <AnimatePresence>
                       {isKeyPickerOpen && (
