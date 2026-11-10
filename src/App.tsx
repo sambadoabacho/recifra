@@ -29,11 +29,11 @@ import {
 import { convertPDFToImages, PDFQuality } from './lib/pdfUtils';
 import JSZip from 'jszip';
 import { 
-  Activity, Music, Edit2, Trash2, LogIn, LogOut, Mic, User as UserIcon, Speaker,
+  Activity, Music, Timer, Edit2, Trash2, LogIn, LogOut, Mic, User as UserIcon, Speaker,
   ChevronLeft, ChevronRight, ChevronUp, Play, Users, Save, X, Search, Minus, Type, Filter,
   ArrowUp, ArrowDown, Radio, Menu, MoreVertical, PanelLeft, Layout, Settings, ListMusic, Sun, Moon, Archive, Library,
   Share2, CheckSquare, Square, GripVertical, ArrowLeft, Download, Upload, FilePlus, ListTodo, Blocks, Brain, FileText, Check, Plus,
-  Folder as FolderIcon, FolderPlus, Hash, Info, Gamepad, LayoutList, Mic2, Music2, FolderOpen, ChevronDown, ArrowUpDown, Tag, Hourglass, RotateCcw, RotateCw, Smile, PlusCircle, FileUp, Eraser, Eye
+  Folder as FolderIcon, FolderPlus, Hash, Info, Gamepad, LayoutList, Mic2, Music2, FolderOpen, ChevronDown, ArrowUpDown, Tag, Hourglass, RotateCcw, RotateCw, Smile, PlusCircle, FileUp, Eraser, Eye, EyeOff
 } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -4600,7 +4600,7 @@ const handleRepertorioPdfFull = async () => {
                       onClick={() => { setIsMetronomeOpen(true); setIsSidebarOpen(false); }}
                       className="w-full min-h-[48px] text-left px-3.5 py-2.5 text-[13px] font-bold uppercase tracking-[0.08em] border-b border-b-[#D1D5DB] transition-all flex items-center gap-3 text-black bg-white border-l-4 border-l-transparent hover:bg-[#F3F6FB] [&_svg]:text-[#0D47A1]"
                     >
-                      <Music2 size={18} />
+                      <Timer size={18} />
                       Metrônomo
                     </button>
                     <button
@@ -5181,7 +5181,7 @@ const handleRepertorioPdfFull = async () => {
                         {selectedRepertorio && <span className="text-[8px] font-medium uppercase tracking-wider text-white/55 leading-none mb-0.5">Música em Tela</span>}
                         <span className="flex min-w-0 items-center gap-1.5">
                           {!selectedRepertorio ? (
-                            <button type="button" onClick={() => startQuickSongFieldEdit('title')} className="shrink-0 rounded-sm text-white/75 hover:text-white" title="Clique para renomear o título da música" aria-label="Renomear título da música"><Music2 size={15} /></button>
+                            <button type="button" onClick={() => startQuickSongFieldEdit('title')} className="shrink-0 rounded-sm text-white/75 hover:text-white" title="Clique para renomear o título da música" aria-label="Renomear título da música"><Music size={15} /></button>
                           ) : null}
                           {editingQuickSongField === 'title' && !selectedRepertorio ? (
                             <span className="flex min-w-0 items-center gap-1">
@@ -5537,7 +5537,7 @@ const handleRepertorioPdfFull = async () => {
                           setCurrentView('details');
                           updateLiveSong(song.id!);
                         }} className="flex w-full items-center gap-3 py-3 text-left hover:text-[#0D47A1]">
-                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-[#0D47A1]"><Music2 size={17}/></span>
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-[#0D47A1]"><Music size={17}/></span>
                           <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-700">{song.title || song.name || 'Música sem título'}</span>
                           <ChevronRight size={16} className="shrink-0 text-slate-400"/>
                         </button>
@@ -5653,7 +5653,7 @@ const handleRepertorioPdfFull = async () => {
                           </div>
                         ) : (
                           <h2 className="inline-flex items-center gap-0 text-[18px] font-extrabold tracking-tight leading-tight mr-2 uppercase">
-                            {selectedRepertorio ? <Music2 size={18} className={`${isDesktop ? 'ml-0 mr-[10px]' : 'shrink-0 -ml-1 mr-[10px]'} text-text-dim`} /> : <button type="button" onClick={() => startQuickSongFieldEdit('title')} className={`${isDesktop ? 'ml-0 mr-[10px]' : 'shrink-0 -ml-1 mr-[10px]'} rounded-md p-0 text-text-dim hover:bg-primary/10 hover:text-primary transition`} title="Clique para renomear o título"><Music2 size={18}/></button>}
+                            {selectedRepertorio ? <Music2 size={18} className={`${isDesktop ? 'ml-0 mr-[10px]' : 'shrink-0 -ml-1 mr-[10px]'} text-text-dim`} /> : <button type="button" onClick={() => startQuickSongFieldEdit('title')} className={`${isDesktop ? 'ml-0 mr-[10px]' : 'shrink-0 -ml-1 mr-[10px]'} rounded-md p-0 text-text-dim hover:bg-primary/10 hover:text-primary transition`} title="Clique para renomear o título"><Music size={18}/></button>}
                             {selectedSong.title}{currentKey && <span className="ml-1 normal-case opacity-70">({currentKey})</span>}
                           </h2>
                         )}
@@ -5750,10 +5750,10 @@ const handleRepertorioPdfFull = async () => {
                   <div className="rounded-xl border border-[#DCE3EC] bg-white p-2 shadow-sm flex flex-col">
                     <button type="button" onClick={() => setIsTunerOpen(true)} className="flex w-full items-center gap-2 px-2.5 py-2.5 text-left text-xs font-bold text-[#0D47A1] hover:bg-[#EEF1F5]"><Activity size={15}/>Afinador</button>
                     <div className="border-t border-slate-200"/>
-                    <button type="button" onClick={() => setIsMetronomeOpen(true)} className="flex w-full items-center gap-2 px-2.5 py-2.5 text-left text-xs font-bold text-[#0D47A1] hover:bg-[#EEF1F5]"><Music size={15}/>Metrônomo</button>
+                    <button type="button" onClick={() => setIsMetronomeOpen(true)} className="flex w-full items-center gap-2 px-2.5 py-2.5 text-left text-xs font-bold text-[#0D47A1] hover:bg-[#EEF1F5]"><Timer size={15}/>Metrônomo</button>
                     <div className="border-t border-slate-200"/>
                     <div className="px-2.5 py-2">
-                      <button type="button" onClick={() => setShowChordDiagrams(v => !v)} className="flex w-full items-center gap-2 text-left text-xs font-bold text-[#0D47A1]"><Eye size={15} className="text-[#0D47A1]"/>Diagramas</button>
+                      <button type="button" onClick={() => setShowChordDiagrams(v => !v)} className="flex w-full items-center gap-2 text-left text-xs font-bold text-[#0D47A1]">{showChordDiagrams ? <Eye size={15} /> : <EyeOff size={15} />}Diagramas</button>
                       <div className="mt-2 grid grid-cols-2 gap-1">
                         <button type="button" onClick={() => { setDiagramInstrument('guitar'); localStorage.setItem('recifra-diagram-instrument','guitar'); }} className={`rounded-md border px-1.5 py-1 text-[10px] font-bold ${diagramInstrument === 'guitar' ? 'bg-[#0D47A1] text-white border-[#0D47A1]' : 'border-slate-200 text-slate-600'}`}>Violão</button>
                         <button type="button" onClick={() => { setDiagramInstrument('cavaquinho'); localStorage.setItem('recifra-diagram-instrument','cavaquinho'); }} className={`rounded-md border px-1.5 py-1 text-[10px] font-bold ${diagramInstrument === 'cavaquinho' ? 'bg-[#0D47A1] text-white border-[#0D47A1]' : 'border-slate-200 text-slate-600'}`}>Cavaco</button>
@@ -8731,7 +8731,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                 </label>
                 <div className="relative group">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-dim group-focus-within:text-primary transition-colors">
-                    <Music2 size={16} />
+                    <Music size={16} />
                   </div>
                   <input 
                     type="text"
