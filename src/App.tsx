@@ -3708,6 +3708,9 @@ const handleRepertorioPdfFull = async () => {
             onClick={() => {
               setSidebarTab('songs');
               setSidebarView('tabs');
+              setSelectedRepertorio(null);
+              setSelectedBlockSet(null);
+              setTransposition(0);
               if (currentView !== 'home') setCurrentView('home');
             }} 
           />
@@ -5177,8 +5180,20 @@ const handleRepertorioPdfFull = async () => {
                       <span className="flex min-w-0 flex-col items-start">
                         {selectedRepertorio && <span className="text-[8px] font-medium uppercase tracking-wider text-white/55 leading-none mb-0.5">Música em Tela</span>}
                         <span className="flex min-w-0 items-center gap-1.5">
-                          <Music2 size={15} className="shrink-0 text-white/75" aria-hidden="true" />
-                          <span className="block min-w-0 truncate text-[18px] font-extrabold uppercase tracking-tight text-white leading-tight">{selectedSong.title}{currentKey && <span className="ml-1 normal-case opacity-70">({currentKey})</span>}</span>
+                          {!selectedRepertorio ? (
+                            <button type="button" onClick={() => startQuickSongFieldEdit('title')} className="shrink-0 rounded-sm text-white/75 hover:text-white" title="Clique para renomear o título da música" aria-label="Renomear título da música"><Music2 size={15} /></button>
+                          ) : (
+                            <Music2 size={15} className="shrink-0 text-white/75" aria-hidden="true" />
+                          )}
+                          {editingQuickSongField === 'title' && !selectedRepertorio ? (
+                            <span className="flex min-w-0 items-center gap-1">
+                              <input autoFocus type="text" value={quickSongFieldValue} onChange={e => setQuickSongFieldValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleQuickSongTextUpdate('title', quickSongFieldValue); if (e.key === 'Escape') setEditingQuickSongField(null); }} className="h-8 min-w-0 w-full rounded-md border border-white/50 bg-white px-2 text-sm font-bold uppercase text-slate-900 outline-none" aria-label="Renomear título da música" />
+                              <button type="button" onClick={() => handleQuickSongTextUpdate('title', quickSongFieldValue)} className="shrink-0 rounded p-1 text-white" title="Salvar título" aria-label="Salvar título"><Check size={15}/></button>
+                              <button type="button" onClick={() => setEditingQuickSongField(null)} className="shrink-0 rounded p-1 text-white/80" title="Cancelar edição" aria-label="Cancelar edição"><X size={15}/></button>
+                            </span>
+                          ) : (
+                            <span className="block min-w-0 truncate text-[18px] font-extrabold uppercase tracking-tight text-white leading-tight">{selectedSong.title}{currentKey && <span className="ml-1 normal-case opacity-70">({currentKey})</span>}</span>
+                          )}
                         </span>
                       </span>
                     </div>
@@ -5655,7 +5670,11 @@ const handleRepertorioPdfFull = async () => {
                             </>
                           ) : (
                             <>
-                              {!selectedRepertorio && <button type="button" onClick={() => startQuickSongFieldEdit('artist')} className={`${isDesktop ? 'ml-0 mr-2' : '-ml-1 mr-2'} rounded-md p-0 text-text-dim hover:bg-primary/10 hover:text-primary transition`} title="Clique para renomear o intérprete"><Mic2 size={14}/></button>}
+                              {selectedRepertorio ? (
+                                <Mic2 size={14} className={`${isDesktop ? 'ml-0 mr-2' : '-ml-1 mr-2'} shrink-0 text-text-dim`} aria-hidden="true" />
+                              ) : (
+                                <button type="button" onClick={() => startQuickSongFieldEdit('artist')} className={`${isDesktop ? 'ml-0 mr-2' : '-ml-1 mr-2'} rounded-md p-0 text-text-dim hover:bg-primary/10 hover:text-primary transition`} title="Clique para renomear o intérprete"><Mic2 size={14}/></button>
+                              )}
                               <span>{selectedSong.artist}</span>
                             </>
                           )}
@@ -5669,7 +5688,11 @@ const handleRepertorioPdfFull = async () => {
                             </>
                           ) : (
                             <>
-                              {!selectedRepertorio && <button type="button" onClick={() => startQuickSongFieldEdit('composition')} className={`${isDesktop ? 'ml-0 mr-2' : '-ml-1 mr-2'} rounded-md p-0 text-text-dim hover:bg-primary/10 hover:text-primary transition`} title="Clique para renomear o compositor"><Users size={14}/></button>}
+                              {selectedRepertorio ? (
+                                <Users size={14} className={`${isDesktop ? 'ml-0 mr-2' : '-ml-1 mr-2'} shrink-0 text-text-dim`} aria-hidden="true" />
+                              ) : (
+                                <button type="button" onClick={() => startQuickSongFieldEdit('composition')} className={`${isDesktop ? 'ml-0 mr-2' : '-ml-1 mr-2'} rounded-md p-0 text-text-dim hover:bg-primary/10 hover:text-primary transition`} title="Clique para renomear o compositor"><Users size={14}/></button>
+                              )}
                               {selectedSong.composition && <span>{selectedSong.composition}</span>}
                             </>
                           )}
