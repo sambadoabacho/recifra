@@ -7534,39 +7534,57 @@ function RepertorioForm({ initialData, songs, folders, repertorios, songBlocks, 
       const groups = Array.isArray(rep.songGroups) ? rep.songGroups : [];
       const rows: any[] = [];
       const addedGroupIds = new Set<string>();
-      const addGroup = (group: any, fallbackId?: string) => {
+      const visibleSong = (id: string) => {
+        const song = songById.get(id);
+        return song && filteredSongs.some(item => item.id === id) ? song : null;
+      };
+      const addGroup = (group: any, fallbackId?: string, orderedIds?: string[]) => {
         if (!group) return;
         const groupId = String(group.id || fallbackId || '');
         if (!groupId || addedGroupIds.has(groupId)) return;
         addedGroupIds.add(groupId);
-        const groupSongs = makeSongRows(group.songIds || []);
+        // A sequência songIds é a fonte de verdade: o marcador é seguido pelas
+        // músicas do bloco até o próximo marcador. songGroups.songIds fica como
+        // fallback para dados antigos que não tenham essa sequência completa.
+        const groupSongs = makeSongRows(orderedIds !== undefined ? orderedIds : (group.songIds || []));
+        const groupData = { ...group, id: groupId, songIds: groupSongs.map((song: any) => song.id) };
         rows.push({
           id: `group-${rep.id}-${groupId}`,
           markerId: `group:${groupId}`,
           title: group.title || group.name || 'Marcador',
-          groupData: group,
+          groupData,
           songs: groupSongs
         });
       };
 
-      // Primeiro respeita a ordem dos itens do setlist.
-      (rep.songIds || []).forEach((entry: string) => {
-        if (typeof entry !== 'string' || !entry.startsWith('group:')) {
-          const song = songById.get(entry);
-          if (song && filteredSongs.some(item => item.id === entry)) {
-            rows.push({ id: `single-${rep.id}-${entry}`, title: null, songs: [song] });
-          }
-          return;
+      const sequence = Array.isArray(rep.songIds) ? rep.songIds : [];
+      for (let index = 0; index < sequence.length; index++) {
+        const entry = sequence[index];
+        if (typeof entry !== 'string') continue;
+        if (!entry.startsWith('group:')) {
+          const song = visibleSong(entry);
+          if (song) rows.push({ id: `single-${rep.id}-${entry}`, title: null, songs: [song] });
+          continue;
         }
-        const groupId = entry.slice('group:'.length);
-        const group = groups.find((item: any) => String(item.id) === groupId || String(item.title) === groupId || String(item.name) === groupId);
-        // Mesmo que o registro do grupo esteja ausente, não descarta o marcador
-        // referenciado na sequência do setlist.
-        addGroup(group || { id: groupId, title: 'Marcador', songIds: [] }, groupId);
-      });
 
-      // Compatibilidade com dados antigos/importados: inclui grupos cadastrados
-      // em songGroups mesmo quando o marcador não está presente em songIds.
+        const groupId = entry.slice('group:'.length);
+        const group = groups.find((item: any) =>
+          String(item.id) === groupId || String(item.title) === groupId || String(item.name) === groupId
+        );
+        const orderedIds: string[] = [];
+        let next = index + 1;
+        for (; next < sequence.length; next++) {
+          const nextId = sequence[next];
+          if (typeof nextId !== 'string' || nextId.startsWith('group:')) break;
+          orderedIds.push(nextId);
+        }
+        addGroup(group || { id: groupId, title: 'Marcador', songIds: [] }, groupId, orderedIds);
+        // As músicas consumidas pelo marcador não podem reaparecer como itens
+        // avulsos na sequência do Setlist.
+        index = next - 1;
+      }
+
+      // Compatibilidade: grupos antigos sem marcador explícito continuam visíveis.
       groups.forEach((group: any) => addGroup(group));
       return rows;
     });
