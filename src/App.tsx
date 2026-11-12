@@ -33,7 +33,7 @@ import {
   ChevronLeft, ChevronRight, ChevronUp, Play, Users, Save, X, Search, Minus, Type, Filter,
   ArrowUp, ArrowDown, Radio, Menu, MoreVertical, PanelLeft, Layout, Settings, ListMusic, Sun, Moon, Archive, Library,
   Share2, CheckSquare, Square, GripVertical, ArrowLeft, Download, Upload, FilePlus, ListTodo, Blocks, Brain, FileText, Check, Plus,
-  Folder as FolderIcon, FolderPlus, Hash, Info, Gamepad, LayoutList, Mic2, Music2, FolderOpen, ChevronDown, ArrowUpDown, Tag, Hourglass, RotateCcw, RotateCw, Smile, PlusCircle, FileUp, Eraser, Eye, EyeOff
+  Folder as FolderIcon, FolderPlus, Hash, Info, Gamepad, LayoutList, Mic2, Music2, FolderOpen, CalendarDays, ChevronDown, ArrowUpDown, Tag, Hourglass, RotateCcw, RotateCw, Smile, PlusCircle, FileUp, Eraser, Eye, EyeOff
 } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -363,7 +363,7 @@ function GroupPageView({ group, songs, allIds, repertorio }: {
                     {song.title}
                   </h3>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className="text-[8px] font-black px-1.5 py-0.5 bg-primary/10 rounded text-primary">
+                    <span className="inline-flex min-w-[20px] h-[20px] items-center justify-center rounded-md bg-[#EAF0F7] px-1.5 text-[12px] font-bold text-black tabular-nums">
                       {(repertorio?.songKeys && song.id && repertorio.songKeys[song.id]) || song.key}
                     </span>
                     <span className="text-[8px] font-bold text-text-dim truncate uppercase tracking-widest">
@@ -494,6 +494,19 @@ export default function App() {
   const [quickSongFieldValue, setQuickSongFieldValue] = useState('');
   const [selectedRepertorio, setSelectedRepertorio] = useState<any | null>(null);
   const [selectedBlockSet, setSelectedBlockSet] = useState<SongBlock | null>(null);
+  const [activeBlockSuggestionId, setActiveBlockSuggestionId] = useState<string | null>(null);
+  // Ao selecionar uma música pela lista lateral de blocos, mantém a tela no conjunto
+  // e desloca a área principal até o card que contém essa música.
+  useEffect(() => {
+    if (currentView !== 'block-details' || !selectedBlockSet || !selectedSong?.title) return;
+    const frame = window.requestAnimationFrame(() => {
+      const songNodes = Array.from(document.querySelectorAll<HTMLElement>('div.text-sm.font-bold.text-gray-900'));
+      const target = songNodes.find(node => node.textContent?.trim() === selectedSong.title.trim());
+      const blockCard = target?.closest<HTMLElement>('div.shadow-sm');
+      blockCard?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [currentView, selectedBlockSet?.id, activeBlockSuggestionId, selectedSong?.id, selectedSong?.title]);
   const [editingSong, setEditingSong] = useState<Song | null>(null);
   const [editingRepertorio, setEditingRepertorio] = useState<any | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -504,10 +517,37 @@ export default function App() {
   // Cores da cifra na página da música, sincronizadas com o painel lateral.
   const [displayLyricColor, setDisplayLyricColor] = useState(() => localStorage.getItem('recifra_lyric_color') || '#333333');
   const [displayChordColor, setDisplayChordColor] = useState(() => localStorage.getItem('recifra_chord_color') || '#ff6900');
+  // Ajustes temporários do card lateral: não persistem e são descartados ao reiniciar o sistema.
+  const [temporaryLyricColor, setTemporaryLyricColor] = useState(() => localStorage.getItem('recifra_lyric_color') || '#333333');
+  const [temporaryChordColor, setTemporaryChordColor] = useState(() => localStorage.getItem('recifra_chord_color') || '#ff6900');
+  // Corrige valores 15px introduzidos como padrão indevido; mantém outras preferências personalizadas.
+  const [temporaryLyricSize, setTemporaryLyricSize] = useState(() => {
+    const saved = localStorage.getItem('recifra_lyric_size');
+    return !saved || saved === '15' ? 14 : Number(saved);
+  });
+  const [temporaryChordSize, setTemporaryChordSize] = useState(() => {
+    const saved = localStorage.getItem('recifra_chord_size');
+    return !saved || saved === '14' || saved === '15' ? 13 : Number(saved);
+  });
+  useEffect(() => {
+    let migrated = false;
+    if (localStorage.getItem('recifra_lyric_size') === '15') {
+      localStorage.setItem('recifra_lyric_size', '14');
+      migrated = true;
+    }
+    if (['14', '15'].includes(localStorage.getItem('recifra_chord_size') || '')) {
+      localStorage.setItem('recifra_chord_size', '13');
+      migrated = true;
+    }
+    if (migrated) window.dispatchEvent(new Event('recifra:display-settings'));
+  }, []);
+
   useEffect(() => {
     const syncDisplayColors = () => {
       setDisplayLyricColor(localStorage.getItem('recifra_lyric_color') || '#333333');
       setDisplayChordColor(localStorage.getItem('recifra_chord_color') || '#ff6900');
+      setTemporaryLyricColor(localStorage.getItem('recifra_lyric_color') || '#333333');
+      setTemporaryChordColor(localStorage.getItem('recifra_chord_color') || '#ff6900');
     };
     window.addEventListener('recifra:display-settings', syncDisplayColors);
     return () => window.removeEventListener('recifra:display-settings', syncDisplayColors);
@@ -520,6 +560,7 @@ export default function App() {
   const [isMetronomeOpen, setIsMetronomeOpen] = useState(false);
   const [isRiderOpen, setIsRiderOpen] = useState(false);
   const [showChordDiagrams, setShowChordDiagrams] = useState(false);
+  const [desktopSongColumns, setDesktopSongColumns] = useState<1 | 2>(1);
   const [isAutoScrollActive, setIsAutoScrollActive] = useState(false);
   const [autoScrollSpeed, setAutoScrollSpeed] = useState(5); // nível de 1 a 20
   const [diagramInstrument, setDiagramInstrument] = useState<'guitar' | 'cavaquinho'>(() => (localStorage.getItem('recifra-diagram-instrument') as 'guitar' | 'cavaquinho') || 'guitar');
@@ -1411,17 +1452,15 @@ export default function App() {
 
     if (sidebarView === 'repertorio-songs' && selectedRepertorio) {
       const savedKey = selectedRepertorio.songKeys?.[selectedSong.id || ''];
-      if (savedKey) {
-        const diff = getSemitones(selectedSong.key, savedKey);
-        setTransposition(diff);
-      } else {
-        setTransposition(0);
-      }
+      setTransposition(savedKey ? getSemitones(selectedSong.key, savedKey) : 0);
+    } else if (selectedBlockSet && activeBlockSuggestionId) {
+      const activeSuggestion = (selectedBlockSet.suggestions || []).find((item: any) => item.id === activeBlockSuggestionId);
+      const savedKey = activeSuggestion?.songKeys?.[selectedSong.id || ''];
+      setTransposition(savedKey ? getSemitones(selectedSong.key, savedKey) : 0);
     } else {
-      // No modo Acervo, sempre começa no 0
       setTransposition(0);
     }
-  }, [selectedSong?.id, selectedSong?.key, sidebarView, selectedRepertorio?.id, selectedRepertorio?.songKeys]);
+  }, [selectedSong?.id, selectedSong?.key, sidebarView, selectedRepertorio?.id, selectedRepertorio?.songKeys, selectedBlockSet?.id, selectedBlockSet?.suggestions, activeBlockSuggestionId]);
 
   const handleLogin = async () => {
     try {
@@ -1594,10 +1633,17 @@ export default function App() {
 
     const groupId = `group-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const groupTitle = String(suggestion.name || suggestion.title || 'Novo Bloco').trim();
+    const blockSongKeys = Object.fromEntries(
+      newSongIds
+        .filter((id: string) => typeof suggestion.songKeys?.[id] === 'string' && suggestion.songKeys[id].trim() !== '')
+        .map((id: string) => [id, suggestion.songKeys[id]])
+    );
+    const nextRepertorioSongKeys = { ...(target.songKeys || {}), ...blockSongKeys };
     const newGroups = [...(target.songGroups || []), {
       id: groupId,
       title: groupTitle,
       songIds: newSongIds,
+      songKeys: blockSongKeys,
       sourceBlockId: suggestion.id || null
     }];
     // O marcador group:<id> é inserido imediatamente antes das músicas do bloco,
@@ -1607,9 +1653,10 @@ export default function App() {
       await updateDoc(doc(db, 'setlists', repertorioId), {
         songGroups: newGroups,
         songIds: newIds,
+        songKeys: nextRepertorioSongKeys,
         updatedAt: new Date().toISOString()
       });
-      const updated = { ...target, songGroups: newGroups, songIds: newIds };
+      const updated = { ...target, songGroups: newGroups, songIds: newIds, songKeys: nextRepertorioSongKeys };
       setRepertorios(prev => prev.map(rep => rep.id === repertorioId ? updated : rep));
       if (selectedRepertorio?.id === repertorioId) setSelectedRepertorio(updated);
       alert(`Bloco "${groupTitle}" adicionado ao repertório "${target.title}".`);
@@ -3520,6 +3567,13 @@ const handleRepertorioPdfFull = async () => {
       } catch (error) {
         console.error("Erro ao salvar tom no banco:", error);
       }
+    } else if (selectedBlockSet && activeBlockSuggestionId && selectedSong.id) {
+      const updatedSuggestions = (selectedBlockSet.suggestions || []).map((suggestion: any) => {
+        if (suggestion.id !== activeBlockSuggestionId) return suggestion;
+        return { ...suggestion, songKeys: { ...(suggestion.songKeys || {}), [selectedSong.id!]: targetKey } };
+      });
+      const updatedBlock = { ...selectedBlockSet, suggestions: updatedSuggestions } as SongBlock;
+      await updateSongBlock(updatedBlock);
     }
   };
 
@@ -4398,7 +4452,32 @@ const handleRepertorioPdfFull = async () => {
                                       setSelectedSongIdForAction(null);
                                       setSelectedRepertorio(repertorio);
                                       setSidebarView('repertorio-songs');
-                                      setCurrentView('home');
+                                      setActiveBlockSuggestionId(null);
+                                      const firstItemId = (repertorio.songIds || [])[0];
+                                      if (firstItemId?.startsWith('group:')) {
+                                        const groupId = firstItemId.replace('group:', '');
+                                        const group = (repertorio.songGroups || []).find((item: any) => item.id === groupId);
+                                        if (group) {
+                                          setSelectedSong({ id: firstItemId, title: group.title || 'Marcador de Bloco', artist: 'MARCADOR DE BLOCO', isGroup: true, groupData: group } as any);
+                                          setCurrentView('details');
+                                          setCurrentPage(0);
+                                          updateLiveSong(firstItemId);
+                                        } else {
+                                          setSelectedSong(null);
+                                          setCurrentView('home');
+                                        }
+                                      } else {
+                                        const firstSong = (repertorio.songIds || []).map((id: string) => songs.find(song => song.id === id)).find(Boolean);
+                                        if (firstSong) {
+                                          setSelectedSong(firstSong);
+                                          setCurrentView('details');
+                                          setCurrentPage(0);
+                                          updateLiveSong(firstSong.id!);
+                                        } else {
+                                          setSelectedSong(null);
+                                          setCurrentView('home');
+                                        }
+                                      }
                                     }}
                                     onDelete={() => deleteRepertorio(repertorio.id)}
                                     onEdit={() => { setEditingRepertorio(repertorio); setIsSidebarOpen(false); setCurrentView('repertorio-form'); }}
@@ -4503,6 +4582,8 @@ const handleRepertorioPdfFull = async () => {
                                 type="button"
                                 onClick={() => {
                                   if (activeSet) setSelectedBlockSet(activeSet);
+                                  setActiveBlockSuggestionId(sourceSuggestion.id || null);
+                                  setSelectedRepertorio(null);
                                   setCurrentView('block-details');
                                   setSidebarTab('blocks');
                                   setIsSidebarOpen(false);
@@ -4519,7 +4600,7 @@ const handleRepertorioPdfFull = async () => {
                                   <button
                                     key={song.id}
                                     type="button"
-                                    onClick={() => { setSelectedSong(song); setCurrentView('details'); setIsSidebarOpen(false); updateLiveSong(song.id!); }}
+                                    onClick={() => { if (activeSet) setSelectedBlockSet(activeSet); setActiveBlockSuggestionId(sourceSuggestion.id || null); setSelectedRepertorio(null); setSidebarTab('blocks'); setSelectedSong(song); setCurrentView('block-details'); setIsSidebarOpen(false); updateLiveSong(song.id!); }}
                                     className="w-full min-h-[56px] px-4 py-2.5 flex items-center gap-3 text-left hover:bg-[#F4F7FB] transition-colors"
                                   >
                                     <span className="w-7 h-7 rounded-full bg-[#F3F4F6] border border-[#DDE3EC] text-[#64748B] flex items-center justify-center text-[10px] font-bold shrink-0">{songIndex + 1}</span>
@@ -4527,7 +4608,7 @@ const handleRepertorioPdfFull = async () => {
                                       <span className="block text-[12px] font-bold uppercase tracking-wide text-black truncate">{song.title}</span>
                                       <span className="block text-[10px] font-medium uppercase tracking-[0.08em] text-[#64748B] truncate">{song.artist || 'Artista não informado'}</span>
                                     </span>
-                                    <span className="shrink-0 text-[12px] font-bold text-[#64748B]">{song.key || ''}</span>
+                                    <span className="shrink-0 min-w-[20px] h-[20px] px-1.5 rounded-md bg-[#EAF0F7] text-black text-[12px] font-bold flex items-center justify-center text-center tabular-nums">{sourceSuggestion.songKeys?.[song.id] || song.key || ''}</span>
                                   </button>
                                 ))}
                                 {blockSongs.length === 0 && <p className="px-4 py-3 text-[10px] text-[#94A3B8] italic">Nenhuma música cadastrada neste bloco.</p>}
@@ -4732,6 +4813,10 @@ const handleRepertorioPdfFull = async () => {
                                 setSelectedSongIdForAction(prev => prev === item.id ? null : item.id);
                               }}
                               onClick={() => {
+                                setActiveBlockSuggestionId(null);
+                                setSelectedRepertorio(selectedRepertorio);
+                                setSidebarTab('repertorios');
+                                setSidebarView('repertorio-songs');
                                 setSelectedSong(song);
                                 setCurrentView('details');
                                 setIsSidebarOpen(false);
@@ -4798,7 +4883,7 @@ const handleRepertorioPdfFull = async () => {
                                 <div className="text-[10px] text-[#666666] font-medium uppercase tracking-widest truncate leading-tight flex-1">
                                   {song.artist?.length > 22 ? song.artist.substring(0, 22) + '...' : song.artist}
                                 </div>
-                                <div className="text-[12px] text-[#666666] font-bold tracking-tight shrink-0 text-right">
+                                <div className="shrink-0 min-w-[20px] h-[20px] px-1.5 rounded-md bg-[#EAF0F7] text-black text-[12px] font-bold flex items-center justify-center text-center tabular-nums">
                                   {(selectedRepertorio?.songKeys && song.id && selectedRepertorio.songKeys[song.id]) || song.key}
                                 </div>
                               </div>
@@ -5163,7 +5248,7 @@ const handleRepertorioPdfFull = async () => {
                     </AnimatePresence>
                   </div>
                   <div className="relative" data-category-picker-root>
-                    <button type="button" onClick={() => { setIsCategoryPickerOpen(open => !open); setIsTempoPickerOpen(false); }} className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-bold bg-[#EEF1F5] text-[#0D47A1] border border-[#DCE3EC] hover:bg-[#E3E9F1] transition"><Tag size={14} />{selectedSong.category || 'Categoria'} <ChevronDown size={12} /></button>
+                    <button type="button" onClick={() => { setIsCategoryPickerOpen(open => !open); setIsTempoPickerOpen(false); }} className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-bold bg-white text-[#0D47A1] border border-[#DCE3EC] hover:bg-[#F8FAFC] transition"><Tag size={14} />{selectedSong.category || 'Categoria'} <ChevronDown size={12} /></button>
                     <AnimatePresence>
                       {isCategoryPickerOpen && <motion.div initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} exit={{opacity:0,y:6}} className="absolute top-full right-0 mt-2 min-w-[180px] max-h-64 overflow-y-auto bg-white border border-border rounded-xl shadow-2xl z-[200] p-1.5">
                         {categories.map(category => <button key={category.id} type="button" onClick={() => handleQuickSongFieldUpdate('category', category.name)} className={`w-full text-left rounded-lg px-3 py-2 text-[11px] font-bold ${selectedSong.category === category.name ? 'bg-[#0D47A1] text-white' : 'text-text-main hover:bg-bg'}`}>{category.name}</button>)}
@@ -5238,19 +5323,27 @@ const handleRepertorioPdfFull = async () => {
                     return <span className="font-black text-xl md:text-2xl uppercase tracking-tighter text-white truncate max-w-[160px] sm:max-w-[220px] md:max-w-[380px] leading-none">{nextItemTitle} {nextItemKey && <span className="opacity-60 text-lg md:text-xl normal-case">({nextItemKey})</span>}</span>;
                   })()}
                 </motion.div>
-              ) : currentView === 'details' && selectedSong && !selectedRepertorio && sidebarTab === 'songs' && !selectedSong.isGroup && isDesktop ? (
+              ) : currentView === 'details' && selectedSong && !selectedSong.isGroup && isDesktop && (
+                // O seletor central deve acompanhar o contexto real da música aberta,
+                // sem depender da aba visual atualmente selecionada na barra lateral.
+                !!selectedRepertorio ||
+                (!!selectedBlockSet && !!activeBlockSuggestionId) ||
+                (!selectedRepertorio && !activeBlockSuggestionId && sidebarTab === 'songs')
+              ) ? (
                 <div className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center" data-key-picker-root>
                   <button type="button" onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)} className="inline-flex items-center gap-1.5 rounded-full bg-white text-[#0D47A1] border border-white px-3 py-1.5 text-[12px] font-black shadow-sm whitespace-nowrap"><Music2 size={14} /> Tom: {currentKey}</button>
                 </div>
-              ) : currentView === 'form' && !isDesktop ? (
+              ) : currentView === 'form' || currentView === 'repertorio-form' ? (
                 <motion.div
-                  key="song-form-header-title"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="absolute left-1/2 -translate-x-1/2 text-sm sm:text-base font-black uppercase tracking-wide text-white whitespace-nowrap"
+                  key={`form-header-title-${currentView}`}
+                  initial={{ opacity: 0, y: -3 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 3 }}
+                  className={`absolute left-1/2 -translate-x-1/2 text-sm sm:text-base font-black uppercase tracking-wide whitespace-nowrap ${isDesktop ? 'text-[#0D47A1]' : 'text-white'}`}
                 >
-                  Editor de Música
+                  {currentView === 'repertorio-form'
+                    ? (editingRepertorio?.id ? 'Editar Setlist' : 'Cadastrar Setlist')
+                    : (editingSong?.id ? 'Editar Música' : 'Cadastrar Música')}
                 </motion.div>
               ) : !isDesktop ? (
                 <motion.div
@@ -5300,25 +5393,51 @@ const handleRepertorioPdfFull = async () => {
                 <ListMusic size={13} /> {repertorios.length}
               </span>
             )}
+            {currentView === 'repertorio-form' && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.dispatchEvent(new CustomEvent('recifra:save-repertorio-form'))}
+                  title="Salvar"
+                  aria-label="Salvar"
+                  className="h-9 px-3 rounded-full bg-[#0D47A1] text-white border border-[#0D47A1] flex items-center justify-center gap-2 hover:bg-[#093779] hover:border-[#093779] transition-all shadow-md"
+                >
+                  <Save size={17} />
+                  <span className="hidden lg:inline text-xs font-bold">Salvar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.dispatchEvent(new CustomEvent('recifra:cancel-repertorio-form'))}
+                  title="Cancelar"
+                  aria-label="Cancelar"
+                  className="h-10 min-w-10 px-2 sm:px-3 rounded-full bg-white text-[#0D47A1] border border-[#0D47A1] flex items-center justify-center gap-2 hover:bg-[#E6ECF5] transition-all shadow-md"
+                >
+                  <X size={17} />
+                  <span className="hidden sm:inline text-xs font-bold">Cancelar</span>
+                </button>
+              </div>
+            )}
             {currentView === 'form' && (
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => window.dispatchEvent(new CustomEvent('recifra:save-song-form'))}
-                  title="Salvar música"
-                  aria-label="Salvar música"
-                  className="w-9 h-9 rounded-full flex items-center justify-center bg-white text-[#0D47A1] hover:bg-[#E6ECF5] transition-all shadow-md"
+                  title="Salvar"
+                  aria-label="Salvar"
+                  className="h-9 px-3 rounded-full bg-[#0D47A1] text-white border border-[#0D47A1] flex items-center justify-center gap-2 hover:bg-[#093779] hover:border-[#093779] transition-all shadow-md"
                 >
                   <Save size={17} />
+                  <span className="hidden lg:inline text-xs font-bold">Salvar</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => window.dispatchEvent(new CustomEvent('recifra:cancel-song-form'))}
-                  title="Descartar edição"
-                  aria-label="Descartar edição"
-                  className="w-9 h-9 rounded-full bg-white text-[#0D47A1] border border-[#0D47A1] flex items-center justify-center hover:bg-red-50 hover:text-red-600 hover:border-red-600 hover:scale-110 active:scale-95 transition-all shadow-md"
+                  title="Cancelar"
+                  aria-label="Cancelar"
+                  className="h-10 min-w-10 px-2 sm:px-3 rounded-full bg-white text-[#0D47A1] border border-[#0D47A1] flex items-center justify-center gap-2 hover:bg-[#E6ECF5] transition-all shadow-md"
                 >
-                  <Trash2 size={17} />
+                  <X size={17} />
+                  <span className="hidden sm:inline text-xs font-bold">Cancelar</span>
                 </button>
               </div>
             )}
@@ -5648,7 +5767,7 @@ const handleRepertorioPdfFull = async () => {
                         {!selectedRepertorio && editingQuickSongField === 'title' ? (
                           <div className="inline-flex items-center gap-1.5">
                             <input autoFocus type="text" value={quickSongFieldValue} onChange={e => setQuickSongFieldValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleQuickSongTextUpdate('title', quickSongFieldValue); if (e.key === 'Escape') setEditingQuickSongField(null); }} className="h-9 min-w-[180px] max-w-full rounded-lg border border-primary bg-white px-2 text-sm font-bold uppercase text-text-main outline-none focus:ring-2 focus:ring-primary/20" aria-label="Renomear título da música" />
-                            <button type="button" onClick={() => handleQuickSongTextUpdate('title', quickSongFieldValue)} className="rounded-md p-1.5 text-emerald-600 hover:bg-emerald-50" title="Salvar título"><Check size={16}/></button>
+                            <button type="button" onClick={() => handleQuickSongTextUpdate('title', quickSongFieldValue)} className="rounded-md p-1.5 text-emerald-600 hover:bg-[#EAF2FF]" title="Salvar título"><Check size={16}/></button>
                             <button type="button" onClick={() => setEditingQuickSongField(null)} className="rounded-md p-1.5 text-text-dim hover:bg-bg" title="Cancelar"><X size={16}/></button>
                           </div>
                         ) : (
@@ -5663,7 +5782,7 @@ const handleRepertorioPdfFull = async () => {
                           {!selectedRepertorio && editingQuickSongField === 'artist' ? (
                             <>
                               <input autoFocus type="text" value={quickSongFieldValue} onChange={e => setQuickSongFieldValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleQuickSongTextUpdate('artist', quickSongFieldValue); if (e.key === 'Escape') setEditingQuickSongField(null); }} className="h-8 min-w-[140px] max-w-full rounded-lg border border-primary bg-white px-2 text-sm text-text-main outline-none focus:ring-2 focus:ring-primary/20" aria-label="Renomear intérprete" />
-                              <button type="button" onClick={() => handleQuickSongTextUpdate('artist', quickSongFieldValue)} className="rounded-md p-1 text-emerald-600 hover:bg-emerald-50" title="Salvar intérprete"><Check size={14}/></button>
+                              <button type="button" onClick={() => handleQuickSongTextUpdate('artist', quickSongFieldValue)} className="rounded-md p-1 text-emerald-600 hover:bg-[#EAF2FF]" title="Salvar intérprete"><Check size={14}/></button>
                               <button type="button" onClick={() => setEditingQuickSongField(null)} className="rounded-md p-1 text-text-dim hover:bg-bg" title="Cancelar"><X size={14}/></button>
                             </>
                           ) : (
@@ -5681,7 +5800,7 @@ const handleRepertorioPdfFull = async () => {
                           {!selectedRepertorio && editingQuickSongField === 'composition' ? (
                             <>
                               <input autoFocus type="text" value={quickSongFieldValue} onChange={e => setQuickSongFieldValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleQuickSongTextUpdate('composition', quickSongFieldValue); if (e.key === 'Escape') setEditingQuickSongField(null); }} className="h-8 min-w-[140px] max-w-full rounded-lg border border-primary bg-white px-2 text-sm text-text-main outline-none focus:ring-2 focus:ring-primary/20" aria-label="Renomear compositor" />
-                              <button type="button" onClick={() => handleQuickSongTextUpdate('composition', quickSongFieldValue)} className="rounded-md p-1 text-emerald-600 hover:bg-emerald-50" title="Salvar composição"><Check size={14}/></button>
+                              <button type="button" onClick={() => handleQuickSongTextUpdate('composition', quickSongFieldValue)} className="rounded-md p-1 text-emerald-600 hover:bg-[#EAF2FF]" title="Salvar composição"><Check size={14}/></button>
                               <button type="button" onClick={() => setEditingQuickSongField(null)} className="rounded-md p-1 text-text-dim hover:bg-bg" title="Cancelar"><X size={14}/></button>
                             </>
                           ) : (
@@ -5728,13 +5847,32 @@ const handleRepertorioPdfFull = async () => {
               {isDesktop && !selectedRepertorio && !selectedSong.isGroup && sidebarTab === 'songs' && (
                 <aside className="absolute right-0 top-0 bottom-0 z-[65] w-48 shrink-0 flex flex-col gap-2 overflow-y-auto pl-1">
                   <div className="rounded-xl border border-[#DCE3EC] bg-white p-2.5 shadow-sm flex flex-col gap-2">
-                    <div className="grid h-8 grid-cols-[32px_minmax(0,1fr)_32px] items-center overflow-hidden rounded-full border border-[#DCE3EC] bg-[#F7F9FC]">
-                      <button type="button" onClick={() => setChordProScale(prev => Math.max(0.6, prev - 0.1))} className="flex h-full w-8 shrink-0 items-center justify-center text-[#0D47A1] hover:bg-[#E6ECF5]" title="Diminuir zoom"><Minus size={13}/></button>
-                      <span className="text-center text-[10px] font-black text-[#0D47A1]">{Math.round(chordProScale * 100)}%</span>
-                      <button type="button" onClick={() => { let nextScale = chordProScale + 0.1; if (songViewRef.current && maxLineChars > 0) { const viewWidth = songViewRef.current.clientWidth; const availableWidth = viewWidth - 32; const maxAllowedScale = availableWidth / (maxLineChars * 8.4); nextScale = Math.min(nextScale, maxAllowedScale); } setChordProScale(Math.min(2.5, nextScale)); }} className="flex h-full w-8 shrink-0 items-center justify-center text-[#0D47A1] hover:bg-[#E6ECF5]" title="Aumentar zoom"><Plus size={13}/></button>
+                    <div className="flex items-center gap-1.5">
+                      <button type="button" onClick={() => setDesktopSongColumns(v => v === 1 ? 2 : 1)} className="flex h-8 w-9 shrink-0 items-center justify-center rounded-full border border-[#DCE3EC] bg-[#F7F9FC] text-[9px] font-black text-[#0D47A1] hover:bg-[#E6ECF5]" title="Alternar entre uma e duas colunas" aria-label={desktopSongColumns === 1 ? "Exibir em duas colunas" : "Exibir em uma coluna"}>{desktopSongColumns === 1 ? '1 col.' : '2 col.'}</button>
+                      <div className="grid h-8 min-w-0 flex-1 grid-cols-[24px_minmax(0,1fr)_24px] items-center overflow-hidden rounded-full border border-[#DCE3EC] bg-[#F7F9FC]">
+                        <button type="button" onClick={() => setChordProScale(prev => Math.max(0.6, prev - 0.1))} className="flex h-full w-6 shrink-0 items-center justify-center text-[#0D47A1] hover:bg-[#E6ECF5]" title="Diminuir zoom"><Minus size={12}/></button>
+                        <span className="text-center text-[10px] font-black text-[#0D47A1]">{Math.round(chordProScale * 100)}%</span>
+                        <button type="button" onClick={() => { let nextScale = chordProScale + 0.1; if (songViewRef.current && maxLineChars > 0) { const viewWidth = songViewRef.current.clientWidth; const availableWidth = viewWidth - 32; const maxAllowedScale = availableWidth / (maxLineChars * 8.4); nextScale = Math.min(nextScale, maxAllowedScale); } setChordProScale(Math.min(2.5, nextScale)); }} className="flex h-full w-6 shrink-0 items-center justify-center text-[#0D47A1] hover:bg-[#E6ECF5]" title="Aumentar zoom"><Plus size={12}/></button>
+                      </div>
                     </div>
-                    <label className="flex items-center justify-between gap-2 text-[10px] font-semibold text-slate-600">Cor da letra<input aria-label="Cor da letra" type="color" defaultValue={localStorage.getItem('recifra_lyric_color') || '#333333'} onChange={e => { localStorage.setItem('recifra_lyric_color', e.target.value); window.dispatchEvent(new Event('recifra:display-settings')); }} className="h-7 w-9 cursor-pointer rounded border border-slate-200"/></label>
-                    <label className="flex items-center justify-between gap-2 text-[10px] font-semibold text-slate-600">Cor das cifras<input aria-label="Cor das cifras" type="color" defaultValue={localStorage.getItem('recifra_chord_color') || '#ff6900'} onChange={e => { localStorage.setItem('recifra_chord_color', e.target.value); window.dispatchEvent(new Event('recifra:display-settings')); }} className="h-7 w-9 cursor-pointer rounded border border-slate-200"/></label>
+                    <div className="flex items-center gap-2 text-[10px] font-semibold text-slate-600">
+                      <span className="w-9 shrink-0">Letra</span>
+                      <input aria-label="Cor da letra (temporária)" type="color" value={temporaryLyricColor} onChange={e => setTemporaryLyricColor(e.target.value)} className="h-[22px] w-[22px] shrink-0 cursor-pointer rounded-sm border border-slate-200 p-0"/>
+                      <div className="ml-auto flex h-7 w-[88px] shrink-0 items-center justify-between rounded-full border border-slate-200 bg-slate-50">
+                        <button type="button" aria-label="Diminuir tamanho da letra" onClick={() => setTemporaryLyricSize(v => Math.max(10, v - 1))} className="h-full w-5 text-[#0D47A1]">−</button>
+                        <span className="min-w-0 text-center text-[10px] font-bold text-[#0D47A1]">{temporaryLyricSize}px</span>
+                        <button type="button" aria-label="Aumentar tamanho da letra" onClick={() => setTemporaryLyricSize(v => Math.min(24, v + 1))} className="h-full w-5 text-[#0D47A1]">+</button>
+                      </div>
+                    </div>
+                    <div className="flex w-full min-w-0 items-center gap-1 text-[10px] font-semibold text-slate-600">
+                      <span className="w-9 shrink-0">Cifras</span>
+                      <input aria-label="Cor das cifras (temporária)" type="color" value={temporaryChordColor} onChange={e => setTemporaryChordColor(e.target.value)} className="h-[22px] w-[22px] shrink-0 cursor-pointer rounded-sm border border-slate-200 p-0"/>
+                      <div className="ml-auto flex h-7 w-[88px] shrink-0 items-center justify-between rounded-full border border-slate-200 bg-slate-50">
+                        <button type="button" aria-label="Diminuir tamanho das cifras" onClick={() => setTemporaryChordSize(v => Math.max(9, v - 1))} className="h-full w-5 text-[#0D47A1]">−</button>
+                        <span className="min-w-0 text-center text-[10px] font-bold text-[#0D47A1]">{temporaryChordSize}px</span>
+                        <button type="button" aria-label="Aumentar tamanho das cifras" onClick={() => setTemporaryChordSize(v => Math.min(24, v + 1))} className="h-full w-5 text-[#0D47A1]">+</button>
+                      </div>
+                    </div>
                   </div>
                   <div className="rounded-xl border border-[#DCE3EC] bg-white p-2 shadow-sm flex flex-col">
                     {isMaestro && <button type="button" onClick={() => { setEditingSong(selectedSong); setCurrentView('form'); }} className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-xs font-bold text-[#0D47A1] hover:bg-[#EEF1F5]"><Edit2 size={15}/>Editar</button>}
@@ -5761,17 +5899,16 @@ const handleRepertorioPdfFull = async () => {
                     </div>
                     <div className="border-t border-slate-200"/>
                     <div className="px-2.5 py-2">
-                      <div className="mb-2 flex items-center justify-between">
-                        <span className="text-xs font-bold text-[#0D47A1]">Rolagem</span>
-                        <button type="button" onClick={() => setIsAutoScrollActive(v => !v)} className="flex h-7 w-7 items-center justify-center rounded-md text-[#0D47A1] hover:bg-[#EEF1F5]" title={isAutoScrollActive ? 'Parar rolagem' : 'Iniciar rolagem'} aria-label={isAutoScrollActive ? 'Parar rolagem' : 'Iniciar rolagem'}>
-                          {isAutoScrollActive ? <Square size={15} fill="currentColor"/> : <Play size={16} fill="currentColor"/>}
+                      <div className="flex items-center justify-between gap-1 text-[10px] font-semibold text-[#0D47A1]">
+                        <span className="shrink-0 text-xs font-bold">Rolagem</span>
+                        <div className="flex h-7 min-w-0 items-center rounded-full border border-[#DCE3EC] bg-white">
+                          <button type="button" onClick={() => setAutoScrollSpeed(v => Math.max(1, v - 1))} disabled={autoScrollSpeed <= 1} className="flex h-full w-6 items-center justify-center disabled:opacity-35" aria-label="Diminuir velocidade"><Minus size={11}/></button>
+                          <span className="min-w-[18px] text-center text-xs tabular-nums">{autoScrollSpeed}</span>
+                          <button type="button" onClick={() => setAutoScrollSpeed(v => Math.min(20, v + 1))} disabled={autoScrollSpeed >= 20} className="flex h-full w-6 items-center justify-center disabled:opacity-35" aria-label="Aumentar velocidade"><Plus size={11}/></button>
+                        </div>
+                        <button type="button" onClick={() => setIsAutoScrollActive(v => !v)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#0D47A1] hover:bg-[#EEF1F5]" title={isAutoScrollActive ? 'Parar rolagem' : 'Iniciar rolagem'} aria-label={isAutoScrollActive ? 'Parar rolagem' : 'Iniciar rolagem'}>
+                          {isAutoScrollActive ? <Square size={14} fill="currentColor"/> : <Play size={15} fill="currentColor"/>}
                         </button>
-                      </div>
-                      <div className="grid grid-cols-[minmax(0,1fr)_24px_28px_24px] items-center gap-1 text-[10px] font-semibold text-[#0D47A1]">
-                        <span>Velocidade</span>
-                        <button type="button" onClick={() => setAutoScrollSpeed(v => Math.max(1, v - 1))} disabled={autoScrollSpeed <= 1} className="flex h-6 w-6 items-center justify-center rounded border border-[#DCE3EC] disabled:opacity-35" aria-label="Diminuir velocidade"><Minus size={12}/></button>
-                        <span className="text-center text-xs tabular-nums">{autoScrollSpeed}</span>
-                        <button type="button" onClick={() => setAutoScrollSpeed(v => Math.min(20, v + 1))} disabled={autoScrollSpeed >= 20} className="flex h-6 w-6 items-center justify-center rounded border border-[#DCE3EC] disabled:opacity-35" aria-label="Aumentar velocidade"><Plus size={12}/></button>
                       </div>
                     </div>
                   </div>
@@ -5855,10 +5992,10 @@ const handleRepertorioPdfFull = async () => {
                               showDiagrams={isDesktop && showChordDiagrams}
                               diagramInstrument={diagramInstrument}
                               text={transposeChordPro(selectedSong.chordPro, transposition)} 
-                              chordSize={Number(localStorage.getItem('recifra_chord_size') || 13) * chordProScale}
-                              lyricSize={Number(localStorage.getItem('recifra_lyric_size') || 14) * chordProScale}
-                            chordColor={displayChordColor}
-                              lyricColor={displayLyricColor}
+                              chordSize={temporaryChordSize * chordProScale}
+                              lyricSize={temporaryLyricSize * chordProScale}
+                            chordColor={temporaryChordColor}
+                              lyricColor={temporaryLyricColor}
                               />
                           </div>
                         </div>
@@ -5880,15 +6017,15 @@ const handleRepertorioPdfFull = async () => {
                                 paddingTop: isDesktop ? '0px' : '4px'
                               }}
                             >
-                              <div>
+                              <div style={isDesktop ? { columnCount: desktopSongColumns, columnGap: '2rem' } : undefined}>
                                 <ChordProRenderer 
                                   showDiagrams={isDesktop && showChordDiagrams}
                                   diagramInstrument={diagramInstrument}
                                   text={transposeChordPro(selectedSong.chordPro, transposition)} 
-                                  chordSize={Number(localStorage.getItem('recifra_chord_size') || 13) * chordProScale}
-                                  lyricSize={Number(localStorage.getItem('recifra_lyric_size') || 14) * chordProScale}
-                                  chordColor={displayChordColor}
-                              lyricColor={displayLyricColor}
+                                  chordSize={temporaryChordSize * chordProScale}
+                                  lyricSize={temporaryLyricSize * chordProScale}
+                                  chordColor={temporaryChordColor}
+                              lyricColor={temporaryLyricColor}
                               lineRange={pageBreakIndices[idx]}
                                 />
                               </div>
@@ -6077,8 +6214,8 @@ const handleRepertorioPdfFull = async () => {
                   <section className="rounded-2xl border border-border bg-surface p-4 space-y-3">
                     <div><h3 className="text-sm font-bold text-primary">Tipografia das músicas</h3><p className="text-[11px] text-text-dim">As preferências são aplicadas ao editor e ao visor.</p></div>
                     <div className="grid grid-cols-2 gap-3">
-                      <label className="space-y-1"><span className="block text-[10px] font-bold uppercase text-text-dim">Tamanho da letra</span><input type="range" min="10" max="24" defaultValue={Number(localStorage.getItem('recifra_lyric_size') || 14)} onChange={e => { localStorage.setItem('recifra_lyric_size', e.target.value); window.dispatchEvent(new Event('recifra:display-settings')); }} className="w-full accent-[#0D47A1]" /><span className="text-xs text-text-dim">{localStorage.getItem('recifra_lyric_size') || '14'} px</span></label>
-                      <label className="space-y-1"><span className="block text-[10px] font-bold uppercase text-text-dim">Tamanho dos acordes</span><input type="range" min="9" max="24" defaultValue={Number(localStorage.getItem('recifra_chord_size') || 13)} onChange={e => { localStorage.setItem('recifra_chord_size', e.target.value); window.dispatchEvent(new Event('recifra:display-settings')); }} className="w-full accent-[#0D47A1]" /><span className="text-xs text-text-dim">{localStorage.getItem('recifra_chord_size') || '13'} px</span></label>
+                      <label className="space-y-1"><span className="block text-[10px] font-bold uppercase text-text-dim">Tamanho da letra</span><input type="range" min="10" max="24" value={Number(localStorage.getItem('recifra_lyric_size') || 14)} onChange={e => { localStorage.setItem('recifra_lyric_size', e.target.value); setTemporaryLyricSize(Number(e.target.value)); window.dispatchEvent(new Event('recifra:display-settings')); }} className="w-full accent-[#0D47A1]" /><span className="text-xs text-text-dim">{localStorage.getItem('recifra_lyric_size') || '14'} px</span></label>
+                      <label className="space-y-1"><span className="block text-[10px] font-bold uppercase text-text-dim">Tamanho dos acordes</span><input type="range" min="9" max="24" value={Number(localStorage.getItem('recifra_chord_size') || 13)} onChange={e => { localStorage.setItem('recifra_chord_size', e.target.value); setTemporaryChordSize(Number(e.target.value)); window.dispatchEvent(new Event('recifra:display-settings')); }} className="w-full accent-[#0D47A1]" /><span className="text-xs text-text-dim">{localStorage.getItem('recifra_chord_size') === '14' || localStorage.getItem('recifra_chord_size') === '15' ? '13' : (localStorage.getItem('recifra_chord_size') || '13')} px</span></label>
                       <label className="space-y-1"><span className="block text-[10px] font-bold uppercase text-text-dim">Cor da letra</span><div className="flex items-center gap-2"><input type="color" defaultValue={localStorage.getItem('recifra_lyric_color') || '#333333'} onChange={e => { localStorage.setItem('recifra_lyric_color', e.target.value); window.dispatchEvent(new Event('recifra:display-settings')); }} className="h-8 w-12 rounded border border-border" /><span className="text-xs text-text-dim">{localStorage.getItem('recifra_lyric_color') || '#333333'}</span></div></label>
                       <label className="space-y-1"><span className="block text-[10px] font-bold uppercase text-text-dim">Cor dos acordes</span><div className="flex items-center gap-2"><input type="color" defaultValue={localStorage.getItem('recifra_chord_color') || '#ff6900'} onChange={e => { localStorage.setItem('recifra_chord_color', e.target.value); window.dispatchEvent(new Event('recifra:display-settings')); }} className="h-8 w-12 rounded border border-border" /><span className="text-xs text-text-dim">{localStorage.getItem('recifra_chord_color') || '#ff6900'}</span></div></label>
                     </div>
@@ -6335,6 +6472,7 @@ const handleRepertorioPdfFull = async () => {
                   blockSet={selectedBlockSet}
                   songs={songs}
                   repertorios={repertorios}
+                  folders={folders}
                   onAddToRepertorio={addBlockSuggestionToRepertorio}
                   onUpdate={updateSongBlock}
                   onBack={() => { setCurrentView('home'); setSelectedBlockSet(null); setSelectedBlockFolderId(null); }}
@@ -6354,6 +6492,7 @@ const handleRepertorioPdfFull = async () => {
                 songs={songs}
                 folders={folders}
                 repertorios={repertorios}
+                songBlocks={songBlocks}
                 categories={categories}
                 onSave={saveRepertorio} 
                 onCancel={() => {
@@ -6843,7 +6982,7 @@ function SongSidebarItem({ song, isSelectionMode, isSelected, onToggleSelect, on
           <div className="font-bold text-sm truncate tracking-normal uppercase leading-none mb-1 text-black">{song.title?.length > 22 ? song.title.substring(0, 22) + '...' : song.title}</div>
           <div className="text-[10px] text-[#666666] uppercase font-bold tracking-widest truncate leading-tight">{song.artist?.length > 22 ? song.artist.substring(0, 22) + '...' : song.artist}</div>
         </div>
-        <div className="self-center min-w-[20px] h-[20px] px-1.5 rounded-md bg-[#0D47A1] text-white text-[11px] font-bold shrink-0 flex items-center justify-center text-center tabular-nums">{song.key}</div>
+        <div className="self-center min-w-[20px] h-[20px] px-1.5 rounded-md bg-[#EAF0F7] text-black text-[12px] font-bold shrink-0 flex items-center justify-center text-center tabular-nums">{song.key}</div>
       </motion.button>
       {!isSelectionMode && <div ref={menuRootRef} data-archive-menu-root className="relative z-[70] shrink-0 mr-2" onClick={e => e.stopPropagation()}>
         <button type="button" aria-label={`Ações da música ${song.title}`} onClick={() => setMenuOpen(v => !v)} className="p-1.5 text-[#666666] rounded-md transition-colors"><MoreVertical size={18}/></button>
@@ -7041,7 +7180,7 @@ function SongItem({
                     <Trash2 size={16} />
                   </button>
                 ) : (displayKey || song.key) ? (
-                  <span className="inline-flex min-w-[24px] h-[24px] px-1.5 items-center justify-center rounded-md bg-[#0D47A1] text-white text-[11px] font-extrabold tracking-wide shadow-sm">
+                  <span className="inline-flex min-w-[24px] h-[24px] px-1.5 items-center justify-center rounded-md bg-[#EAF0F7] text-black text-[12px] font-extrabold tracking-wide">
                     {displayKey || song.key}
                   </span>
                 ) : null}
@@ -7236,30 +7375,62 @@ function SidebarNavItem({ icon, label, active, onClick, variant = 'dark', disabl
   );
 }
 
-function RepertorioForm({ initialData, songs, folders, repertorios, categories, onSave, onCancel }: { 
+function RepertorioForm({ initialData, songs, folders, repertorios, songBlocks, categories, onSave, onCancel }: { 
   initialData?: any, 
   songs: Song[],
   folders: Folder[],
   repertorios: any[],
+  songBlocks: SongBlock[],
   categories: Category[],
   onSave: (data: any) => void,
   onCancel: () => void 
 }) {
   const [title, setTitle] = useState(initialData?.title || '');
-  const [date, setDate] = useState(initialData?.date || '');
+  const [date, setDate] = useState(() => {
+    if (initialData?.date) return initialData.date;
+    const today = new Date();
+    const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000);
+    return localDate.toISOString().slice(0, 10);
+  });
   const [folderId, setFolderId] = useState(initialData?.folderId || '');
   const [selectedIds, setSelectedIds] = useState<string[]>(initialData?.songIds || []);
+  const [selectedSongGroups, setSelectedSongGroups] = useState<any[]>(initialData?.songGroups || []);
   
   // Search and Filter State
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'title' | 'composition' | 'updatedAt'>('title');
-  const [filterFolder, setFilterFolder] = useState<string>('');
-  const [filterRepertorio, setFilterRepertorio] = useState<string>('');
   const [filterArtist, setFilterArtist] = useState<string>('');
   const [filterCategory, setFilterCategory] = useState<string>('');
   const [filterKey, setFilterKey] = useState<string>('');
   const [filterTempo, setFilterTempo] = useState<string>('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isSourceFolderOpen, setIsSourceFolderOpen] = useState(false);
+  const [expandedSourceFolderSection, setExpandedSourceFolderSection] = useState<'songs' | 'repertorios' | 'blocks' | null>(null);
+  const [sourceFolderFilter, setSourceFolderFilter] = useState<{ type: 'song' | 'repertorio' | 'setlist' | 'block'; id: string; label: string } | null>(null);
+
+  // Normaliza referências de músicas vindas de blocos antigos/importados.
+  // Algumas versões armazenavam IDs; outras podem trazer objetos ou títulos.
+  const resolveSourceSongIds = (rawItems: any[]): string[] => {
+    const resolved: string[] = [];
+    (Array.isArray(rawItems) ? rawItems : []).forEach((item: any) => {
+      const value = typeof item === 'string' ? item : String(item?.songId || item?.id || item?.title || item?.name || '');
+      if (!value) return;
+      let match = songs.find(song => song.id === value);
+      if (!match) {
+        const normalized = normalizeSearchText(value);
+        const titleMatches = songs.filter(song => normalizeSearchText(song.title) === normalized);
+        if (titleMatches.length === 1) match = titleMatches[0];
+      }
+      if (match?.id && !resolved.includes(match.id)) resolved.push(match.id);
+    });
+    return resolved;
+  };
+
+  const getBlockSongReferences = (block: any): any[] => [
+    ...(Array.isArray(block?.songIds) ? block.songIds : []),
+    ...(Array.isArray(block?.songs) ? block.songs : []),
+    ...Object.keys(block?.songKeys || {})
+  ];
 
   const artists = useMemo(() => Array.from(new Set(songs.map(s => s.artist).filter(Boolean))).sort(), [songs]);
   const keys = useMemo(() => Array.from(new Set(songs.map(s => s.key).filter(Boolean))).sort(), [songs]);
@@ -7285,15 +7456,6 @@ function RepertorioForm({ initialData, songs, folders, repertorios, categories, 
     }
 
     // Advanced Filters
-    if (filterFolder) {
-      result = result.filter(s => s.folderId === filterFolder);
-    }
-    if (filterRepertorio) {
-      const rep = repertorios.find(r => r.id === filterRepertorio);
-      if (rep) {
-        result = result.filter(s => rep.songIds.includes(s.id));
-      }
-    }
     if (filterArtist) {
       result = result.filter(s => s.artist === filterArtist);
     }
@@ -7307,6 +7469,29 @@ function RepertorioForm({ initialData, songs, folders, repertorios, categories, 
       result = result.filter(s => s.tempo === filterTempo);
     }
 
+    // Filtro rápido por origem: pastas de músicas, repertórios ou conjuntos.
+    if (sourceFolderFilter) {
+      let sourceSongIds: string[] = [];
+      if (sourceFolderFilter.type === 'song') {
+        result = result.filter(song => song.folderId === sourceFolderFilter.id);
+      } else if (sourceFolderFilter.type === 'repertorio' || sourceFolderFilter.type === 'setlist') {
+        const sourceSetlists = sourceFolderFilter.type === 'setlist'
+          ? repertorios.filter(rep => rep.id === sourceFolderFilter.id)
+          : repertorios.filter(rep => rep.folderId === sourceFolderFilter.id);
+        sourceSongIds = sourceSetlists.flatMap(rep => [
+          ...(rep.songIds || []).filter((id: string) => !id.startsWith('group:')),
+          ...(rep.songGroups || []).flatMap((group: any) => group.songIds || [])
+        ]);
+        const allowed = new Set(sourceSongIds);
+        result = result.filter(song => allowed.has(song.id || ''));
+      } else {
+        const sourceBlockSet = songBlocks.find(block => block.folderId === sourceFolderFilter.id);
+        sourceSongIds = (sourceBlockSet?.suggestions || []).flatMap((block: any) => resolveSourceSongIds(getBlockSongReferences(block)));
+        const allowed = new Set(sourceSongIds);
+        result = result.filter(song => allowed.has(song.id || ''));
+      }
+    }
+
     // Sort
     result.sort((a, b) => {
       if (sortBy === 'title') return a.title.localeCompare(b.title);
@@ -7316,7 +7501,90 @@ function RepertorioForm({ initialData, songs, folders, repertorios, categories, 
     });
 
     return result;
-  }, [songs, searchTerm, sortBy, filterFolder, filterRepertorio, filterArtist, filterCategory, filterKey, filterTempo, repertorios]);
+  }, [songs, searchTerm, sortBy, filterArtist, filterCategory, filterKey, filterTempo, repertorios, songBlocks, sourceFolderFilter]);
+
+  const sourceDisplayGroups = useMemo(() => {
+    if (!sourceFolderFilter || !['repertorio', 'setlist', 'block'].includes(sourceFolderFilter.type)) return null;
+    const songById = new Map(songs.map(song => [song.id, song]));
+    const makeSongRows = (ids: any[]) => resolveSourceSongIds(ids)
+      .map(id => songById.get(id))
+      .filter(Boolean)
+      .filter((song: any) => filteredSongs.some(item => item.id === song.id));
+
+    if (sourceFolderFilter.type === 'block') {
+      const sourceSet = songBlocks.find(block => block.folderId === sourceFolderFilter.id);
+      return (sourceSet?.suggestions || []).map((block: any, index: number) => {
+        const groupId = `block-${sourceFolderFilter.id}-${block.id || index}`;
+        const title = block.name || block.title || `Bloco ${index + 1}`;
+        return {
+          id: `block-group-${index}`,
+          markerId: `group:block-${sourceFolderFilter.id}-${block.id || index}`,
+          title,
+          groupData: { id: groupId, title, songIds: block.songIds || [], songKeys: block.songKeys || {}, sourceBlockId: block.id || null },
+          songs: makeSongRows(getBlockSongReferences(block))
+        };
+      });
+    }
+
+    const sourceSetlists = sourceFolderFilter.type === 'setlist'
+      ? repertorios.filter(rep => rep.id === sourceFolderFilter.id)
+      : repertorios.filter(rep => rep.folderId === sourceFolderFilter.id);
+
+    return sourceSetlists.flatMap((rep: any) => {
+      const groups = Array.isArray(rep.songGroups) ? rep.songGroups : [];
+      const rows: any[] = [];
+      const addedGroupIds = new Set<string>();
+      const addGroup = (group: any, fallbackId?: string) => {
+        if (!group) return;
+        const groupId = String(group.id || fallbackId || '');
+        if (!groupId || addedGroupIds.has(groupId)) return;
+        addedGroupIds.add(groupId);
+        const groupSongs = makeSongRows(group.songIds || []);
+        rows.push({
+          id: `group-${rep.id}-${groupId}`,
+          markerId: `group:${groupId}`,
+          title: group.title || group.name || 'Marcador',
+          groupData: group,
+          songs: groupSongs
+        });
+      };
+
+      // Primeiro respeita a ordem dos itens do setlist.
+      (rep.songIds || []).forEach((entry: string) => {
+        if (typeof entry !== 'string' || !entry.startsWith('group:')) {
+          const song = songById.get(entry);
+          if (song && filteredSongs.some(item => item.id === entry)) {
+            rows.push({ id: `single-${rep.id}-${entry}`, title: null, songs: [song] });
+          }
+          return;
+        }
+        const groupId = entry.slice('group:'.length);
+        const group = groups.find((item: any) => String(item.id) === groupId || String(item.title) === groupId || String(item.name) === groupId);
+        // Mesmo que o registro do grupo esteja ausente, não descarta o marcador
+        // referenciado na sequência do setlist.
+        addGroup(group || { id: groupId, title: 'Marcador', songIds: [] }, groupId);
+      });
+
+      // Compatibilidade com dados antigos/importados: inclui grupos cadastrados
+      // em songGroups mesmo quando o marcador não está presente em songIds.
+      groups.forEach((group: any) => addGroup(group));
+      return rows;
+    });
+  }, [sourceFolderFilter, songs, filteredSongs, repertorios, songBlocks]);
+
+  const toggleSongGroup = (group: any) => {
+    const validIds = (group.songs || []).map((song: any) => song.id).filter(Boolean);
+    const markerId = group.markerId || `group:${group.groupData.id}`;
+    const isSelected = selectedIds.includes(markerId);
+    if (isSelected) {
+      setSelectedIds(prev => prev.filter(id => id !== markerId && !validIds.includes(id)));
+      setSelectedSongGroups(prev => prev.filter(item => item.id !== group.groupData.id));
+      return;
+    }
+    const groupData = { ...group.groupData, songIds: validIds };
+    setSelectedSongGroups(prev => [...prev.filter(item => item.id !== groupData.id), groupData]);
+    setSelectedIds(prev => [...prev, markerId, ...validIds.filter(id => !prev.includes(id))]);
+  };
 
   const toggleSong = (id: string) => {
     setSelectedIds(prev => 
@@ -7326,6 +7594,7 @@ function RepertorioForm({ initialData, songs, folders, repertorios, categories, 
 
   const removeSong = (id: string) => {
     setSelectedIds(prev => prev.filter(i => i !== id));
+    setSelectedSongGroups(prev => prev.map(group => ({ ...group, songIds: (group.songIds || []).filter((songId: string) => songId !== id) })));
   };
 
   const [isSaving, setIsSaving] = useState(false);
@@ -7334,67 +7603,61 @@ function RepertorioForm({ initialData, songs, folders, repertorios, categories, 
     if (isSaving) return;
     setIsSaving(true);
     try {
-      await onSave({ title, date, folderId, songIds: selectedIds });
+      await onSave({ title, date, folderId, songIds: selectedIds, songGroups: selectedSongGroups });
     } finally {
       setIsSaving(false);
     }
   };
 
-  return (
-    <div className="flex flex-col h-[85vh] -m-6 bg-bg">
-      {/* Header */}
-      <div className="p-6 border-b border-border bg-surface shrink-0">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold uppercase tracking-tighter">
-            {initialData ? 'Editar Repertório' : 'Novo Repertório'}
-          </h2>
-          <div className="flex gap-2">
-            <button 
-              onClick={onCancel}
-              disabled={isSaving}
-              className="px-4 py-2 text-xs font-bold uppercase tracking-widest text-text-dim hover:text-text-main transition-colors disabled:opacity-50"
-            >
-              Cancelar
-            </button>
-            <button 
-              onClick={handleSave}
-              disabled={isSaving}
-              className="px-6 py-2 bg-primary text-white rounded-lg font-bold text-xs uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-primary/20 hover:scale-105 transition-all disabled:opacity-50 disabled:scale-100"
-            >
-              {isSaving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={16} />}
-              {isSaving ? 'Salvando...' : 'Salvar'}
-            </button>
-          </div>
-        </div>
+  useEffect(() => {
+    const handleExternalSave = () => { void handleSave(); };
+    const handleExternalCancel = () => { if (!isSaving) onCancel(); };
+    window.addEventListener('recifra:save-repertorio-form', handleExternalSave);
+    window.addEventListener('recifra:cancel-repertorio-form', handleExternalCancel);
+    return () => {
+      window.removeEventListener('recifra:save-repertorio-form', handleExternalSave);
+      window.removeEventListener('recifra:cancel-repertorio-form', handleExternalCancel);
+    };
+  }, [title, date, folderId, selectedIds, selectedSongGroups, isSaving, onSave, onCancel]);
 
-        <div className="flex gap-4">
-          <div className="flex-[2]">
-            <label className="text-[10px] font-bold text-text-dim uppercase mb-1 block">Nome do Repertório</label>
-            <input 
+  return (
+    <div className="flex flex-col h-full min-h-0 -m-6 bg-[#F1F5F9] text-slate-800">
+      {/* Dados principais do setlist */}
+      <div className="shrink-0 border-b border-[#D7E1EF] bg-white px-5 py-4 shadow-sm">
+        <div className="grid grid-cols-12 gap-3 rounded-2xl border border-[#DCE6F2] bg-[#F8FAFD] p-4">
+          <div className="col-span-12 lg:col-span-6 min-w-0">
+            <label className="mb-1.5 flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-wider text-[#34557F]">
+              <ListMusic size={14} className="text-[#0D47A1]" /> Nome do Setlist
+            </label>
+            <input
               type="text"
               value={title}
               onChange={e => setTitle(e.target.value)}
-              className="w-full bg-bg border border-border rounded-xl py-2.5 px-4 text-sm focus:ring-1 focus:ring-primary outline-none"
+              className="w-full rounded-xl border border-[#C9D8EA] bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-[#0D47A1] focus:ring-2 focus:ring-[#0D47A1]/15"
               placeholder="Ex: Show de Sábado"
             />
           </div>
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-text-dim uppercase mb-1 block">Data</label>
-            <input 
+          <div className="col-span-12 sm:col-span-6 lg:col-span-3 min-w-0">
+            <label className="mb-1.5 flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-wider text-[#34557F]">
+              <CalendarDays size={14} className="text-[#0D47A1]" /> Data
+            </label>
+            <input
               type="date"
               value={date}
               onChange={e => setDate(e.target.value)}
-              className="w-full bg-bg border border-border rounded-xl py-2.5 px-4 text-sm focus:ring-1 focus:ring-primary outline-none"
+              className="w-full rounded-xl border border-[#C9D8EA] bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-[#0D47A1] focus:ring-2 focus:ring-[#0D47A1]/15"
             />
           </div>
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-text-dim uppercase mb-1 block">Classificador (Marcador)</label>
-            <select 
+          <div className="col-span-12 sm:col-span-6 lg:col-span-3 min-w-0">
+            <label className="mb-1.5 flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-wider text-[#34557F]">
+              <FolderOpen size={14} className="text-[#0D47A1]" /> Pasta
+            </label>
+            <select
               value={folderId}
               onChange={e => setFolderId(e.target.value)}
-              className="w-full bg-bg border border-border rounded-xl py-2.5 px-4 text-sm focus:ring-1 focus:ring-primary outline-none"
+              className="w-full rounded-xl border border-[#C9D8EA] bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-[#0D47A1] focus:ring-2 focus:ring-[#0D47A1]/15"
             >
-              <option value="">Nenhum...</option>
+              <option value="">Nenhuma...</option>
               {folders.filter(f => f.type === 'repertorio').map(f => (
                 <option key={f.id} value={f.id}>{f.name}</option>
               ))}
@@ -7403,11 +7666,11 @@ function RepertorioForm({ initialData, songs, folders, repertorios, categories, 
         </div>
       </div>
 
-      {/* Main Multi-Pane Content */}
-      <div className="flex flex-1 min-h-0">
+      {/* Área de seleção e composição do setlist */}
+      <div className="flex flex-1 min-h-0 gap-3 p-3 bg-[#EEF3F9]">
         {/* Left Pane: Selection */}
-        <div className="flex-1 border-r border-border flex flex-col min-w-0">
-          <div className="p-4 border-b border-border bg-surface/50 space-y-3">
+        <div className="flex-1 min-w-0 overflow-hidden rounded-2xl border border-[#D6E1EF] bg-white shadow-sm flex flex-col">
+          <div className="p-4 border-b border-[#DCE6F2] bg-white space-y-3">
             <div className="flex gap-2">
               <div className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" size={14} />
@@ -7419,12 +7682,73 @@ function RepertorioForm({ initialData, songs, folders, repertorios, categories, 
                   className="w-full bg-white border border-[#D1D5DB] rounded-lg py-2 pl-9 pr-4 text-xs outline-none focus:ring-1 focus:ring-[#D1D5DB] text-[#666666] placeholder:text-[#B8BEC8]"
                 />
               </div>
-              <button 
-                onClick={() => setIsFilterOpen(!isFilterOpen)}
-                className={`p-2 rounded-lg border transition-colors ${isFilterOpen ? 'bg-primary border-primary text-white' : 'bg-bg border-border text-text-dim'}`}
-              >
-                <Filter size={14} />
-              </button>
+              <div className="relative flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => { setIsSourceFolderOpen(value => !value); setIsFilterOpen(false); }}
+                  title="Filtrar por pasta de origem"
+                  aria-label="Filtrar por pasta de origem"
+                  className={`p-2 rounded-lg border transition-colors ${isSourceFolderOpen || sourceFolderFilter ? 'bg-[#0D47A1] border-[#0D47A1] text-white' : 'bg-white border-[#D1DCEB] text-[#64748B] hover:bg-[#EEF5FF]'}`}
+                >
+                  <FolderOpen size={15} />
+                </button>
+                <button 
+                  onClick={() => { setIsFilterOpen(!isFilterOpen); setIsSourceFolderOpen(false); }}
+                  title="Filtros avançados"
+                  className={`p-2 rounded-lg border transition-colors ${isFilterOpen ? 'bg-primary border-primary text-white' : 'bg-white border-[#D1DCEB] text-[#64748B]'}`}
+                >
+                  <Filter size={14} />
+                </button>
+                <AnimatePresence>
+                  {isSourceFolderOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 6, scale: 0.98 }}
+                      className="absolute right-10 top-11 z-50 w-72 max-h-[min(70vh,520px)] overflow-y-auto rounded-xl border border-[#CBD8E8] bg-white p-2 shadow-2xl"
+                    >
+                      <div className="flex items-center justify-between px-2 py-2 border-b border-[#E2E8F0]">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-[#34557F]">Pastas de origem</span>
+                        {sourceFolderFilter && <button type="button" onClick={() => setSourceFolderFilter(null)} className="text-[10px] font-bold text-[#0D47A1] hover:underline">Limpar</button>}
+                      </div>
+                      <div className="p-1">
+                        <button type="button" onClick={() => setExpandedSourceFolderSection(current => current === 'songs' ? null : 'songs')} className="w-full px-2 pt-2 pb-1 text-[9px] font-black uppercase tracking-widest text-[#0D47A1] flex items-center gap-2"><Music2 size={13}/> Músicas<span className="ml-auto">{expandedSourceFolderSection === 'songs' ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}</span></button>{expandedSourceFolderSection === 'songs' && <div>
+                        {folders.filter(folder => !folder.type || folder.type === 'song').map(folder => (
+                          <button key={`song-${folder.id}`} type="button" onClick={() => { setSourceFolderFilter({ type: 'song', id: folder.id!, label: folder.name }); setIsSourceFolderOpen(false); }} className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${sourceFolderFilter?.type === 'song' && sourceFolderFilter.id === folder.id ? 'bg-[#EAF2FF] text-[#0D47A1] font-bold' : 'text-slate-700 hover:bg-slate-50'}`}><FolderIcon size={14} className="text-[#0D47A1]"/><span className="flex-1 truncate">{folder.name}</span></button>
+                        ))}
+                        {folders.filter(folder => !folder.type || folder.type === 'song').length === 0 && <div className="px-3 py-1.5 text-[10px] text-slate-400">Nenhuma pasta</div>}</div>}
+                        <button type="button" onClick={() => setExpandedSourceFolderSection(current => current === 'repertorios' ? null : 'repertorios')} className="mt-2 w-full border-t border-[#E8EDF4] px-2 pt-2 pb-1 text-[9px] font-black uppercase tracking-widest text-[#0D47A1] flex items-center gap-2"><ListMusic size={13}/> Repertórios<span className="ml-auto">{expandedSourceFolderSection === 'repertorios' ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}</span></button>{expandedSourceFolderSection === 'repertorios' && <div>
+                        {folders.filter(folder => folder.type === 'repertorio').map(folder => {
+                          const folderSetlists = repertorios.filter(rep => rep.folderId === folder.id);
+                          const folderIsSelected = sourceFolderFilter?.type === 'repertorio' && sourceFolderFilter.id === folder.id;
+                          return (
+                            <div key={`rep-${folder.id}`} className="mb-1">
+                              <button type="button" onClick={() => { setSourceFolderFilter({ type: 'repertorio', id: folder.id!, label: folder.name }); setIsSourceFolderOpen(false); }} className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${folderIsSelected ? 'bg-[#EAF2FF] text-[#0D47A1] font-bold' : 'text-slate-700 hover:bg-slate-50'}`}>
+                                <FolderIcon size={14} className="shrink-0 text-[#0D47A1]"/><span className="flex-1 truncate">{folder.name}</span><span className="text-[9px] text-slate-400">{folderSetlists.length}</span>
+                              </button>
+                              {folderSetlists.length > 0 && (
+                                <div className="ml-5 mt-0.5 border-l border-[#DCE6F2] pl-2">
+                                  {folderSetlists.map(rep => (
+                                    <button key={`setlist-${rep.id}`} type="button" onClick={() => { setSourceFolderFilter({ type: 'setlist', id: rep.id, label: rep.title || 'Setlist' }); setIsSourceFolderOpen(false); }} className={`w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] transition-colors ${sourceFolderFilter?.type === 'setlist' && sourceFolderFilter.id === rep.id ? 'bg-[#EAF2FF] text-[#0D47A1] font-bold' : 'text-slate-600 hover:bg-slate-50'}`}>
+                                      <ListMusic size={12} className="shrink-0 text-[#0D47A1]"/><span className="flex-1 truncate">{rep.title || 'Setlist sem título'}</span><span className="text-[9px] text-slate-400">{(rep.songIds || []).filter((id: string) => !id.startsWith('group:')).length}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {folders.filter(folder => folder.type === 'repertorio').length === 0 && <div className="px-3 py-1.5 text-[10px] text-slate-400">Nenhuma pasta</div>}</div>}
+                        <button type="button" onClick={() => setExpandedSourceFolderSection(current => current === 'blocks' ? null : 'blocks')} className="mt-2 w-full border-t border-[#E8EDF4] px-2 pt-2 pb-1 text-[9px] font-black uppercase tracking-widest text-[#0D47A1] flex items-center gap-2"><LayoutList size={13}/> Conjuntos<span className="ml-auto">{expandedSourceFolderSection === 'blocks' ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}</span></button>{expandedSourceFolderSection === 'blocks' && <div>
+                        {folders.filter(folder => folder.type === 'block').map(folder => (
+                          <button key={`block-${folder.id}`} type="button" onClick={() => { setSourceFolderFilter({ type: 'block', id: folder.id!, label: folder.name }); setIsSourceFolderOpen(false); }} className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${sourceFolderFilter?.type === 'block' && sourceFolderFilter.id === folder.id ? 'bg-[#EAF2FF] text-[#0D47A1] font-bold' : 'text-slate-700 hover:bg-slate-50'}`}><FolderIcon size={14} className="text-[#0D47A1]"/><span className="flex-1 truncate">{folder.name}</span><span className="text-[9px] text-slate-400">{songBlocks.find(block => block.folderId === folder.id)?.suggestions?.length || 0}</span></button>
+                        ))}
+                        {folders.filter(folder => folder.type === 'block').length === 0 && <div className="px-3 py-1.5 text-[10px] text-slate-400">Nenhum conjunto</div>}</div>}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
 
             <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-text-dim">
@@ -7440,7 +7764,7 @@ function RepertorioForm({ initialData, songs, folders, repertorios, categories, 
                   <option value="updatedAt">Modificação</option>
                 </select>
               </div>
-              <span>{filteredSongs.length} Músicas</span>
+              <span className="flex items-center gap-2">{sourceFolderFilter && <button type="button" onClick={() => setSourceFolderFilter(null)} className="normal-case tracking-normal text-[#0D47A1] hover:underline" title="Remover filtro de origem">{sourceFolderFilter.label} ×</button>}{filteredSongs.length} Músicas</span>
             </div>
 
             <AnimatePresence>
@@ -7451,22 +7775,6 @@ function RepertorioForm({ initialData, songs, folders, repertorios, categories, 
                   exit={{ height: 0, opacity: 0 }}
                   className="pt-2 border-t border-border/50 grid grid-cols-2 gap-2 overflow-hidden"
                 >
-                  <select 
-                    value={filterFolder}
-                    onChange={e => setFilterFolder(e.target.value)}
-                    className="bg-bg border border-border rounded-lg p-2 text-[10px] uppercase font-bold outline-none"
-                  >
-                    <option value="">Todas Pastas</option>
-                    {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                  </select>
-                  <select 
-                    value={filterRepertorio}
-                    onChange={e => setFilterRepertorio(e.target.value)}
-                    className="bg-bg border border-border rounded-lg p-2 text-[10px] uppercase font-bold outline-none"
-                  >
-                    <option value="">Filtrar p/ Repertório</option>
-                    {repertorios.filter(r => r.id !== initialData?.id).map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
-                  </select>
                   <select 
                     value={filterArtist}
                     onChange={e => setFilterArtist(e.target.value)}
@@ -7488,7 +7796,7 @@ function RepertorioForm({ initialData, songs, folders, repertorios, categories, 
                     onChange={e => setFilterKey(e.target.value)}
                     className="bg-bg border border-border rounded-lg p-2 text-[10px] font-bold outline-none"
                   >
-                    <option value="">Tonalidades</option>
+                    <option value="">TONALIDADE</option>
                     {keys.map(k => <option key={k} value={k}>{k}</option>)}
                   </select>
                   <select 
@@ -7501,8 +7809,6 @@ function RepertorioForm({ initialData, songs, folders, repertorios, categories, 
                   </select>
                   <button 
                     onClick={() => {
-                      setFilterFolder('');
-                      setFilterRepertorio('');
                       setFilterArtist('');
                       setFilterCategory('');
                       setFilterKey('');
@@ -7517,12 +7823,18 @@ function RepertorioForm({ initialData, songs, folders, repertorios, categories, 
             </AnimatePresence>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
-            {filteredSongs.map(song => (
-              <button 
+          <div className="flex-1 overflow-y-auto bg-[#F8FAFD] p-3 space-y-2">
+            {(sourceDisplayGroups ? sourceDisplayGroups.flatMap(group => [
+              ...(group.title ? [{ __marker: true, ...group }] : []),
+              ...group.songs.map((song: any) => ({ __song: true, song, group }))
+            ]) : filteredSongs.map(song => ({ __song: true, song, group: null }))).map((entry: any) => entry.__marker ? (
+              <button key={entry.id} type="button" onClick={() => toggleSongGroup(entry)} className={`w-full flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-[10px] font-black uppercase tracking-wider text-[#0D47A1] ${selectedIds.includes(entry.markerId) ? 'border-[#0D47A1] bg-[#DCEAFF]' : 'border-[#B8CCE6] bg-[#EAF2FF] hover:bg-[#DCEAFF]'}`}>
+                <ListMusic size={14}/><span className="flex-1">{entry.title}</span><span className="text-[9px] font-bold">{entry.songs.filter((song: any) => selectedIds.includes(song.id!)).length}/{entry.songs.length}</span><CheckSquare size={14}/>
+              </button>
+            ) : (() => { const song = entry.song; return <button 
                 key={song.id}
                 onClick={() => toggleSong(song.id!)}
-                className={`w-full text-left p-3 rounded-xl border transition-all flex items-center justify-between group ${selectedIds.includes(song.id!) ? 'bg-surface border-primary shadow-sm' : 'bg-surface border-border hover:border-primary/50'}`}
+                className={`w-full text-left p-3 rounded-xl border transition-all flex items-center justify-between group ${selectedIds.includes(song.id!) ? 'bg-[#EAF2FF] border-[#0D47A1] shadow-sm ring-1 ring-[#0D47A1]/10' : 'bg-white border-[#DCE5F0] hover:border-[#8EADD5] hover:bg-[#F5F9FF]'}`}
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 flex-wrap mb-1">
@@ -7548,8 +7860,7 @@ function RepertorioForm({ initialData, songs, folders, repertorios, categories, 
                 <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all shrink-0 ml-3 ${selectedIds.includes(song.id!) ? 'bg-primary border-primary' : 'border-border group-hover:border-primary'}`}>
                   {selectedIds.includes(song.id!) && <Check size={12} className="text-white font-bold" />}
                 </div>
-              </button>
-            ))}
+              </button>; })())}
             {filteredSongs.length === 0 && (
               <div className="p-8 text-center text-text-dim italic text-xs">Nenhuma música encontrada com estes filtros</div>
             )}
@@ -7557,17 +7868,28 @@ function RepertorioForm({ initialData, songs, folders, repertorios, categories, 
         </div>
 
         {/* Right Pane: Current Setlist */}
-        <div className="w-[320px] bg-surface flex flex-col">
-          <div className="p-4 border-b border-border bg-bg/30 shrink-0">
-            <h3 className="text-[10px] font-bold uppercase tracking-widest text-text-dim flex items-center justify-between">
-              Músicas no Repertório
-              <span className="bg-primary/20 text-primary px-2 py-0.5 rounded-full">{selectedIds.length}</span>
+        <div className="w-[320px] shrink-0 overflow-hidden rounded-2xl border border-[#D2DEED] bg-white shadow-sm flex flex-col">
+          <div className="p-4 border-b border-[#D7E3F1] bg-[#E7EFF9] shrink-0">
+            <h3 className="text-[10px] font-extrabold uppercase tracking-widest text-[#244A78] flex items-center justify-between">
+              <span className="flex items-center gap-2"><ListMusic size={14} className="text-[#0D47A1]" /> Músicas no Setlist</span>
+              <span className="bg-primary/20 text-primary px-2 py-0.5 rounded-full">{selectedIds.filter(id => !id.startsWith('group:')).length}</span>
             </h3>
           </div>
           
-          <div className="flex-1 overflow-y-auto p-2 space-y-2">
+          <div className="flex-1 overflow-y-auto bg-[#F8FAFD] p-3 space-y-2">
             <AnimatePresence initial={false}>
               {selectedIds.map((id, index) => {
+                if (id.startsWith('group:')) {
+                  const group = selectedSongGroups.find(item => item.id === id.slice(6));
+                  if (!group) return null;
+                  return (
+                    <motion.div layout key={id} initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.8, opacity: 0 }} className="flex items-center gap-3 p-3 bg-[#EAF2FF] border border-[#AFC8E8] rounded-xl group relative shadow-sm">
+                      <div className="w-6 h-6 flex items-center justify-center bg-white border border-[#C6D8EF] rounded-full text-[10px] font-extrabold text-[#0D47A1] shrink-0"><ListMusic size={13}/></div>
+                      <div className="flex-1 min-w-0"><div className="font-extrabold text-xs truncate uppercase tracking-tight text-[#0D47A1]">{group.title || 'Marcador'}</div><div className="text-[9px] text-[#58718F]">{group.songIds?.length || 0} músicas agrupadas</div></div>
+                      <button onClick={() => { setSelectedIds(prev => prev.filter(value => value !== id && !(group.songIds || []).includes(value))); setSelectedSongGroups(prev => prev.filter(item => item.id !== group.id)); }} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"><Trash2 size={14}/></button>
+                    </motion.div>
+                  );
+                }
                 const song = songs.find(s => s.id === id);
                 if (!song) return null;
                 return (
@@ -7577,9 +7899,9 @@ function RepertorioForm({ initialData, songs, folders, repertorios, categories, 
                     initial={{ scale: 0.8, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     exit={{ scale: 0.8, opacity: 0 }}
-                    className="flex items-center gap-3 p-3 bg-bg border border-border rounded-xl group relative shadow-sm"
+                    className="flex items-center gap-3 p-3 bg-white border border-[#D8E3F0] rounded-xl group relative shadow-sm"
                   >
-                    <div className="w-6 h-6 flex items-center justify-center bg-surface border border-border rounded-full text-[10px] font-bold text-text-dim group-hover:text-primary group-hover:border-primary transition-colors shrink-0">
+                    <div className="w-6 h-6 flex items-center justify-center bg-[#EAF2FF] border border-[#C6D8EF] rounded-full text-[10px] font-extrabold text-[#0D47A1] shrink-0">
                       {index + 1}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -7590,7 +7912,7 @@ function RepertorioForm({ initialData, songs, folders, repertorios, categories, 
                     </div>
                     <button 
                       onClick={() => removeSong(id)}
-                      className="p-1.5 text-text-dim hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors shrink-0"
+                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -8096,6 +8418,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
   onCancel: () => void,
   isMaestro: boolean
 }) {
+  const isEditingExistingSong = Boolean(initialData?.id);
   const [formData, setFormData] = useState({
     title: initialData?.title || '',
     artist: initialData?.artist || '',
@@ -8965,7 +9288,10 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                     </button>
                     <span className="text-[12px] font-black uppercase text-white tracking-widest">Editor Chordpro</span>
                   </div>
-                  <div className="flex gap-3">
+                  <div className="flex items-center gap-3">
+                    <button type="button" onClick={() => updateChordPro(formData.chordPro.replace(/\[[^\]]+\]/g, ''))} title="Limpar Cifra" aria-label="Limpar Cifra" className="inline-flex items-center gap-1.5 text-white/80 hover:text-white transition-colors text-[9px] font-bold uppercase tracking-wide"><Eraser size={13} /><span>Limpar Cifra</span></button>
+                    <button type="button" onClick={restoreOriginalKey} title="Restaurar Tom" aria-label="Restaurar Tom" className="inline-flex items-center gap-1.5 text-white/80 hover:text-white transition-colors text-[9px] font-bold uppercase tracking-wide"><RotateCcw size={13} /><span>Restaurar Tom</span></button>
+                    <span className="h-5 w-px bg-white/20" />
                     <button type="button" onClick={undo} title="Desfazer (Ctrl+Z)" aria-label="Desfazer" disabled={history.length === 0} className="text-white/80 hover:text-white transition-colors disabled:opacity-30"><RotateCcw size={14} /></button>
                     <button type="button" onClick={redo} title="Refazer (Ctrl+Y)" aria-label="Refazer" disabled={redoStack.length === 0} className="text-white/80 hover:text-white transition-colors disabled:opacity-30"><RotateCw size={14} /></button>
                   </div>
@@ -9026,13 +9352,19 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                         onChange={handleImportChordPro}
                         aria-label="Selecionar arquivo de cifra para importar"
                       />
-                      <div className="grid grid-cols-5 gap-1.5">
-                        <button type="button" title="Novo" aria-label="Novo" onClick={() => { originalTransposeRef.current = null; setHistory(prev => [formData.chordPro, ...prev].slice(0, 50)); setRedoStack([]); setFormData({...formData, title: '', artist: '', composition: '', category: '', tempo: 'Moderado', key: 'C', chordPro: '', folderId: ''}); }} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white hover:bg-[#0D47A1] transition-all"><FilePlus size={13} /> <span className="truncate">Novo</span></button>
-                        <button type="button" title="Importar cifra" aria-label="Importar" onClick={() => importFileRef.current?.click()} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white hover:bg-[#0D47A1] transition-all"><FileUp size={13} /> <span className="truncate">Importar</span></button>
-                        <button type="button" title="Exportar cifra" aria-label="Exportar" onClick={handleExportChordPro} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white hover:bg-[#0D47A1] transition-all"><Download size={13} /> <span className="truncate">Exportar</span></button>
-                        <button type="button" title="Limpar acordes da cifra" aria-label="Limpar cifra" onClick={() => updateChordPro(formData.chordPro.replace(/\[[^\]]+\]/g, ''))} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white hover:bg-[#0D47A1] transition-all"><Eraser size={13} /> <span className="truncate">Limpar</span></button>
-                        <button type="button" title="Restaurar tom original" aria-label="Restaurar tom" onClick={restoreOriginalKey} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white hover:bg-[#0D47A1] transition-all"><RotateCcw size={13} /> <span className="truncate">Restaurar</span></button>
-                      </div>
+                      {isEditingExistingSong ? (
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <button type="button" onClick={handleDiscard} className="h-9 min-w-0 flex items-center justify-center bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[9px] font-bold uppercase tracking-wide text-white">Cancelar</button>
+                          <button type="button" onClick={handleSave} disabled={!isFormValid} className={`h-9 min-w-0 flex items-center justify-center gap-1 bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[9px] font-bold uppercase tracking-wide text-white ${!isFormValid ? 'opacity-50 cursor-not-allowed' : ''}`}><Save size={13} /> Salvar</button>
+                          <button type="button" title="Exportar cifra" aria-label="Exportar" onClick={handleExportChordPro} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[9px] font-bold uppercase tracking-wide text-white"><Download size={13} /> Exportar</button>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <button type="button" title="Novo" aria-label="Novo" onClick={() => { originalTransposeRef.current = null; setHistory(prev => [formData.chordPro, ...prev].slice(0, 50)); setRedoStack([]); setFormData({...formData, title: '', artist: '', composition: '', category: '', tempo: 'Moderado', key: 'C', chordPro: '', folderId: ''}); }} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white"><FilePlus size={13} /> <span>Novo</span></button>
+                          <button type="button" title="Importar cifra" aria-label="Importar" onClick={() => importFileRef.current?.click()} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white"><FileUp size={13} /> <span>Importar</span></button>
+                          <button type="button" title="Exportar cifra" aria-label="Exportar" onClick={handleExportChordPro} className="h-9 min-w-0 flex items-center justify-center gap-1 bg-[#0D47A1] border border-[#0D47A1] rounded-lg text-[8px] sm:text-[9px] font-bold uppercase text-white"><Download size={13} /> <span>Exportar</span></button>
+                        </div>
+                      )}
                     </div>
                   </>
                 )}
@@ -9052,7 +9384,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                     <div className="flex items-center gap-2 ml-8" title="Ajustar tamanho da letra e disposição da pré-visualização">
                       <button type="button" onClick={() => { setChordSize(v => Math.max(9, v - 1)); setLyricSize(v => Math.max(10, v - 1)); }} className="w-7 h-7 rounded-md border border-zinc-200 text-white hover:text-primary" title="Diminuir fonte">A−</button>
                       <button type="button" onClick={() => { setChordSize(v => Math.min(22, v + 1)); setLyricSize(v => Math.min(24, v + 1)); }} className="w-7 h-7 rounded-md border border-zinc-200 text-white hover:text-primary" title="Aumentar fonte">A+</button>
-                      <button type="button" onClick={() => setPreviewColumns(v => v === 1 ? 2 : 1)} className="h-7 px-2 rounded-md border border-zinc-200 text-[9px] font-bold text-white hover:text-primary" title="Alternar entre uma e duas colunas">{previewColumns} col.</button>
+
                     </div>
                   </div>
 
@@ -9172,8 +9504,8 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                        </div>
                     </div>
 
-                    {/* Preview Bottom Actions */}
-                    <div className="flex flex-col gap-1.5 p-2.5 bg-[#EEF1F5] border-t border-[#DCE3EC] rounded-b-2xl">
+                    {/* Preview Bottom Actions: mantidos apenas no fluxo de criação */}
+                    {!isEditingExistingSong && <div className="flex flex-col gap-1.5 p-2.5 bg-[#EEF1F5] border-t border-[#DCE3EC] rounded-b-2xl">
                       <div className="grid grid-cols-2 gap-1.5">
                         <button
                           onClick={handleDiscard}
@@ -9193,7 +9525,7 @@ function SongForm({ initialData, categories, folders, labels, chordBanks, onSave
                           <Save size={15} /> Salvar
                         </button>
                       </div>
-                    </div>
+                    </div>}
                   </>
                 )}
               </div>
